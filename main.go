@@ -51,5 +51,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("error creating search: %v", err)
 	}
-
+	_ = searchService
 }
