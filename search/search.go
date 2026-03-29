@@ -11,7 +11,7 @@ import (
 
 type Search interface {
 	Search(query string) ([]types.SearchResponse, error)
-	InsertContent(ctx context.Context, id string, content string) error
+	InsertContent(ctx context.Context, category string, description string) error
 }
 
 type SearchOption func(s *search)
@@ -60,9 +60,9 @@ func (s search) Search(query string) ([]types.SearchResponse, error) {
 	return s.mapper.FindRelevantContent(embeddings.Data[0].Embedding)
 }
 
-func (s search) InsertContent(ctx context.Context, id string, content string) error {
-	// get embeddings for the content
-	embeddings, err := s.ai.GetEmbeddings(ctx, content)
+func (s search) InsertContent(ctx context.Context, category string, description string) error {
+	// get embeddings for the description
+	embeddings, err := s.ai.GetEmbeddings(ctx, description)
 	if err != nil {
 		return fmt.Errorf("error getting embeddings: %w", err)
 	}
@@ -70,7 +70,7 @@ func (s search) InsertContent(ctx context.Context, id string, content string) er
 		return fmt.Errorf("no embeddings returned")
 	}
 	// save the embeddings to the database
-	err = s.mapper.SaveEmbeddings(id, content, embeddings.Data[0].Embedding)
+	err = s.mapper.SaveEmbeddings(category, description, embeddings.Data[0].Embedding)
 	if err != nil {
 		return fmt.Errorf("error saving embeddings: %w", err)
 	}

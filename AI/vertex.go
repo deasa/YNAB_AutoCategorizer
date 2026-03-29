@@ -5,25 +5,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pkoukk/tiktoken-go"
 	"google.golang.org/genai"
 )
 
 type vertexAI struct {
-	projectID    string
-	location     string
-	model        string
-	encodingName string
-	client       *genai.Client
+	projectID string
+	location  string
+	model     string
+	client    *genai.Client
 }
 
 type VertexAIOption func(*vertexAI)
 
 func NewVertexAI(ctx context.Context, opts ...VertexAIOption) (AI, error) {
 	v := &vertexAI{
-		location:     "us-central1",
-		model:        "text-embedding-004",
-		encodingName: "gpt-4o",
+		location: "us-central1",
+		model:    "text-embedding-004",
 	}
 
 	for _, opt := range opts {
@@ -72,15 +69,6 @@ func (v *vertexAI) GetEmbeddings(ctx context.Context, text string) (EmbeddingRes
 	return EmbeddingResponse{Data: data}, nil
 }
 
-func (v *vertexAI) GetTokenCount(input string) (int, error) {
-	tke, err := tiktoken.EncodingForModel(v.encodingName)
-	if err != nil {
-		return 0, fmt.Errorf("error getting encoding: %w", err)
-	}
-	token := tke.Encode(input, nil, nil)
-	return len(token), nil
-}
-
 func WithProjectID(projectID string) VertexAIOption {
 	return func(v *vertexAI) {
 		v.projectID = projectID
@@ -99,8 +87,3 @@ func WithVertexModel(model string) VertexAIOption {
 	}
 }
 
-func WithVertexEncodingName(encodingName string) VertexAIOption {
-	return func(v *vertexAI) {
-		v.encodingName = encodingName
-	}
-}
