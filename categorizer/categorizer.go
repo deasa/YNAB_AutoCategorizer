@@ -1,11 +1,13 @@
 package categorizer
 
 import (
+	"context"
 	"fmt"
 	"log"
 
 	"github.com/brunomvsouza/ynab.go/api/category"
 	"github.com/brunomvsouza/ynab.go/api/transaction"
+	"github.com/deasa/YNAB_AutoCategorizer/datastore"
 	"github.com/deasa/YNAB_AutoCategorizer/search"
 )
 
@@ -13,6 +15,7 @@ import (
 // This interface is satisfied by *ynab.Client.
 type YNABClient interface {
 	GetUncategorizedTransactions() ([]*transaction.Transaction, error)
+	GetAllTransactions() ([]*transaction.Transaction, error)
 	GetCategories() ([]*category.GroupWithCategories, error)
 	UpdateTransactionCategory(txn *transaction.Transaction, categoryID string) error
 }
@@ -21,6 +24,7 @@ type YNABClient interface {
 type Categorizer struct {
 	ynab                YNABClient
 	search              search.Search
+	store               datastore.SearchStore
 	logger              *log.Logger
 	confidenceThreshold float64
 	dryRun              bool
@@ -29,10 +33,11 @@ type Categorizer struct {
 }
 
 // New creates a new Categorizer.
-func New(ynab YNABClient, search search.Search, logger *log.Logger, confidenceThreshold float64, dryRun bool) *Categorizer {
+func New(ynab YNABClient, search search.Search, store datastore.SearchStore, logger *log.Logger, confidenceThreshold float64, dryRun bool) *Categorizer {
 	return &Categorizer{
 		ynab:                ynab,
 		search:              search,
+		store:               store,
 		logger:              logger,
 		confidenceThreshold: confidenceThreshold,
 		dryRun:              dryRun,
@@ -182,6 +187,73 @@ func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool,
 	}
 
 	return true, nil
+}
+
+// Learn fetches all categorized transactions from YNAB and inserts new
+// payee→category embeddings into the vector DB. This creates a feedback loop:
+// transactions the user categorizes manually teach the system for future matches.
+func (c *Categorizer) Learn() error {
+	if err := c.refreshCategoryMap(); err != nil {
+		return fmt.Errorf("refreshing category map for learning: %w", err)
+	}
+
+	txns, err := c.ynab.GetAllTransactions()
+	if err != nil {
+		return fmt.Errorf("fetching all transactions: %w", err)
+	}
+
+	ctx := context.Background()
+	learned, skipped := 0, 0
+
+	for _, txn := range txns {
+		if txn.Deleted {
+			continue
+		}
+		// Skip uncategorized transactions (nil CategoryID means not yet categorized)
+		if txn.CategoryID == nil || *txn.CategoryID == "" {
+			continue
+		}
+		if txn.CategoryName == nil || *txn.CategoryName == "" {
+			continue
+		}
+		if txn.PayeeName == nil || *txn.PayeeName == "" {
+			continue
+		}
+
+		payee := *txn.PayeeName
+		categoryName := *txn.CategoryName
+
+		// Skip categories that aren't in the active YNAB budget (e.g. internal/system categories)
+		if _, ok := c.categoryMap[categoryName]; !ok {
+			continue
+		}
+
+		already, err := c.store.HasLearnedPayeeCategory(payee, categoryName)
+		if err != nil {
+			c.logger.Printf("warning: error checking payee %q: %v", payee, err)
+			continue
+		}
+		if already {
+			skipped++
+			continue
+		}
+
+		c.logger.Printf("learning: %q → %s", payee, categoryName)
+		if err := c.search.InsertContent(ctx, categoryName, payee); err != nil {
+			c.logger.Printf("warning: failed to learn payee %q: %v", payee, err)
+			continue
+		}
+
+		if err := c.store.MarkPayeeLearned(payee, categoryName); err != nil {
+			c.logger.Printf("warning: failed to mark payee %q as learned: %v", payee, err)
+			continue
+		}
+
+		learned++
+	}
+
+	c.logger.Printf("learn complete: learned=%d skipped=%d", learned, skipped)
+	return nil
 }
 
 // payeeNameOrMemo returns the payee name if present, otherwise falls back to memo.

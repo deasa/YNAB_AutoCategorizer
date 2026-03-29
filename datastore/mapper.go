@@ -11,6 +11,8 @@ import (
 type SearchStore interface {
 	SaveEmbeddings(category, description string, embeddings []float32) error
 	FindRelevantContent(queryEmbeddings []float32) ([]types.SearchResponse, error)
+	HasLearnedPayeeCategory(payeeName, category string) (bool, error)
+	MarkPayeeLearned(payeeName, category string) error
 }
 
 type Mapper struct {
@@ -35,6 +37,28 @@ func (m *Mapper) SaveEmbeddings(category, description string, embeddings []float
 
 func serializeEmbeddings(embeddings []float32) string {
 	return strings.Join(strings.Split(fmt.Sprintf("%v", embeddings), " "), ", ")
+}
+
+// HasLearnedPayeeCategory checks if a specific payee+category pair has already been learned.
+func (m *Mapper) HasLearnedPayeeCategory(payeeName, category string) (bool, error) {
+	var count int
+	err := m.db.QueryRow(`SELECT COUNT(*) FROM learned_payees WHERE payee_name = ? AND category = ?`, payeeName, category).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("checking learned payee: %w", err)
+	}
+	return count > 0, nil
+}
+
+// MarkPayeeLearned records that a payee has been learned so we don't re-embed it.
+func (m *Mapper) MarkPayeeLearned(payeeName, category string) error {
+	_, err := m.db.Exec(
+		`INSERT OR IGNORE INTO learned_payees (payee_name, category) VALUES (?, ?)`,
+		payeeName, category,
+	)
+	if err != nil {
+		return fmt.Errorf("marking payee learned: %w", err)
+	}
+	return nil
 }
 
 func (m *Mapper) FindRelevantContent(queryEmbeddings []float32) ([]types.SearchResponse, error) {

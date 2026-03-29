@@ -3,14 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"os/signal"
-	"sort"
-	"strings"
 	"syscall"
 	"time"
 
@@ -18,13 +14,11 @@ import (
 	"github.com/deasa/YNAB_AutoCategorizer/categorizer"
 	"github.com/deasa/YNAB_AutoCategorizer/config"
 	"github.com/deasa/YNAB_AutoCategorizer/datastore"
+	"github.com/deasa/YNAB_AutoCategorizer/migrate"
 	"github.com/deasa/YNAB_AutoCategorizer/search"
 	ynabclient "github.com/deasa/YNAB_AutoCategorizer/ynab"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
-
-//go:embed migrations/*.sql
-var migrationFiles embed.FS
 
 func main() {
 	ctx := context.Background()
@@ -42,7 +36,7 @@ func main() {
 	}
 	defer db.Close()
 
-	if err = runMigrations(db); err != nil {
+	if err = migrate.Run(db); err != nil {
 		logger.Fatalf("failed to run migrations: %v", err)
 	}
 
@@ -64,9 +58,12 @@ func main() {
 	}
 
 	ynab := ynabclient.NewClient(cfg.YNABAccessToken, cfg.YNABBudgetID, logger)
-	cat := categorizer.New(ynab, searchService, logger, cfg.ConfidenceThreshold, cfg.DryRun)
+	cat := categorizer.New(ynab, searchService, mapper, logger, cfg.ConfidenceThreshold, cfg.DryRun)
 
 	run := func() {
+		if err := cat.Learn(); err != nil {
+			logger.Printf("learn step failed: %v", err)
+		}
 		if err := cat.Run(); err != nil {
 			logger.Printf("categorization run failed: %v", err)
 		}
@@ -91,56 +88,3 @@ func main() {
 	}
 }
 
-// runMigrations executes all .sql files in the migrations directory in order.
-// Each migration is tracked in a schema_migrations table and only runs once.
-func runMigrations(db *sql.DB) error {
-	// Create the tracking table if it doesn't exist.
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
-		filename TEXT PRIMARY KEY,
-		applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	)`); err != nil {
-		return fmt.Errorf("creating schema_migrations table: %w", err)
-	}
-
-	entries, err := fs.ReadDir(migrationFiles, "migrations")
-	if err != nil {
-		return fmt.Errorf("reading migrations dir: %w", err)
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
-	})
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-
-		// Skip already-applied migrations.
-		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE filename = ?`, entry.Name()).Scan(&count); err != nil {
-			return fmt.Errorf("checking migration %s: %w", entry.Name(), err)
-		}
-		if count > 0 {
-			continue
-		}
-
-		data, err := fs.ReadFile(migrationFiles, "migrations/"+entry.Name())
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", entry.Name(), err)
-		}
-		for _, stmt := range strings.Split(string(data), ";") {
-			stmt = strings.TrimSpace(stmt)
-			if stmt == "" {
-				continue
-			}
-			if _, err = db.Exec(stmt); err != nil {
-				return fmt.Errorf("executing %s: %w", entry.Name(), err)
-			}
-		}
-
-		// Record that this migration has been applied.
-		if _, err := db.Exec(`INSERT INTO schema_migrations (filename) VALUES (?)`, entry.Name()); err != nil {
-			return fmt.Errorf("recording migration %s: %w", entry.Name(), err)
-		}
-	}
-	return nil
-}

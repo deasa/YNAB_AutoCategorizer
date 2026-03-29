@@ -44,6 +44,14 @@ func (m *mockMapper) SaveEmbeddings(category, description string, embeddings []f
 	return m.saveErr
 }
 
+func (m *mockMapper) HasLearnedPayeeCategory(payeeName, category string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockMapper) MarkPayeeLearned(payeeName, category string) error {
+	return nil
+}
+
 // --- Tests ---
 
 func TestNewSearch_MissingAI(t *testing.T) {

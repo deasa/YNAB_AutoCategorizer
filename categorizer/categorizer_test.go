@@ -18,6 +18,9 @@ type mockYNABClient struct {
 	uncategorized    []*transaction.Transaction
 	uncategorizedErr error
 
+	allTransactions    []*transaction.Transaction
+	allTransactionsErr error
+
 	categoryGroups    []*category.GroupWithCategories
 	categoryGroupsErr error
 
@@ -34,6 +37,10 @@ func (m *mockYNABClient) GetUncategorizedTransactions() ([]*transaction.Transact
 	return m.uncategorized, m.uncategorizedErr
 }
 
+func (m *mockYNABClient) GetAllTransactions() ([]*transaction.Transaction, error) {
+	return m.allTransactions, m.allTransactionsErr
+}
+
 func (m *mockYNABClient) GetCategories() ([]*category.GroupWithCategories, error) {
 	return m.categoryGroups, m.categoryGroupsErr
 }
@@ -41,6 +48,34 @@ func (m *mockYNABClient) GetCategories() ([]*category.GroupWithCategories, error
 func (m *mockYNABClient) UpdateTransactionCategory(txn *transaction.Transaction, categoryID string) error {
 	m.updatedTxns = append(m.updatedTxns, updateCall{TxnID: txn.ID, CategoryID: categoryID})
 	return m.updateErr
+}
+
+// --- Mock Search Store ---
+
+type mockSearchStore struct {
+	learnedPayees map[string]string
+}
+
+func newMockSearchStore() *mockSearchStore {
+	return &mockSearchStore{learnedPayees: make(map[string]string)}
+}
+
+func (m *mockSearchStore) SaveEmbeddings(category, description string, embeddings []float32) error {
+	return nil
+}
+
+func (m *mockSearchStore) FindRelevantContent(queryEmbeddings []float32) ([]types.SearchResponse, error) {
+	return nil, nil
+}
+
+func (m *mockSearchStore) HasLearnedPayeeCategory(payeeName, category string) (bool, error) {
+	learned, ok := m.learnedPayees[payeeName]
+	return ok && learned == category, nil
+}
+
+func (m *mockSearchStore) MarkPayeeLearned(payeeName, category string) error {
+	m.learnedPayees[payeeName] = category
+	return nil
 }
 
 // --- Mock Search ---
@@ -124,7 +159,7 @@ func TestRun_HighConfidenceMatch_UpdatesTransaction(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +194,7 @@ func TestRun_LowConfidence_LeavesUncategorized(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -191,7 +226,7 @@ func TestRun_AmbiguousMatch_LeavesUncategorized(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -222,7 +257,7 @@ func TestRun_ClearNonAmbiguousMatch_Updates(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -254,7 +289,7 @@ func TestRun_DryRun_DoesNotUpdate(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, true) // dryRun=true
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, true) // dryRun=true
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -282,7 +317,7 @@ func TestRun_FallsBackToMemo(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -309,7 +344,7 @@ func TestRun_NoPayeeNoMemo_Skips(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -337,7 +372,7 @@ func TestRun_EmptyPayeeString_UseMemo(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -362,7 +397,7 @@ func TestRun_NoSearchResults_Skips(t *testing.T) {
 		results: []types.SearchResponse{}, // empty results
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -390,7 +425,7 @@ func TestRun_CategoryNotInYNAB_Skips(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -412,7 +447,7 @@ func TestRun_ZeroTransactions_NoOp(t *testing.T) {
 	}
 	searchSvc := &mockSearch{}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -456,7 +491,7 @@ func TestRun_HiddenDeletedCategoriesExcluded(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -497,7 +532,7 @@ func TestRun_MultipleTransactions_MixedResults(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -527,7 +562,7 @@ func TestRun_SearchError_ContinuesProcessing(t *testing.T) {
 		searchErr: fmt.Errorf("search API down"),
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	err := cat.Run()
 	// Run should not return an error — individual txn errors are logged, not propagated
 	if err != nil {
@@ -549,7 +584,7 @@ func TestRun_GetCategoriesError_ReturnsError(t *testing.T) {
 	}
 	searchSvc := &mockSearch{}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	err := cat.Run()
 	if err == nil {
 		t.Fatal("expected error when GetCategories fails, got nil")
@@ -567,7 +602,7 @@ func TestRun_GetTransactionsError_ReturnsError(t *testing.T) {
 	}
 	searchSvc := &mockSearch{}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	err := cat.Run()
 	if err == nil {
 		t.Fatal("expected error when GetUncategorizedTransactions fails, got nil")
@@ -593,7 +628,7 @@ func TestRun_UpdateError_CountsAsError(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	// Run should not return an error — individual txn errors are logged
 	err := cat.Run()
 	if err != nil {
@@ -622,7 +657,7 @@ func TestRun_AmbiguityWithSmallDistance_UsesMinimumGap(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -649,7 +684,7 @@ func TestRun_SingleResult_Updates(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -729,7 +764,7 @@ func TestRun_DeletedGroupExcluded(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -760,7 +795,7 @@ func TestRun_AmbiguityGapExactlyAtThreshold_Updates(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -796,7 +831,7 @@ func TestRun_SearchErrorOnOneTxn_ContinuesOthers(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("Run() should not propagate individual txn errors: %v", err)
 	}
@@ -831,7 +866,7 @@ func TestRun_ConfidenceAtExactThreshold_Updates(t *testing.T) {
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newLogger(), 0.7, false)
+	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

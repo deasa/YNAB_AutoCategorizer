@@ -11,6 +11,7 @@ import (
 	"github.com/deasa/YNAB_AutoCategorizer/AI"
 	"github.com/deasa/YNAB_AutoCategorizer/config"
 	"github.com/deasa/YNAB_AutoCategorizer/datastore"
+	"github.com/deasa/YNAB_AutoCategorizer/migrate"
 	"github.com/deasa/YNAB_AutoCategorizer/search"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
@@ -30,6 +31,10 @@ func main() {
 		logger.Fatalf("failed to open db: %v", err)
 	}
 	defer db.Close()
+
+	if err = migrate.Run(db); err != nil {
+		logger.Fatalf("failed to run migrations: %v", err)
+	}
 
 	mapper := datastore.NewMapper(db)
 
