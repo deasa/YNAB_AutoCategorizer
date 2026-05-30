@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 
 	"github.com/brunomvsouza/ynab.go/api/category"
 	"github.com/brunomvsouza/ynab.go/api/transaction"
 	"github.com/deasa/YNAB_AutoCategorizer/AI"
 	"github.com/deasa/YNAB_AutoCategorizer/search"
 )
+
+// noneSuggestion is the sentinel the AI returns when a transaction should not
+// be categorized (not routine / no confident match).
+const noneSuggestion = "NONE"
 
 // YNABClient defines the YNAB operations needed by the categorizer.
 // This interface is satisfied by *ynab.Client.
@@ -31,7 +36,8 @@ type Categorizer struct {
 	confidenceThreshold float64
 	maxVectorDistance    float64
 	dryRun              bool
-	maxTransactions     int // 0 = unlimited
+	maxTransactions     int      // 0 = unlimited
+	excludedKeywords    []string // category names containing any of these (case-insensitive) are never applied
 	// categoryMap caches YNAB category name → ID for resolving search results.
 	categoryMap map[string]string
 }
@@ -54,6 +60,24 @@ func New(ynab YNABClient, ai AI.AI, search search.Search, logger *log.Logger, co
 // will process. 0 (the default) means unlimited.
 func (c *Categorizer) SetMaxTransactions(n int) {
 	c.maxTransactions = n
+}
+
+// SetExcludedCategoryKeywords sets the keywords (case-insensitive substring
+// match) used to exclude YNAB categories from being auto-applied. Excluded
+// categories are dropped from both the AI candidate list and the resolution map.
+func (c *Categorizer) SetExcludedCategoryKeywords(keywords []string) {
+	c.excludedKeywords = keywords
+}
+
+// isExcludedCategory reports whether a category name matches any excluded keyword.
+func (c *Categorizer) isExcludedCategory(name string) bool {
+	lower := strings.ToLower(name)
+	for _, kw := range c.excludedKeywords {
+		if kw != "" && strings.Contains(lower, strings.ToLower(kw)) {
+			return true
+		}
+	}
+	return false
 }
 
 // Run performs a single categorization pass:
@@ -121,6 +145,9 @@ func (c *Categorizer) refreshCategoryMap() error {
 			if cat.Deleted || cat.Hidden {
 				continue
 			}
+			if c.isExcludedCategory(cat.Name) {
+				continue
+			}
 			c.categoryMap[cat.Name] = cat.ID
 		}
 	}
@@ -145,6 +172,12 @@ func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool,
 		return false, nil
 	}
 
+	// Never categorize Venmo — these are person-to-person and not routine.
+	if strings.Contains(strings.ToLower(query), "venmo") {
+		c.logger.Printf("skipping Venmo transaction %s (payee: %s)", txn.ID, query)
+		return false, nil
+	}
+
 	// Build category list from the cached map (sorted for deterministic AI prompts)
 	categories := make([]string, 0, len(c.categoryMap))
 	for name := range c.categoryMap {
@@ -159,14 +192,18 @@ func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool,
 		return false, fmt.Errorf("AI categorization for %q: %w", query, err)
 	}
 
-	var flagColor *transaction.FlagColor
+	// The AI returns NONE when the purchase isn't routine / can't be confidently
+	// mapped. Prefer leaving it uncategorized over guessing.
+	if strings.EqualFold(strings.TrimSpace(suggestion.Category), noneSuggestion) {
+		c.logger.Printf("AI returned NONE for transaction %s (payee: %s), skipping", txn.ID, query)
+		return false, nil
+	}
 
-	// Flag if AI certainty is below the confidence threshold
+	// Precision-first: skip when AI certainty is below the confidence threshold.
 	if suggestion.Certainty < c.confidenceThreshold {
-		flag := transaction.FlagColorOrange
-		flagColor = &flag
-		c.logger.Printf("low AI certainty for transaction %s (payee: %s): %.0f%% < %.0f%% threshold (flagged orange)",
+		c.logger.Printf("low AI certainty for transaction %s (payee: %s): %.0f%% < %.0f%% threshold, skipping",
 			txn.ID, query, suggestion.Certainty*100, c.confidenceThreshold*100)
+		return false, nil
 	}
 
 	// Use vector search to match the AI's category suggestion to stored categories
@@ -189,7 +226,7 @@ func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool,
 		return false, nil
 	}
 
-	// Ambiguity check: if top-2 vector matches are very close, flag for review
+	// Ambiguity check: if top-2 vector matches are very close, skip rather than guess.
 	if len(results) >= 2 {
 		gap := results[1].Distance - bestMatch.Distance
 		ambiguityThreshold := bestMatch.Distance * 0.10
@@ -197,37 +234,32 @@ func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool,
 			ambiguityThreshold = 0.01
 		}
 		if gap < ambiguityThreshold {
-			if flagColor == nil {
-				flag := transaction.FlagColorOrange
-				flagColor = &flag
-			}
-			c.logger.Printf("ambiguous vector match for transaction %s: %q (%.4f) vs %q (%.4f) (flagged orange)",
+			c.logger.Printf("ambiguous vector match for transaction %s: %q (%.4f) vs %q (%.4f), skipping",
 				txn.ID, bestMatch.Category, bestMatch.Distance, results[1].Category, results[1].Distance)
+			return false, nil
 		}
 	}
 
-	// Resolve to YNAB category ID
+	// Resolve to YNAB category ID (excluded categories are absent from the map).
 	categoryID, ok := c.categoryMap[bestMatch.Category]
 	if !ok {
-		c.logger.Printf("category %q not found in YNAB budget, skipping transaction %s",
+		c.logger.Printf("category %q not available (excluded or unknown), skipping transaction %s",
 			bestMatch.Category, txn.ID)
 		return false, nil
 	}
 
 	if c.dryRun {
-		flagMsg := ""
-		if flagColor != nil {
-			flagMsg = " [FLAGGED ORANGE]"
-		}
-		c.logger.Printf("[DRY RUN] would categorize transaction %s (payee: %s) → %s (AI certainty: %.0f%%, vector distance: %.4f)%s",
-			txn.ID, query, bestMatch.Category, suggestion.Certainty*100, bestMatch.Distance, flagMsg)
+		c.logger.Printf("[DRY RUN] would categorize transaction %s (payee: %s) → %s (AI certainty: %.0f%%, vector distance: %.4f)",
+			txn.ID, query, bestMatch.Category, suggestion.Certainty*100, bestMatch.Distance)
 		return false, nil
 	}
 
 	c.logger.Printf("categorizing transaction %s (payee: %s) → %s (AI certainty: %.0f%%, vector distance: %.4f)",
 		txn.ID, query, bestMatch.Category, suggestion.Certainty*100, bestMatch.Distance)
 
-	if err := c.ynab.UpdateTransactionCategory(txn, categoryID, flagColor); err != nil {
+	// Set the category only — never set a flag and never approve. The transaction
+	// stays unapproved so the user has final review.
+	if err := c.ynab.UpdateTransactionCategory(txn, categoryID, nil); err != nil {
 		return false, fmt.Errorf("updating transaction %s: %w", txn.ID, err)
 	}
 

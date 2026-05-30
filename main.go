@@ -56,6 +56,7 @@ func main() {
 	ynab := ynabclient.NewClient(cfg.YNABAccessToken, cfg.YNABBudgetID, logger)
 	cat := categorizer.New(ynab, aiProvider, searchService, logger, cfg.ConfidenceThreshold, cfg.DryRun)
 	cat.SetMaxTransactions(cfg.MaxTransactions)
+	cat.SetExcludedCategoryKeywords(cfg.ExcludedCategoryKeywords)
 
 	run := func() {
 		if err := cat.Run(); err != nil {

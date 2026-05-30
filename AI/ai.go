@@ -117,7 +117,7 @@ func (a ai) CategorizeTransaction(ctx context.Context, payee string, amount floa
 }
 
 func buildCategorizationPrompt(payee string, amount float64, categories []string) string {
-	return fmt.Sprintf(`Given this transaction, select the most appropriate category from the list.
+	return fmt.Sprintf(`Decide whether this transaction can be confidently categorized for a personal budget.
 
 Transaction:
 - Payee: %s
@@ -126,13 +126,18 @@ Transaction:
 Available categories:
 %s
 
-Respond with ONLY a JSON object:
-{"category": "exact category name from the list", "certainty": <0-100>}
-
 Rules:
-- The category MUST be one from the provided list
-- Certainty should reflect how confident you are (0 = no idea, 100 = completely sure)
-- Consider the payee name as the primary signal`, payee, amount, strings.Join(categories, "\n"))
+- Only categorize ROUTINE, recurring, or clearly-identifiable purchases (e.g. car insurance, a grocery-store run, a fast-food purchase, a utility bill).
+- Dining out, restaurants, eating out, fast food, and groceries all map to "Discretionary".
+- Amazon purchases map to "Discretionary".
+- If the purchase is NOT routine, or you cannot confidently map it to one of the categories, respond with "NONE".
+- It is better to respond "NONE" than to guess. Prefer fewer, correct categorizations over wrong ones.
+- The category MUST be either one exact name from the list above, or "NONE".
+- Certainty should reflect how confident you are (0 = no idea, 100 = completely sure).
+- Consider the payee name as the primary signal.
+
+Respond with ONLY a JSON object:
+{"category": "exact category name from the list, or NONE", "certainty": <0-100>}`, payee, amount, strings.Join(categories, "\n"))
 }
 
 // NewFromConfig creates an AI provider based on config values.

@@ -39,11 +39,15 @@ YNAB AutoCategorizer fetches uncategorized transactions from YNAB, asks an LLM t
 
 **Key data flow:** `main` → `categorizer.Run()` → for each txn: `AI.CategorizeTransaction(payee, amount, categories)` → `search.Search(suggestion)` (embeds via `AI.GetEmbeddings()` + `datastore.FindRelevantContent()`) → categorizer applies safety checks → `ynab.UpdateTransactionCategory()`
 
-**Categorization safety checks:**
-1. Best vector match distance must be ≤ max vector distance threshold (default 0.8); matches above this are skipped
-2. AI certainty must be ≥ confidence threshold (default 0.75); transactions below threshold are still categorized but flagged orange
-3. Gap between top-2 vector results must be ≥ 10% of best distance (min gap: 0.01); ambiguous matches are flagged orange
-4. Vector search must return results and the best match must resolve to a valid YNAB category; otherwise the transaction is skipped
+**Categorization is precision-first** — it prefers leaving a transaction uncategorized over applying a wrong category, and it never flags or approves transactions (the user keeps final review; transactions stay unapproved). A transaction is **skipped** (left uncategorized) when any of these hold:
+1. It is an account transfer (`TransferAccountID` set) or the payee contains "Venmo"
+2. The AI returns the `NONE` sentinel (not routine / no confident match)
+3. AI certainty is below the confidence threshold (default 0.75)
+4. Best vector match distance exceeds the max vector distance threshold (default 0.8)
+5. Top-2 vector results are ambiguous (gap < 10% of best distance, min 0.01)
+6. The resolved category isn't an applicable YNAB category (unknown, or matched an excluded keyword)
+
+**Categorization rules (in the AI prompt):** only routine/clearly-identifiable purchases are categorized; dining/restaurants/eating/groceries and Amazon map to "Discretionary"; non-routine purchases return `NONE`. Categories matching `EXCLUDED_CATEGORY_KEYWORDS` (default `Birthday,Gift`, case-insensitive) are dropped from both the AI candidate list and the resolution map.
 
 ## Testing
 
@@ -53,4 +57,4 @@ All external dependencies are mocked via interfaces (`YNABClient`, `Search`, `AI
 
 All config is via environment variables (loaded from `.env`). See `.env.example` for the full list. Key requirement: must provide either `GOOGLE_CLOUD_PROJECT` (Vertex AI) or `OPENAI_API_KEY`.
 
-`MAX_TRANSACTIONS` caps how many uncategorized transactions are processed per run (0 = unlimited); useful for a cautious first live run.
+`MAX_TRANSACTIONS` caps how many uncategorized transactions are processed per run (0 = unlimited); useful for a cautious first live run. `EXCLUDED_CATEGORY_KEYWORDS` (default `Birthday,Gift`) is a comma-separated, case-insensitive list of keywords; any category whose name contains one is never auto-applied.
