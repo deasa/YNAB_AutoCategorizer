@@ -116,6 +116,31 @@ func (m *queryAwareMockSearch) InsertContent(_ context.Context, _ string, _ stri
 
 func strPtr(s string) *string { return &s }
 
+func TestRun_SkipsTransfers(t *testing.T) {
+	transferAcct := "acct-123"
+	txn := makeTxn("txn-1", strPtr("Transfer : Venture"), nil)
+	txn.TransferAccountID = &transferAcct
+
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized:  []*transaction.Transaction{txn},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{{Category: "Groceries", Distance: 0.02}},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected transfer to be skipped (0 updates), got %d", len(ynabClient.updatedTxns))
+	}
+}
+
 func TestRun_MaxTransactions_LimitsProcessing(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),

@@ -133,6 +133,12 @@ func (c *Categorizer) refreshCategoryMap() error {
 // then resolves the AI's suggestion to a stored category via vector search.
 // Returns true if the transaction was categorized, false if skipped.
 func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool, error) {
+	// Skip account transfers — they should not be AI-categorized.
+	if txn.TransferAccountID != nil && *txn.TransferAccountID != "" {
+		c.logger.Printf("skipping transfer transaction %s (payee: %s)", txn.ID, payeeNameOrMemo(txn))
+		return false, nil
+	}
+
 	query := payeeNameOrMemo(txn)
 	if query == "" {
 		c.logger.Printf("skipping transaction %s: no payee name or memo", txn.ID)
