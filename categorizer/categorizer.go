@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/brunomvsouza/ynab.go/api/category"
 	"github.com/brunomvsouza/ynab.go/api/transaction"
-	"github.com/deasa/YNAB_AutoCategorizer/datastore"
+	"github.com/deasa/YNAB_AutoCategorizer/AI"
 	"github.com/deasa/YNAB_AutoCategorizer/search"
 )
 
@@ -15,41 +16,50 @@ import (
 // This interface is satisfied by *ynab.Client.
 type YNABClient interface {
 	GetUncategorizedTransactions() ([]*transaction.Transaction, error)
-	GetAllTransactions() ([]*transaction.Transaction, error)
 	GetCategories() ([]*category.GroupWithCategories, error)
-	UpdateTransactionCategory(txn *transaction.Transaction, categoryID string) error
+	UpdateTransactionCategory(txn *transaction.Transaction, categoryID string, flagColor *transaction.FlagColor) error
 }
+
+const defaultMaxVectorDistance = 0.8
 
 // Categorizer orchestrates the auto-categorization of YNAB transactions.
 type Categorizer struct {
 	ynab                YNABClient
+	ai                  AI.AI
 	search              search.Search
-	store               datastore.SearchStore
 	logger              *log.Logger
 	confidenceThreshold float64
+	maxVectorDistance    float64
 	dryRun              bool
+	maxTransactions     int // 0 = unlimited
 	// categoryMap caches YNAB category name → ID for resolving search results.
 	categoryMap map[string]string
 }
 
 // New creates a new Categorizer.
-func New(ynab YNABClient, search search.Search, store datastore.SearchStore, logger *log.Logger, confidenceThreshold float64, dryRun bool) *Categorizer {
+func New(ynab YNABClient, ai AI.AI, search search.Search, logger *log.Logger, confidenceThreshold float64, dryRun bool) *Categorizer {
 	return &Categorizer{
 		ynab:                ynab,
+		ai:                  ai,
 		search:              search,
-		store:               store,
 		logger:              logger,
 		confidenceThreshold: confidenceThreshold,
+		maxVectorDistance:    defaultMaxVectorDistance,
 		dryRun:              dryRun,
 		categoryMap:         make(map[string]string),
 	}
 }
 
+// SetMaxTransactions caps how many uncategorized transactions a single Run
+// will process. 0 (the default) means unlimited.
+func (c *Categorizer) SetMaxTransactions(n int) {
+	c.maxTransactions = n
+}
 
 // Run performs a single categorization pass:
 // 1. Refreshes the category map from YNAB
 // 2. Fetches uncategorized transactions
-// 3. For each, searches for the best category match and updates if above threshold
+// 3. For each, asks the AI to pick a category, then resolves via vector search
 func (c *Categorizer) Run() error {
 	// Step 1: Refresh category map
 	if err := c.refreshCategoryMap(); err != nil {
@@ -65,6 +75,12 @@ func (c *Categorizer) Run() error {
 	if len(txns) == 0 {
 		c.logger.Println("no uncategorized transactions found")
 		return nil
+	}
+
+	// Apply the per-run transaction limit (0 = unlimited).
+	if c.maxTransactions > 0 && len(txns) > c.maxTransactions {
+		c.logger.Printf("limiting run to first %d of %d uncategorized transactions", c.maxTransactions, len(txns))
+		txns = txns[:c.maxTransactions]
 	}
 
 	// Step 3: Categorize each transaction
@@ -113,58 +129,78 @@ func (c *Categorizer) refreshCategoryMap() error {
 	return nil
 }
 
-// categorizeTransaction attempts to find and assign the best matching category.
-// It returns true if the transaction was categorized, false if it was skipped.
-// It leaves the transaction uncategorized if:
-// - The best match distance exceeds the confidence threshold (too uncertain)
-// - The top two matches are too close in distance (ambiguous)
+// categorizeTransaction asks the AI to pick a category for the transaction,
+// then resolves the AI's suggestion to a stored category via vector search.
+// Returns true if the transaction was categorized, false if skipped.
 func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool, error) {
-	// Build the search query from the payee name (fall back to memo)
 	query := payeeNameOrMemo(txn)
 	if query == "" {
 		c.logger.Printf("skipping transaction %s: no payee name or memo", txn.ID)
 		return false, nil
 	}
 
-	// Search for matching categories
-	results, err := c.search.Search(query)
+	// Build category list from the cached map (sorted for deterministic AI prompts)
+	categories := make([]string, 0, len(c.categoryMap))
+	for name := range c.categoryMap {
+		categories = append(categories, name)
+	}
+	sort.Strings(categories)
+
+	// Ask the AI to categorize the transaction
+	amount := float64(txn.Amount) / 1000.0
+	suggestion, err := c.ai.CategorizeTransaction(context.Background(), query, amount, categories)
 	if err != nil {
-		return false, fmt.Errorf("searching for %q: %w", query, err)
+		return false, fmt.Errorf("AI categorization for %q: %w", query, err)
+	}
+
+	var flagColor *transaction.FlagColor
+
+	// Flag if AI certainty is below the confidence threshold
+	if suggestion.Certainty < c.confidenceThreshold {
+		flag := transaction.FlagColorOrange
+		flagColor = &flag
+		c.logger.Printf("low AI certainty for transaction %s (payee: %s): %.0f%% < %.0f%% threshold (flagged orange)",
+			txn.ID, query, suggestion.Certainty*100, c.confidenceThreshold*100)
+	}
+
+	// Use vector search to match the AI's category suggestion to stored categories
+	results, err := c.search.Search(suggestion.Category)
+	if err != nil {
+		return false, fmt.Errorf("vector search for %q: %w", suggestion.Category, err)
 	}
 
 	if len(results) == 0 {
-		c.logger.Printf("no match found for transaction %s (payee: %s)", txn.ID, query)
+		c.logger.Printf("no vector match for AI suggestion %q (transaction %s)", suggestion.Category, txn.ID)
 		return false, nil
 	}
 
 	bestMatch := results[0]
 
-	// Guard 1: Confidence threshold — reject if the best match is too distant
-	if bestMatch.Distance > c.confidenceThreshold {
-		c.logger.Printf("low confidence for transaction %s (payee: %s): best match %q has distance %.4f (threshold: %.4f), leaving uncategorized",
-			txn.ID, query, bestMatch.Category, bestMatch.Distance, c.confidenceThreshold)
+	// Vector distance threshold: reject matches that are too far away
+	if bestMatch.Distance > c.maxVectorDistance {
+		c.logger.Printf("vector match too distant for transaction %s: %q (distance %.4f > threshold %.4f), skipping",
+			txn.ID, bestMatch.Category, bestMatch.Distance, c.maxVectorDistance)
 		return false, nil
 	}
 
-	// Guard 2: Ambiguity check — if the top two results are too close,
-	// we can't be sure which category is correct
+	// Ambiguity check: if top-2 vector matches are very close, flag for review
 	if len(results) >= 2 {
 		gap := results[1].Distance - bestMatch.Distance
-		// If the gap between #1 and #2 is less than 10% of the best distance,
-		// the match is ambiguous
 		ambiguityThreshold := bestMatch.Distance * 0.10
 		if ambiguityThreshold < 0.01 {
-			ambiguityThreshold = 0.01 // minimum gap to avoid division-by-zero edge cases
+			ambiguityThreshold = 0.01
 		}
 		if gap < ambiguityThreshold {
-			c.logger.Printf("ambiguous match for transaction %s (payee: %s): %q (%.4f) vs %q (%.4f), gap=%.4f, leaving uncategorized",
-				txn.ID, query, bestMatch.Category, bestMatch.Distance,
-				results[1].Category, results[1].Distance, gap)
-			return false, nil
+			if flagColor == nil {
+				flag := transaction.FlagColorOrange
+				flagColor = &flag
+			}
+			c.logger.Printf("ambiguous vector match for transaction %s: %q (%.4f) vs %q (%.4f) (flagged orange)",
+				txn.ID, bestMatch.Category, bestMatch.Distance, results[1].Category, results[1].Distance)
 		}
 	}
 
-	// Resolve the category name to a YNAB category ID
+	// Resolve to YNAB category ID
 	categoryID, ok := c.categoryMap[bestMatch.Category]
 	if !ok {
 		c.logger.Printf("category %q not found in YNAB budget, skipping transaction %s",
@@ -173,87 +209,23 @@ func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool,
 	}
 
 	if c.dryRun {
-		c.logger.Printf("[DRY RUN] would categorize transaction %s (payee: %s) → %s (distance: %.4f)",
-			txn.ID, query, bestMatch.Category, bestMatch.Distance)
+		flagMsg := ""
+		if flagColor != nil {
+			flagMsg = " [FLAGGED ORANGE]"
+		}
+		c.logger.Printf("[DRY RUN] would categorize transaction %s (payee: %s) → %s (AI certainty: %.0f%%, vector distance: %.4f)%s",
+			txn.ID, query, bestMatch.Category, suggestion.Certainty*100, bestMatch.Distance, flagMsg)
 		return false, nil
 	}
 
-	// Update the transaction in YNAB
-	c.logger.Printf("categorizing transaction %s (payee: %s) → %s (distance: %.4f)",
-		txn.ID, query, bestMatch.Category, bestMatch.Distance)
+	c.logger.Printf("categorizing transaction %s (payee: %s) → %s (AI certainty: %.0f%%, vector distance: %.4f)",
+		txn.ID, query, bestMatch.Category, suggestion.Certainty*100, bestMatch.Distance)
 
-	if err := c.ynab.UpdateTransactionCategory(txn, categoryID); err != nil {
+	if err := c.ynab.UpdateTransactionCategory(txn, categoryID, flagColor); err != nil {
 		return false, fmt.Errorf("updating transaction %s: %w", txn.ID, err)
 	}
 
 	return true, nil
-}
-
-// Learn fetches all categorized transactions from YNAB and inserts new
-// payee→category embeddings into the vector DB. This creates a feedback loop:
-// transactions the user categorizes manually teach the system for future matches.
-func (c *Categorizer) Learn() error {
-	if err := c.refreshCategoryMap(); err != nil {
-		return fmt.Errorf("refreshing category map for learning: %w", err)
-	}
-
-	txns, err := c.ynab.GetAllTransactions()
-	if err != nil {
-		return fmt.Errorf("fetching all transactions: %w", err)
-	}
-
-	ctx := context.Background()
-	learned, skipped := 0, 0
-
-	for _, txn := range txns {
-		if txn.Deleted {
-			continue
-		}
-		// Skip uncategorized transactions (nil CategoryID means not yet categorized)
-		if txn.CategoryID == nil || *txn.CategoryID == "" {
-			continue
-		}
-		if txn.CategoryName == nil || *txn.CategoryName == "" {
-			continue
-		}
-		if txn.PayeeName == nil || *txn.PayeeName == "" {
-			continue
-		}
-
-		payee := *txn.PayeeName
-		categoryName := *txn.CategoryName
-
-		// Skip categories that aren't in the active YNAB budget (e.g. internal/system categories)
-		if _, ok := c.categoryMap[categoryName]; !ok {
-			continue
-		}
-
-		already, err := c.store.HasLearnedPayeeCategory(payee, categoryName)
-		if err != nil {
-			c.logger.Printf("warning: error checking payee %q: %v", payee, err)
-			continue
-		}
-		if already {
-			skipped++
-			continue
-		}
-
-		c.logger.Printf("learning: %q → %s", payee, categoryName)
-		if err := c.search.InsertContent(ctx, categoryName, payee); err != nil {
-			c.logger.Printf("warning: failed to learn payee %q: %v", payee, err)
-			continue
-		}
-
-		if err := c.store.MarkPayeeLearned(payee, categoryName); err != nil {
-			c.logger.Printf("warning: failed to mark payee %q as learned: %v", payee, err)
-			continue
-		}
-
-		learned++
-	}
-
-	c.logger.Printf("learn complete: learned=%d skipped=%d", learned, skipped)
-	return nil
 }
 
 // payeeNameOrMemo returns the payee name if present, otherwise falls back to memo.
