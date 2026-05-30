@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 
 	"github.com/brunomvsouza/ynab.go"
@@ -25,8 +26,8 @@ func main() {
 		logger.Fatalf("failed to load config: %v", err)
 	}
 
-	url := fmt.Sprintf("%s?authToken=%s", cfg.LibSQLDatabaseURL, cfg.LibSQLAuthToken)
-	db, err := sql.Open("libsql", url)
+	dbURL := fmt.Sprintf("%s?authToken=%s", cfg.LibSQLDatabaseURL, url.QueryEscape(cfg.LibSQLAuthToken))
+	db, err := sql.Open("libsql", dbURL)
 	if err != nil {
 		logger.Fatalf("failed to open db: %v", err)
 	}
@@ -38,13 +39,13 @@ func main() {
 
 	mapper := datastore.NewMapper(db)
 
-	// Initialize AI provider based on config (same logic as main.go)
-	var aiProvider AI.AI
-	if cfg.GoogleCloudProject != "" {
-		aiProvider, err = AI.NewVertexAI(ctx, AI.WithProjectID(cfg.GoogleCloudProject), AI.WithLocation(cfg.GoogleCloudLocation))
-	} else {
-		aiProvider, err = AI.NewAI(AI.WithAPIKey(cfg.OpenAIAPIKey), AI.WithBaseURL(cfg.OpenAIBaseURL))
+	// Start from a clean slate so re-seeding does not duplicate categories.
+	if err := mapper.DeleteAllEmbeddings(); err != nil {
+		logger.Fatalf("error clearing existing categories: %v", err)
 	}
+	logger.Println("cleared existing categories from vector database")
+
+	aiProvider, err := AI.NewFromConfig(ctx, cfg.GoogleCloudProject, cfg.GoogleCloudLocation, cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.ChatModel)
 	if err != nil {
 		logger.Fatalf("error creating AI provider: %v", err)
 	}

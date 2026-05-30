@@ -14,7 +14,7 @@ func clearEnv(t *testing.T) {
 		"LIBSQL_DATABASE_URL", "LIBSQL_AUTH_TOKEN",
 		"GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
 		"OPENAI_API_KEY", "OPENAI_BASE_URL",
-		"CONFIDENCE_THRESHOLD", "DRY_RUN", "RUN_INTERVAL",
+		"CONFIDENCE_THRESHOLD", "DRY_RUN", "RUN_INTERVAL", "MAX_TRANSACTIONS",
 	} {
 		t.Setenv(key, "")
 		os.Unsetenv(key)
@@ -63,9 +63,9 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Errorf("YNABBudgetID = %q, want %q", cfg.YNABBudgetID, "last-used")
 	}
 
-	// README: CONFIDENCE_THRESHOLD defaults to 0.7
-	if cfg.ConfidenceThreshold != 0.7 {
-		t.Errorf("ConfidenceThreshold = %v, want %v", cfg.ConfidenceThreshold, 0.7)
+	// CONFIDENCE_THRESHOLD defaults to 0.75 (AI certainty threshold)
+	if cfg.ConfidenceThreshold != 0.75 {
+		t.Errorf("ConfidenceThreshold = %v, want %v", cfg.ConfidenceThreshold, 0.75)
 	}
 
 	// README: DRY_RUN defaults to false
@@ -267,6 +267,44 @@ func TestLoad_CustomGoogleCloudLocation(t *testing.T) {
 	}
 	if cfg.GoogleCloudLocation != "europe-west1" {
 		t.Errorf("GoogleCloudLocation = %q, want %q", cfg.GoogleCloudLocation, "europe-west1")
+	}
+}
+
+func TestLoad_MaxTransactions(t *testing.T) {
+	clearEnv(t)
+	setRequiredEnv(t)
+	t.Setenv("MAX_TRANSACTIONS", "5")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxTransactions != 5 {
+		t.Errorf("MaxTransactions = %d, want 5", cfg.MaxTransactions)
+	}
+}
+
+func TestLoad_MaxTransactions_DefaultsZero(t *testing.T) {
+	clearEnv(t)
+	setRequiredEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MaxTransactions != 0 {
+		t.Errorf("MaxTransactions = %d, want 0", cfg.MaxTransactions)
+	}
+}
+
+func TestLoad_InvalidMaxTransactions(t *testing.T) {
+	clearEnv(t)
+	setRequiredEnv(t)
+	t.Setenv("MAX_TRANSACTIONS", "not-a-number")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid MAX_TRANSACTIONS, got nil")
 	}
 }
 

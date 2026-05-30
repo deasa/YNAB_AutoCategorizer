@@ -9,17 +9,50 @@ import (
 
 	"github.com/brunomvsouza/ynab.go/api/category"
 	"github.com/brunomvsouza/ynab.go/api/transaction"
+	"github.com/deasa/YNAB_AutoCategorizer/AI"
 	"github.com/deasa/YNAB_AutoCategorizer/types"
 )
+
+// --- Mock AI ---
+
+type mockAI struct {
+	suggestion AI.CategorySuggestion
+	suggestErr error
+
+	embeddings AI.EmbeddingResponse
+	embedErr   error
+}
+
+func (m *mockAI) GetEmbeddings(_ context.Context, _ string) (AI.EmbeddingResponse, error) {
+	return m.embeddings, m.embedErr
+}
+
+func (m *mockAI) CategorizeTransaction(_ context.Context, _ string, _ float64, _ []string) (AI.CategorySuggestion, error) {
+	return m.suggestion, m.suggestErr
+}
+
+// queryAwareMockAI returns different suggestions based on the payee string.
+type queryAwareMockAI struct {
+	suggestionsByPayee map[string]AI.CategorySuggestion
+	errsByPayee        map[string]error
+}
+
+func (m *queryAwareMockAI) GetEmbeddings(_ context.Context, _ string) (AI.EmbeddingResponse, error) {
+	return AI.EmbeddingResponse{}, nil
+}
+
+func (m *queryAwareMockAI) CategorizeTransaction(_ context.Context, payee string, _ float64, _ []string) (AI.CategorySuggestion, error) {
+	if err, ok := m.errsByPayee[payee]; ok {
+		return AI.CategorySuggestion{}, err
+	}
+	return m.suggestionsByPayee[payee], nil
+}
 
 // --- Mock YNAB Client ---
 
 type mockYNABClient struct {
 	uncategorized    []*transaction.Transaction
 	uncategorizedErr error
-
-	allTransactions    []*transaction.Transaction
-	allTransactionsErr error
 
 	categoryGroups    []*category.GroupWithCategories
 	categoryGroupsErr error
@@ -31,51 +64,20 @@ type mockYNABClient struct {
 type updateCall struct {
 	TxnID      string
 	CategoryID string
+	FlagColor  *transaction.FlagColor
 }
 
 func (m *mockYNABClient) GetUncategorizedTransactions() ([]*transaction.Transaction, error) {
 	return m.uncategorized, m.uncategorizedErr
 }
 
-func (m *mockYNABClient) GetAllTransactions() ([]*transaction.Transaction, error) {
-	return m.allTransactions, m.allTransactionsErr
-}
-
 func (m *mockYNABClient) GetCategories() ([]*category.GroupWithCategories, error) {
 	return m.categoryGroups, m.categoryGroupsErr
 }
 
-func (m *mockYNABClient) UpdateTransactionCategory(txn *transaction.Transaction, categoryID string) error {
-	m.updatedTxns = append(m.updatedTxns, updateCall{TxnID: txn.ID, CategoryID: categoryID})
+func (m *mockYNABClient) UpdateTransactionCategory(txn *transaction.Transaction, categoryID string, flagColor *transaction.FlagColor) error {
+	m.updatedTxns = append(m.updatedTxns, updateCall{TxnID: txn.ID, CategoryID: categoryID, FlagColor: flagColor})
 	return m.updateErr
-}
-
-// --- Mock Search Store ---
-
-type mockSearchStore struct {
-	learnedPayees map[string]string
-}
-
-func newMockSearchStore() *mockSearchStore {
-	return &mockSearchStore{learnedPayees: make(map[string]string)}
-}
-
-func (m *mockSearchStore) SaveEmbeddings(category, description string, embeddings []float32) error {
-	return nil
-}
-
-func (m *mockSearchStore) FindRelevantContent(queryEmbeddings []float32) ([]types.SearchResponse, error) {
-	return nil, nil
-}
-
-func (m *mockSearchStore) HasLearnedPayeeCategory(payeeName, category string) (bool, error) {
-	learned, ok := m.learnedPayees[payeeName]
-	return ok && learned == category, nil
-}
-
-func (m *mockSearchStore) MarkPayeeLearned(payeeName, category string) error {
-	m.learnedPayees[payeeName] = category
-	return nil
 }
 
 // --- Mock Search ---
@@ -85,7 +87,7 @@ type mockSearch struct {
 	searchErr error
 }
 
-func (m *mockSearch) Search(query string) ([]types.SearchResponse, error) {
+func (m *mockSearch) Search(_ string) ([]types.SearchResponse, error) {
 	return m.results, m.searchErr
 }
 
@@ -114,6 +116,61 @@ func (m *queryAwareMockSearch) InsertContent(_ context.Context, _ string, _ stri
 
 func strPtr(s string) *string { return &s }
 
+func TestRun_SkipsTransfers(t *testing.T) {
+	transferAcct := "acct-123"
+	txn := makeTxn("txn-1", strPtr("Transfer : Venture"), nil)
+	txn.TransferAccountID = &transferAcct
+
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized:  []*transaction.Transaction{txn},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{{Category: "Groceries", Distance: 0.02}},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected transfer to be skipped (0 updates), got %d", len(ynabClient.updatedTxns))
+	}
+}
+
+func TestRun_MaxTransactions_LimitsProcessing(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Whole Foods"), nil),
+			makeTxn("txn-2", strPtr("Whole Foods"), nil),
+			makeTxn("txn-3", strPtr("Whole Foods"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "Groceries", Distance: 0.02},
+			{Category: "Shopping", Distance: 0.6},
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	cat.SetMaxTransactions(2)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 2 {
+		t.Fatalf("expected 2 updates (limit), got %d", len(ynabClient.updatedTxns))
+	}
+}
+
 func defaultCategoryGroups() []*category.GroupWithCategories {
 	return []*category.GroupWithCategories{
 		{
@@ -136,30 +193,32 @@ func makeTxn(id string, payee *string, memo *string) *transaction.Transaction {
 		ID:        id,
 		PayeeName: payee,
 		Memo:      memo,
+		Amount:    -50000, // -$50.00 in milliunits
 	}
 }
 
 // =============================================================================
-// Test: High-confidence, clear match → should update the transaction
-// README: "Update the transaction in YNAB with the matched category
-//          (if confidence exceeds threshold)"
+// Test: High AI certainty + clear vector match → should update, no flag
 // =============================================================================
 
-func TestRun_HighConfidenceMatch_UpdatesTransaction(t *testing.T) {
+func TestRun_HighCertainty_ClearMatch_Updates(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized: []*transaction.Transaction{
 			makeTxn("txn-1", strPtr("Whole Foods"), nil),
 		},
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.2},
+			{Category: "Groceries", Distance: 0.02},
 			{Category: "Shopping", Distance: 0.6},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,94 +229,33 @@ func TestRun_HighConfidenceMatch_UpdatesTransaction(t *testing.T) {
 	if ynabClient.updatedTxns[0].CategoryID != "cat-groceries" {
 		t.Errorf("categoryID = %q, want %q", ynabClient.updatedTxns[0].CategoryID, "cat-groceries")
 	}
-	if ynabClient.updatedTxns[0].TxnID != "txn-1" {
-		t.Errorf("txnID = %q, want %q", ynabClient.updatedTxns[0].TxnID, "txn-1")
+	if ynabClient.updatedTxns[0].FlagColor != nil {
+		t.Errorf("expected no flag, got %v", *ynabClient.updatedTxns[0].FlagColor)
 	}
 }
 
 // =============================================================================
-// Test: Low confidence → should leave uncategorized
-// README: "Low confidence: The best match's vector distance exceeds
-//          CONFIDENCE_THRESHOLD (default: 0.7)."
+// Test: Low AI certainty → should categorize but flag orange
 // =============================================================================
 
-func TestRun_LowConfidence_LeavesUncategorized(t *testing.T) {
+func TestRun_LowAICertainty_FlagsOrange(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Unknown Vendor XYZ"), nil),
+			makeTxn("txn-1", strPtr("Mystery Vendor"), nil),
 		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.50},
 	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.9}, // above 0.7 threshold
+			{Category: "Groceries", Distance: 0.05},
+			{Category: "Shopping", Distance: 0.6},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(ynabClient.updatedTxns) != 0 {
-		t.Errorf("expected 0 updates for low confidence, got %d", len(ynabClient.updatedTxns))
-	}
-}
-
-// =============================================================================
-// Test: Ambiguous match → should leave uncategorized
-// README: "Ambiguous match: The top two category matches have very similar
-//          distances (gap < 10% of the best distance)."
-// =============================================================================
-
-func TestRun_AmbiguousMatch_LeavesUncategorized(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Corner Store"), nil),
-		},
-	}
-	// Gap = 0.31 - 0.30 = 0.01, threshold = 0.30 * 0.10 = 0.03
-	// gap (0.01) < threshold (0.03) → ambiguous
-	searchSvc := &mockSearch{
-		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.30},
-			{Category: "Dining Out", Distance: 0.31},
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(ynabClient.updatedTxns) != 0 {
-		t.Errorf("expected 0 updates for ambiguous match, got %d", len(ynabClient.updatedTxns))
-	}
-}
-
-// =============================================================================
-// Test: Clear, non-ambiguous match passes ambiguity check
-// The gap between top two is > 10% of best distance → should update
-// =============================================================================
-
-func TestRun_ClearNonAmbiguousMatch_Updates(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Chipotle"), nil),
-		},
-	}
-	// Gap = 0.50 - 0.20 = 0.30, threshold = 0.20 * 0.10 = 0.02
-	// gap (0.30) > threshold (0.02) → not ambiguous
-	searchSvc := &mockSearch{
-		results: []types.SearchResponse{
-			{Category: "Dining Out", Distance: 0.20},
-			{Category: "Groceries", Distance: 0.50},
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -265,14 +263,132 @@ func TestRun_ClearNonAmbiguousMatch_Updates(t *testing.T) {
 	if len(ynabClient.updatedTxns) != 1 {
 		t.Fatalf("expected 1 update, got %d", len(ynabClient.updatedTxns))
 	}
-	if ynabClient.updatedTxns[0].CategoryID != "cat-dining" {
-		t.Errorf("categoryID = %q, want %q", ynabClient.updatedTxns[0].CategoryID, "cat-dining")
+	if ynabClient.updatedTxns[0].FlagColor == nil {
+		t.Fatal("expected orange flag, got nil")
+	}
+	if *ynabClient.updatedTxns[0].FlagColor != transaction.FlagColorOrange {
+		t.Errorf("flag = %v, want orange", *ynabClient.updatedTxns[0].FlagColor)
+	}
+}
+
+// =============================================================================
+// Test: Ambiguous vector match → categorize best match but flag orange
+// =============================================================================
+
+func TestRun_AmbiguousVectorMatch_FlagsOrange(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Corner Store"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.90},
+	}
+	// Vector results are very close → ambiguous
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "Groceries", Distance: 0.30},
+			{Category: "Dining Out", Distance: 0.31},
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 1 {
+		t.Fatalf("expected 1 update (best match still applied), got %d", len(ynabClient.updatedTxns))
+	}
+	if ynabClient.updatedTxns[0].CategoryID != "cat-groceries" {
+		t.Errorf("categoryID = %q, want %q", ynabClient.updatedTxns[0].CategoryID, "cat-groceries")
+	}
+	if ynabClient.updatedTxns[0].FlagColor == nil {
+		t.Fatal("expected orange flag for ambiguous match, got nil")
+	}
+	if *ynabClient.updatedTxns[0].FlagColor != transaction.FlagColorOrange {
+		t.Errorf("flag = %v, want orange", *ynabClient.updatedTxns[0].FlagColor)
+	}
+}
+
+// =============================================================================
+// Test: Low certainty AND ambiguous → categorize, flag orange (only one flag)
+// =============================================================================
+
+func TestRun_LowCertaintyAndAmbiguous_FlagsOrange(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Weird Place"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.50},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "Groceries", Distance: 0.30},
+			{Category: "Dining Out", Distance: 0.31},
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 1 {
+		t.Fatalf("expected 1 update, got %d", len(ynabClient.updatedTxns))
+	}
+	if ynabClient.updatedTxns[0].FlagColor == nil {
+		t.Fatal("expected orange flag, got nil")
+	}
+}
+
+// =============================================================================
+// Test: AI error → skip transaction, continue others
+// =============================================================================
+
+func TestRun_AIError_ContinuesProcessing(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-err", strPtr("Error Vendor"), nil),
+			makeTxn("txn-ok", strPtr("Good Vendor"), nil),
+		},
+	}
+	aiMock := &queryAwareMockAI{
+		suggestionsByPayee: map[string]AI.CategorySuggestion{
+			"Good Vendor": {Category: "Groceries", Certainty: 0.90},
+		},
+		errsByPayee: map[string]error{
+			"Error Vendor": fmt.Errorf("AI API down"),
+		},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "Groceries", Distance: 0.05},
+			{Category: "Shopping", Distance: 0.6},
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	err := cat.Run()
+	if err != nil {
+		t.Fatalf("Run() should not propagate individual txn errors: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 1 {
+		t.Fatalf("expected 1 update (only good vendor), got %d", len(ynabClient.updatedTxns))
+	}
+	if ynabClient.updatedTxns[0].TxnID != "txn-ok" {
+		t.Errorf("expected txn-ok, got %q", ynabClient.updatedTxns[0].TxnID)
 	}
 }
 
 // =============================================================================
 // Test: Dry run → logs but does NOT update YNAB
-// README: "set to true to log without updating YNAB"
 // =============================================================================
 
 func TestRun_DryRun_DoesNotUpdate(t *testing.T) {
@@ -282,14 +398,17 @@ func TestRun_DryRun_DoesNotUpdate(t *testing.T) {
 			makeTxn("txn-1", strPtr("Whole Foods"), nil),
 		},
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.2},
+			{Category: "Groceries", Distance: 0.02},
 			{Category: "Shopping", Distance: 0.6},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, true) // dryRun=true
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, true) // dryRun=true
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -300,7 +419,7 @@ func TestRun_DryRun_DoesNotUpdate(t *testing.T) {
 }
 
 // =============================================================================
-// Test: No payee name → falls back to memo for search
+// Test: No payee name → falls back to memo
 // =============================================================================
 
 func TestRun_FallsBackToMemo(t *testing.T) {
@@ -310,14 +429,17 @@ func TestRun_FallsBackToMemo(t *testing.T) {
 			makeTxn("txn-1", nil, strPtr("Grocery store purchase")),
 		},
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.90},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.15},
+			{Category: "Groceries", Distance: 0.05},
 			{Category: "Shopping", Distance: 0.5},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -328,7 +450,7 @@ func TestRun_FallsBackToMemo(t *testing.T) {
 }
 
 // =============================================================================
-// Test: No payee and no memo → skip (no search query possible)
+// Test: No payee and no memo → skip
 // =============================================================================
 
 func TestRun_NoPayeeNoMemo_Skips(t *testing.T) {
@@ -338,13 +460,12 @@ func TestRun_NoPayeeNoMemo_Skips(t *testing.T) {
 			makeTxn("txn-1", nil, nil),
 		},
 	}
-	searchSvc := &mockSearch{
-		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.15},
-		},
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.90},
 	}
+	searchSvc := &mockSearch{}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -355,7 +476,7 @@ func TestRun_NoPayeeNoMemo_Skips(t *testing.T) {
 }
 
 // =============================================================================
-// Test: Empty payee string → should also use memo fallback
+// Test: Empty payee string → should use memo fallback
 // =============================================================================
 
 func TestRun_EmptyPayeeString_UseMemo(t *testing.T) {
@@ -365,14 +486,17 @@ func TestRun_EmptyPayeeString_UseMemo(t *testing.T) {
 			makeTxn("txn-1", strPtr(""), strPtr("Amazon purchase")),
 		},
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Shopping", Certainty: 0.95},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Shopping", Distance: 0.1},
+			{Category: "Shopping", Distance: 0.01},
 			{Category: "Groceries", Distance: 0.5},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -383,21 +507,24 @@ func TestRun_EmptyPayeeString_UseMemo(t *testing.T) {
 }
 
 // =============================================================================
-// Test: No search results → skip
+// Test: No vector search results → skip
 // =============================================================================
 
-func TestRun_NoSearchResults_Skips(t *testing.T) {
+func TestRun_NoVectorResults_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized: []*transaction.Transaction{
 			makeTxn("txn-1", strPtr("Totally Unique Vendor"), nil),
 		},
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Random Category", Certainty: 0.80},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{}, // empty results
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -408,8 +535,7 @@ func TestRun_NoSearchResults_Skips(t *testing.T) {
 }
 
 // =============================================================================
-// Test: Category not found in YNAB → skip (search returns a category name
-// that isn't in the current budget)
+// Test: Vector match category not found in YNAB → skip
 // =============================================================================
 
 func TestRun_CategoryNotInYNAB_Skips(t *testing.T) {
@@ -419,13 +545,16 @@ func TestRun_CategoryNotInYNAB_Skips(t *testing.T) {
 			makeTxn("txn-1", strPtr("Vendor"), nil),
 		},
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Nonexistent Category", Certainty: 0.90},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Nonexistent Category", Distance: 0.1}, // not in YNAB
+			{Category: "Nonexistent Category", Distance: 0.1},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -437,7 +566,6 @@ func TestRun_CategoryNotInYNAB_Skips(t *testing.T) {
 
 // =============================================================================
 // Test: Zero uncategorized transactions → no-op
-// README: "no uncategorized transactions found"
 // =============================================================================
 
 func TestRun_ZeroTransactions_NoOp(t *testing.T) {
@@ -445,9 +573,10 @@ func TestRun_ZeroTransactions_NoOp(t *testing.T) {
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized:  []*transaction.Transaction{},
 	}
+	aiMock := &mockAI{}
 	searchSvc := &mockSearch{}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -483,71 +612,27 @@ func TestRun_HiddenDeletedCategoriesExcluded(t *testing.T) {
 			makeTxn("txn-1", strPtr("Test Vendor"), nil),
 		},
 	}
-
-	// Search returns the hidden category as best match
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Hidden Category", Certainty: 0.95},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
 			{Category: "Hidden Category", Distance: 0.1},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should not update because "Hidden Category" is hidden and shouldn't be in the map
 	if len(ynabClient.updatedTxns) != 0 {
 		t.Errorf("expected 0 updates (hidden category should be excluded), got %d", len(ynabClient.updatedTxns))
 	}
 }
 
 // =============================================================================
-// Test: Multiple transactions in one run — mixed results with query-aware mock
-// =============================================================================
-
-func TestRun_MultipleTransactions_MixedResults(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-good", strPtr("Whole Foods"), nil),
-			makeTxn("txn-low", strPtr("Unknown XYZ"), nil),
-			makeTxn("txn-ambig", strPtr("Corner Store"), nil),
-		},
-	}
-
-	searchSvc := &queryAwareMockSearch{
-		resultsByQuery: map[string][]types.SearchResponse{
-			"Whole Foods": {
-				{Category: "Groceries", Distance: 0.2},
-				{Category: "Shopping", Distance: 0.6},
-			},
-			"Unknown XYZ": {
-				{Category: "Groceries", Distance: 0.9}, // above threshold
-			},
-			"Corner Store": {
-				{Category: "Groceries", Distance: 0.30},
-				{Category: "Dining Out", Distance: 0.31}, // ambiguous
-			},
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Only "Whole Foods" should be categorized
-	if len(ynabClient.updatedTxns) != 1 {
-		t.Fatalf("expected 1 update, got %d", len(ynabClient.updatedTxns))
-	}
-	if ynabClient.updatedTxns[0].TxnID != "txn-good" {
-		t.Errorf("expected txn-good to be updated, got %q", ynabClient.updatedTxns[0].TxnID)
-	}
-}
-
-// =============================================================================
-// Test: Search error for a single transaction → continues with others
+// Test: Search error → counts as error for that transaction
 // =============================================================================
 
 func TestRun_SearchError_ContinuesProcessing(t *testing.T) {
@@ -558,13 +643,15 @@ func TestRun_SearchError_ContinuesProcessing(t *testing.T) {
 			makeTxn("txn-2", strPtr("Vendor 2"), nil),
 		},
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.90},
+	}
 	searchSvc := &mockSearch{
 		searchErr: fmt.Errorf("search API down"),
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	err := cat.Run()
-	// Run should not return an error — individual txn errors are logged, not propagated
 	if err != nil {
 		t.Fatalf("Run() returned error: %v", err)
 	}
@@ -582,9 +669,10 @@ func TestRun_GetCategoriesError_ReturnsError(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroupsErr: fmt.Errorf("YNAB API error"),
 	}
+	aiMock := &mockAI{}
 	searchSvc := &mockSearch{}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	err := cat.Run()
 	if err == nil {
 		t.Fatal("expected error when GetCategories fails, got nil")
@@ -600,9 +688,10 @@ func TestRun_GetTransactionsError_ReturnsError(t *testing.T) {
 		categoryGroups:   defaultCategoryGroups(),
 		uncategorizedErr: fmt.Errorf("YNAB API error"),
 	}
+	aiMock := &mockAI{}
 	searchSvc := &mockSearch{}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	err := cat.Run()
 	if err == nil {
 		t.Fatal("expected error when GetUncategorizedTransactions fails, got nil")
@@ -610,7 +699,7 @@ func TestRun_GetTransactionsError_ReturnsError(t *testing.T) {
 }
 
 // =============================================================================
-// Test: UpdateTransaction error → categorizeTransaction returns error
+// Test: UpdateTransaction error → counts as error
 // =============================================================================
 
 func TestRun_UpdateError_CountsAsError(t *testing.T) {
@@ -621,15 +710,17 @@ func TestRun_UpdateError_CountsAsError(t *testing.T) {
 		},
 		updateErr: fmt.Errorf("YNAB update failed"),
 	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.2},
+			{Category: "Groceries", Distance: 0.02},
 			{Category: "Shopping", Distance: 0.6},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	// Run should not return an error — individual txn errors are logged
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	err := cat.Run()
 	if err != nil {
 		t.Fatalf("Run() should not propagate individual txn errors, got: %v", err)
@@ -637,60 +728,180 @@ func TestRun_UpdateError_CountsAsError(t *testing.T) {
 }
 
 // =============================================================================
-// Test: Ambiguity check with very small best distance (< 0.1)
-// The code has a minimum gap of 0.01 to avoid division-by-zero edge cases
+// Test: Clear non-ambiguous vector match passes ambiguity check
 // =============================================================================
 
-func TestRun_AmbiguityWithSmallDistance_UsesMinimumGap(t *testing.T) {
+func TestRun_ClearNonAmbiguousMatch_NoFlag(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Test"), nil),
+			makeTxn("txn-1", strPtr("Chipotle"), nil),
 		},
 	}
-	// Best distance = 0.05, 10% = 0.005, but minimum threshold is 0.01
-	// Gap = 0.055 - 0.05 = 0.005 < 0.01 → ambiguous
-	searchSvc := &mockSearch{
-		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.05},
-			{Category: "Dining Out", Distance: 0.055},
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(ynabClient.updatedTxns) != 0 {
-		t.Errorf("expected 0 updates for ambiguous small-distance match, got %d", len(ynabClient.updatedTxns))
-	}
-}
-
-// =============================================================================
-// Test: Single search result (no ambiguity check needed) → should update
-// =============================================================================
-
-func TestRun_SingleResult_Updates(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Whole Foods"), nil),
-		},
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Dining Out", Certainty: 0.95},
 	}
 	searchSvc := &mockSearch{
 		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.3},
+			{Category: "Dining Out", Distance: 0.02},
+			{Category: "Groceries", Distance: 0.50},
 		},
 	}
 
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
 	if err := cat.Run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if len(ynabClient.updatedTxns) != 1 {
 		t.Fatalf("expected 1 update, got %d", len(ynabClient.updatedTxns))
+	}
+	if ynabClient.updatedTxns[0].FlagColor != nil {
+		t.Errorf("expected no flag for clear match, got %v", *ynabClient.updatedTxns[0].FlagColor)
+	}
+}
+
+// =============================================================================
+// Test: Single vector result (no ambiguity check needed) → should update
+// =============================================================================
+
+func TestRun_SingleVectorResult_Updates(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Whole Foods"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.90},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "Groceries", Distance: 0.03},
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 1 {
+		t.Fatalf("expected 1 update, got %d", len(ynabClient.updatedTxns))
+	}
+}
+
+// =============================================================================
+// Test: Deleted group → all categories in that group should be excluded
+// =============================================================================
+
+func TestRun_DeletedGroupExcluded(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: []*category.GroupWithCategories{
+			{
+				Name: "Active", Hidden: false, Deleted: false,
+				Categories: []*category.Category{
+					{ID: "cat-active", Name: "Active Cat", Hidden: false, Deleted: false},
+				},
+			},
+			{
+				Name: "Deleted Group", Hidden: false, Deleted: true,
+				Categories: []*category.Category{
+					{ID: "cat-in-deleted", Name: "In Deleted Group", Hidden: false, Deleted: false},
+				},
+			},
+		},
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Test"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "In Deleted Group", Certainty: 0.95},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "In Deleted Group", Distance: 0.1},
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Errorf("expected 0 updates (deleted group excluded), got %d", len(ynabClient.updatedTxns))
+	}
+}
+
+// =============================================================================
+// Test: Multiple transactions — mixed results
+// =============================================================================
+
+func TestRun_MultipleTransactions_MixedResults(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-good", strPtr("Whole Foods"), nil),
+			makeTxn("txn-err", strPtr("Error Vendor"), nil),
+		},
+	}
+
+	aiMock := &queryAwareMockAI{
+		suggestionsByPayee: map[string]AI.CategorySuggestion{
+			"Whole Foods": {Category: "Groceries", Certainty: 0.95},
+		},
+		errsByPayee: map[string]error{
+			"Error Vendor": fmt.Errorf("transient API failure"),
+		},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "Groceries", Distance: 0.02},
+			{Category: "Shopping", Distance: 0.6},
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("Run() should not propagate individual txn errors: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 1 {
+		t.Fatalf("expected 1 update (only Whole Foods), got %d", len(ynabClient.updatedTxns))
+	}
+	if ynabClient.updatedTxns[0].TxnID != "txn-good" {
+		t.Errorf("expected txn-good, got %q", ynabClient.updatedTxns[0].TxnID)
+	}
+}
+
+// =============================================================================
+// Test: Vector distance too high → skip transaction
+// =============================================================================
+
+func TestRun_VectorDistanceTooHigh_Skips(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Random Vendor"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{
+			{Category: "Groceries", Distance: 0.95}, // above 0.8 default threshold
+		},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Errorf("expected 0 updates (vector distance too high), got %d", len(ynabClient.updatedTxns))
 	}
 }
 
@@ -724,155 +935,5 @@ func TestPayeeNameOrMemo(t *testing.T) {
 				t.Errorf("payeeNameOrMemo() = %q, want %q", result, tt.expected)
 			}
 		})
-	}
-}
-
-// =============================================================================
-// Test: Confidence threshold at exact boundary
-// Distance == threshold should NOT be categorized (> check, not >=)
-// Per code: bestMatch.Distance > c.confidenceThreshold
-// But per README: "exceeds CONFIDENCE_THRESHOLD" — "exceeds" means >
-// =============================================================================
-
-// =============================================================================
-// Test: Deleted group → all categories in that group should be excluded
-// =============================================================================
-
-func TestRun_DeletedGroupExcluded(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: []*category.GroupWithCategories{
-			{
-				Name: "Active", Hidden: false, Deleted: false,
-				Categories: []*category.Category{
-					{ID: "cat-active", Name: "Active Cat", Hidden: false, Deleted: false},
-				},
-			},
-			{
-				Name: "Deleted Group", Hidden: false, Deleted: true,
-				Categories: []*category.Category{
-					{ID: "cat-in-deleted", Name: "In Deleted Group", Hidden: false, Deleted: false},
-				},
-			},
-		},
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Test"), nil),
-		},
-	}
-	searchSvc := &mockSearch{
-		results: []types.SearchResponse{
-			{Category: "In Deleted Group", Distance: 0.1},
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(ynabClient.updatedTxns) != 0 {
-		t.Errorf("expected 0 updates (deleted group excluded), got %d", len(ynabClient.updatedTxns))
-	}
-}
-
-// =============================================================================
-// Test: Ambiguity gap exactly at threshold boundary → should update
-// gap == ambiguityThreshold is NOT < threshold, so it passes
-// =============================================================================
-
-func TestRun_AmbiguityGapExactlyAtThreshold_Updates(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Border Ambiguity"), nil),
-		},
-	}
-	// Best distance = 0.50, 10% = 0.05
-	// Gap = 0.55 - 0.50 = 0.05, which equals threshold exactly → NOT ambiguous
-	searchSvc := &mockSearch{
-		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.50},
-			{Category: "Dining Out", Distance: 0.55},
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(ynabClient.updatedTxns) != 1 {
-		t.Errorf("expected 1 update (gap == threshold should pass), got %d", len(ynabClient.updatedTxns))
-	}
-}
-
-// =============================================================================
-// Test: Mixed error and success across multiple transactions with query-aware mock
-// Verifies that a search error on one txn doesn't block processing of others
-// =============================================================================
-
-func TestRun_SearchErrorOnOneTxn_ContinuesOthers(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-err", strPtr("Error Vendor"), nil),
-			makeTxn("txn-ok", strPtr("Good Vendor"), nil),
-		},
-	}
-
-	searchSvc := &queryAwareMockSearch{
-		resultsByQuery: map[string][]types.SearchResponse{
-			"Good Vendor": {
-				{Category: "Groceries", Distance: 0.2},
-				{Category: "Shopping", Distance: 0.6},
-			},
-		},
-		errsByQuery: map[string]error{
-			"Error Vendor": fmt.Errorf("transient API failure"),
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("Run() should not propagate individual txn errors: %v", err)
-	}
-
-	if len(ynabClient.updatedTxns) != 1 {
-		t.Fatalf("expected 1 update (only good vendor), got %d", len(ynabClient.updatedTxns))
-	}
-	if ynabClient.updatedTxns[0].TxnID != "txn-ok" {
-		t.Errorf("expected txn-ok, got %q", ynabClient.updatedTxns[0].TxnID)
-	}
-}
-
-// =============================================================================
-// Test: Confidence threshold at exact boundary
-// Distance == threshold should NOT be categorized (> check, not >=)
-// Per code: bestMatch.Distance > c.confidenceThreshold
-// But per README: "exceeds CONFIDENCE_THRESHOLD" — "exceeds" means >
-// =============================================================================
-
-func TestRun_ConfidenceAtExactThreshold_Updates(t *testing.T) {
-	ynabClient := &mockYNABClient{
-		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
-			makeTxn("txn-1", strPtr("Border Case"), nil),
-		},
-	}
-	// Distance exactly equals threshold
-	searchSvc := &mockSearch{
-		results: []types.SearchResponse{
-			{Category: "Groceries", Distance: 0.7},
-			{Category: "Shopping", Distance: 0.9},
-		},
-	}
-
-	cat := New(ynabClient, searchSvc, newMockSearchStore(), newLogger(), 0.7, false)
-	if err := cat.Run(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Distance 0.7 is NOT > 0.7, so it should pass the confidence check
-	if len(ynabClient.updatedTxns) != 1 {
-		t.Errorf("expected 1 update (distance == threshold should pass), got %d", len(ynabClient.updatedTxns))
 	}
 }

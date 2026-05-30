@@ -25,10 +25,14 @@ type Config struct {
 	OpenAIAPIKey        string
 	OpenAIBaseURL       string
 
+	// Chat model override (empty = provider default)
+	ChatModel string
+
 	// App settings
-	ConfidenceThreshold float64
+	ConfidenceThreshold float64 // AI certainty threshold (0.0–1.0); default 0.75
 	DryRun              bool
 	RunInterval         time.Duration
+	MaxTransactions     int // max uncategorized txns to process per run; 0 = unlimited
 }
 
 // Load reads configuration from environment variables, returning an error
@@ -48,8 +52,11 @@ func Load() (*Config, error) {
 		OpenAIBaseURL:       os.Getenv("OPENAI_BASE_URL"),
 	}
 
-	// Confidence threshold
-	threshStr := getEnvDefault("CONFIDENCE_THRESHOLD", "0.7")
+	// Chat model override
+	cfg.ChatModel = os.Getenv("CHAT_MODEL")
+
+	// Confidence threshold (AI certainty; default 0.75)
+	threshStr := getEnvDefault("CONFIDENCE_THRESHOLD", "0.75")
 	threshold, err := strconv.ParseFloat(threshStr, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid CONFIDENCE_THRESHOLD %q: %w", threshStr, err)
@@ -66,6 +73,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid RUN_INTERVAL %q: %w", intervalStr, err)
 	}
 	cfg.RunInterval = interval
+
+	// Max transactions per run (0 = unlimited)
+	maxTxnStr := getEnvDefault("MAX_TRANSACTIONS", "0")
+	maxTxn, err := strconv.Atoi(maxTxnStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid MAX_TRANSACTIONS %q: %w", maxTxnStr, err)
+	}
+	cfg.MaxTransactions = maxTxn
 
 	// Validate required fields
 	if cfg.YNABAccessToken == "" {

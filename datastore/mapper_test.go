@@ -1,7 +1,6 @@
 package datastore
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 
@@ -84,6 +83,41 @@ func TestSaveEmbeddings_DBError(t *testing.T) {
 	}
 }
 
+func TestDeleteAllEmbeddings_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectExec("DELETE FROM searchable_categories").
+		WillReturnResult(sqlmock.NewResult(0, 42))
+
+	m := NewMapper(db)
+	if err := m.DeleteAllEmbeddings(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDeleteAllEmbeddings_DBError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectExec("DELETE FROM searchable_categories").
+		WillReturnError(fmt.Errorf("db delete error"))
+
+	m := NewMapper(db)
+	if err := m.DeleteAllEmbeddings(); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
 func TestFindRelevantContent_Success(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -157,23 +191,24 @@ func TestFindRelevantContent_QueryError(t *testing.T) {
 	}
 }
 
-func TestFindRelevantContent_ErrNoRows(t *testing.T) {
+func TestFindRelevantContent_RowsErr(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("error creating sqlmock: %v", err)
 	}
 	defer db.Close()
 
+	rows := sqlmock.NewRows([]string{"category", "description", "distance"}).
+		AddRow("Groceries", "food items", 0.15).
+		RowError(0, fmt.Errorf("row iteration error"))
+
 	mock.ExpectQuery("SELECT sc.category, sc.description, vector_distance_cos").
-		WillReturnError(sql.ErrNoRows)
+		WillReturnRows(rows)
 
 	m := NewMapper(db)
-	results, err := m.FindRelevantContent([]float32{0.1, 0.2})
-	if err != nil {
-		t.Fatalf("ErrNoRows should not propagate as error, got: %v", err)
-	}
-	if results != nil {
-		t.Errorf("expected nil results for ErrNoRows, got %v", results)
+	_, err = m.FindRelevantContent([]float32{0.1, 0.2})
+	if err == nil {
+		t.Fatal("expected error from rows.Err(), got nil")
 	}
 }
 

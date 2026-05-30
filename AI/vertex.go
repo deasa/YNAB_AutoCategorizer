@@ -12,6 +12,7 @@ type vertexAI struct {
 	projectID string
 	location  string
 	model     string
+	chatModel string
 	client    *genai.Client
 }
 
@@ -85,5 +86,42 @@ func WithVertexModel(model string) VertexAIOption {
 	return func(v *vertexAI) {
 		v.model = model
 	}
+}
+
+func WithVertexChatModel(model string) VertexAIOption {
+	return func(v *vertexAI) {
+		v.chatModel = model
+	}
+}
+
+func (v *vertexAI) CategorizeTransaction(ctx context.Context, payee string, amount float64, categories []string) (CategorySuggestion, error) {
+	model := v.chatModel
+	if model == "" {
+		model = "gemini-2.5-flash"
+	}
+
+	prompt := buildCategorizationPrompt(payee, amount, categories)
+
+	temp := float32(0.0)
+	result, err := v.client.Models.GenerateContent(ctx, model, genai.Text(prompt), &genai.GenerateContentConfig{
+		SystemInstruction: &genai.Content{
+			Parts: []*genai.Part{genai.NewPartFromText("You are a financial transaction categorizer. Respond with ONLY a JSON object, no other text.")},
+		},
+		Temperature:       &temp,
+	})
+	if err != nil {
+		return CategorySuggestion{}, fmt.Errorf("generate content error: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return CategorySuggestion{}, fmt.Errorf("no content in generate response")
+	}
+
+	text := result.Candidates[0].Content.Parts[0].Text
+	if text == "" {
+		return CategorySuggestion{}, fmt.Errorf("empty text in generate response")
+	}
+
+	return parseCategorySuggestion(text)
 }
 

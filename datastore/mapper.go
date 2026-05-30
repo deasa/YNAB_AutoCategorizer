@@ -3,6 +3,7 @@ package datastore
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/deasa/YNAB_AutoCategorizer/types"
@@ -11,8 +12,6 @@ import (
 type SearchStore interface {
 	SaveEmbeddings(category, description string, embeddings []float32) error
 	FindRelevantContent(queryEmbeddings []float32) ([]types.SearchResponse, error)
-	HasLearnedPayeeCategory(payeeName, category string) (bool, error)
-	MarkPayeeLearned(payeeName, category string) error
 }
 
 type Mapper struct {
@@ -35,30 +34,22 @@ func (m *Mapper) SaveEmbeddings(category, description string, embeddings []float
 	return nil
 }
 
-func serializeEmbeddings(embeddings []float32) string {
-	return strings.Join(strings.Split(fmt.Sprintf("%v", embeddings), " "), ", ")
-}
-
-// HasLearnedPayeeCategory checks if a specific payee+category pair has already been learned.
-func (m *Mapper) HasLearnedPayeeCategory(payeeName, category string) (bool, error) {
-	var count int
-	err := m.db.QueryRow(`SELECT COUNT(*) FROM learned_payees WHERE payee_name = ? AND category = ?`, payeeName, category).Scan(&count)
-	if err != nil {
-		return false, fmt.Errorf("checking learned payee: %w", err)
-	}
-	return count > 0, nil
-}
-
-// MarkPayeeLearned records that a payee has been learned so we don't re-embed it.
-func (m *Mapper) MarkPayeeLearned(payeeName, category string) error {
-	_, err := m.db.Exec(
-		`INSERT OR IGNORE INTO learned_payees (payee_name, category) VALUES (?, ?)`,
-		payeeName, category,
-	)
-	if err != nil {
-		return fmt.Errorf("marking payee learned: %w", err)
+// DeleteAllEmbeddings removes every row from searchable_categories.
+// Used by the seeder to start from a clean slate so re-seeding does not
+// create duplicate category rows.
+func (m *Mapper) DeleteAllEmbeddings() error {
+	if _, err := m.db.Exec(`DELETE FROM searchable_categories`); err != nil {
+		return fmt.Errorf("error deleting embeddings: %w", err)
 	}
 	return nil
+}
+
+func serializeEmbeddings(embeddings []float32) string {
+	parts := make([]string, len(embeddings))
+	for i, v := range embeddings {
+		parts[i] = strconv.FormatFloat(float64(v), 'g', -1, 32)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 func (m *Mapper) FindRelevantContent(queryEmbeddings []float32) ([]types.SearchResponse, error) {
@@ -71,10 +62,6 @@ func (m *Mapper) FindRelevantContent(queryEmbeddings []float32) ([]types.SearchR
 	serialized := serializeEmbeddings(queryEmbeddings)
 	rows, err := m.db.Query(query, serialized, serialized)
 	if err != nil {
-		// norows error is not an error
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("error querying embeddings: %w", err)
 	}
 	defer rows.Close()
@@ -87,6 +74,9 @@ func (m *Mapper) FindRelevantContent(queryEmbeddings []float32) ([]types.SearchR
 			return nil, fmt.Errorf("error scanning embeddings: %w", err)
 		}
 		results = append(results, result)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating embeddings rows: %w", err)
 	}
 	return results, nil
 }

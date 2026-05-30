@@ -47,18 +47,30 @@ func Run(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", entry.Name(), err)
 		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("beginning transaction for %s: %w", entry.Name(), err)
+		}
+
 		for _, stmt := range strings.Split(string(data), ";") {
 			stmt = strings.TrimSpace(stmt)
 			if stmt == "" {
 				continue
 			}
-			if _, err = db.Exec(stmt); err != nil {
+			if _, err = tx.Exec(stmt); err != nil {
+				tx.Rollback()
 				return fmt.Errorf("executing %s: %w", entry.Name(), err)
 			}
 		}
 
-		if _, err := db.Exec(`INSERT INTO schema_migrations (filename) VALUES (?)`, entry.Name()); err != nil {
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (filename) VALUES (?)`, entry.Name()); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("recording migration %s: %w", entry.Name(), err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing migration %s: %w", entry.Name(), err)
 		}
 	}
 	return nil

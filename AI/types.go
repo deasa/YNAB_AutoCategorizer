@@ -9,3 +9,9 @@ type EmbeddingData struct {
 type EmbeddingResponse struct {
 	Data []EmbeddingData
 }
+
+// CategorySuggestion is the result of an AI-based transaction categorization.
+type CategorySuggestion struct {
+	Category  string  // Suggested category name
+	Certainty float64 // 0.0–1.0
+}
