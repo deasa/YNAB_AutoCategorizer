@@ -141,6 +141,85 @@ func TestRun_SkipsTransfers(t *testing.T) {
 	}
 }
 
+func TestRun_SkipsVenmo(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Venmo"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{{Category: "Groceries", Distance: 0.02}},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected Venmo to be skipped (0 updates), got %d", len(ynabClient.updatedTxns))
+	}
+}
+
+func TestRun_NONESuggestion_Skips(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: defaultCategoryGroups(),
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Some Rare One-Off Vendor"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "NONE", Certainty: 0.95},
+	}
+	// Even though search would resolve to a real category, NONE must short-circuit.
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{{Category: "Groceries", Distance: 0.02}},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected NONE suggestion to be skipped (0 updates), got %d", len(ynabClient.updatedTxns))
+	}
+}
+
+func TestRun_ExcludedCategory_NotApplied(t *testing.T) {
+	ynabClient := &mockYNABClient{
+		categoryGroups: []*category.GroupWithCategories{
+			{
+				Name: "Savings", Hidden: false, Deleted: false,
+				Categories: []*category.Category{
+					{ID: "cat-bday", Name: "Birthday - Marie Gifts", Hidden: false, Deleted: false},
+					{ID: "cat-groceries", Name: "Groceries", Hidden: false, Deleted: false},
+				},
+			},
+		},
+		uncategorized: []*transaction.Transaction{
+			makeTxn("txn-1", strPtr("Toy Store"), nil),
+		},
+	}
+	aiMock := &mockAI{
+		suggestion: AI.CategorySuggestion{Category: "Birthday - Marie Gifts", Certainty: 0.95},
+	}
+	searchSvc := &mockSearch{
+		results: []types.SearchResponse{{Category: "Birthday - Marie Gifts", Distance: 0.02}},
+	}
+
+	cat := New(ynabClient, aiMock, searchSvc, newLogger(), 0.75, false)
+	cat.SetExcludedCategoryKeywords([]string{"Birthday", "Gift"})
+	if err := cat.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected excluded category to never be applied (0 updates), got %d", len(ynabClient.updatedTxns))
+	}
+}
+
 func TestRun_MaxTransactions_LimitsProcessing(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
@@ -235,10 +314,10 @@ func TestRun_HighCertainty_ClearMatch_Updates(t *testing.T) {
 }
 
 // =============================================================================
-// Test: Low AI certainty → should categorize but flag orange
+// Test: Low AI certainty → skip entirely (precision-first; don't apply a guess)
 // =============================================================================
 
-func TestRun_LowAICertainty_FlagsOrange(t *testing.T) {
+func TestRun_LowAICertainty_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized: []*transaction.Transaction{
@@ -260,22 +339,16 @@ func TestRun_LowAICertainty_FlagsOrange(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(ynabClient.updatedTxns) != 1 {
-		t.Fatalf("expected 1 update, got %d", len(ynabClient.updatedTxns))
-	}
-	if ynabClient.updatedTxns[0].FlagColor == nil {
-		t.Fatal("expected orange flag, got nil")
-	}
-	if *ynabClient.updatedTxns[0].FlagColor != transaction.FlagColorOrange {
-		t.Errorf("flag = %v, want orange", *ynabClient.updatedTxns[0].FlagColor)
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected 0 updates (low certainty skipped), got %d", len(ynabClient.updatedTxns))
 	}
 }
 
 // =============================================================================
-// Test: Ambiguous vector match → categorize best match but flag orange
+// Test: Ambiguous vector match → skip entirely (don't apply an uncertain match)
 // =============================================================================
 
-func TestRun_AmbiguousVectorMatch_FlagsOrange(t *testing.T) {
+func TestRun_AmbiguousVectorMatch_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized: []*transaction.Transaction{
@@ -298,25 +371,16 @@ func TestRun_AmbiguousVectorMatch_FlagsOrange(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(ynabClient.updatedTxns) != 1 {
-		t.Fatalf("expected 1 update (best match still applied), got %d", len(ynabClient.updatedTxns))
-	}
-	if ynabClient.updatedTxns[0].CategoryID != "cat-groceries" {
-		t.Errorf("categoryID = %q, want %q", ynabClient.updatedTxns[0].CategoryID, "cat-groceries")
-	}
-	if ynabClient.updatedTxns[0].FlagColor == nil {
-		t.Fatal("expected orange flag for ambiguous match, got nil")
-	}
-	if *ynabClient.updatedTxns[0].FlagColor != transaction.FlagColorOrange {
-		t.Errorf("flag = %v, want orange", *ynabClient.updatedTxns[0].FlagColor)
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected 0 updates (ambiguous match skipped), got %d", len(ynabClient.updatedTxns))
 	}
 }
 
 // =============================================================================
-// Test: Low certainty AND ambiguous → categorize, flag orange (only one flag)
+// Test: Low certainty (also ambiguous) → skip entirely
 // =============================================================================
 
-func TestRun_LowCertaintyAndAmbiguous_FlagsOrange(t *testing.T) {
+func TestRun_LowCertaintyAndAmbiguous_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
 		uncategorized: []*transaction.Transaction{
@@ -338,11 +402,8 @@ func TestRun_LowCertaintyAndAmbiguous_FlagsOrange(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(ynabClient.updatedTxns) != 1 {
-		t.Fatalf("expected 1 update, got %d", len(ynabClient.updatedTxns))
-	}
-	if ynabClient.updatedTxns[0].FlagColor == nil {
-		t.Fatal("expected orange flag, got nil")
+	if len(ynabClient.updatedTxns) != 0 {
+		t.Fatalf("expected 0 updates (low certainty skipped), got %d", len(ynabClient.updatedTxns))
 	}
 }
 

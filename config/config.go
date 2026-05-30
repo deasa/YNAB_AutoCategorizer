@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -33,6 +34,10 @@ type Config struct {
 	DryRun              bool
 	RunInterval         time.Duration
 	MaxTransactions     int // max uncategorized txns to process per run; 0 = unlimited
+
+	// ExcludedCategoryKeywords: categories whose name contains any of these
+	// (case-insensitive) are never auto-applied. Default: Birthday, Gift.
+	ExcludedCategoryKeywords []string
 }
 
 // Load reads configuration from environment variables, returning an error
@@ -81,6 +86,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid MAX_TRANSACTIONS %q: %w", maxTxnStr, err)
 	}
 	cfg.MaxTransactions = maxTxn
+
+	// Excluded category keywords (case-insensitive substring match; default Birthday, Gift)
+	excludedStr := getEnvDefault("EXCLUDED_CATEGORY_KEYWORDS", "Birthday,Gift")
+	for _, kw := range strings.Split(excludedStr, ",") {
+		if kw = strings.TrimSpace(kw); kw != "" {
+			cfg.ExcludedCategoryKeywords = append(cfg.ExcludedCategoryKeywords, kw)
+		}
+	}
 
 	// Validate required fields
 	if cfg.YNABAccessToken == "" {
