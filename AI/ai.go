@@ -130,6 +130,7 @@ Rules:
 - Only categorize ROUTINE, recurring, or clearly-identifiable purchases (e.g. car insurance, a grocery-store run, a fast-food purchase, a utility bill).
 - Dining out, restaurants, eating out, fast food, and groceries all map to "Discretionary".
 - Amazon purchases map to "Discretionary".
+- Clear income and deposits (interest, paycheck/employee/employer contributions, HSA deposits, refunds, starting balances) map to "Inflow: Ready to Assign".
 - If the purchase is NOT routine, or you cannot confidently map it to one of the categories, respond with "NONE".
 - It is better to respond "NONE" than to guess. Prefer fewer, correct categorizations over wrong ones.
 - The category MUST be either one exact name from the list above, or "NONE".

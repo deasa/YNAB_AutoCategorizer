@@ -116,8 +116,8 @@ func TestBuildCategorizationPrompt(t *testing.T) {
 		}
 	}
 
-	// Should instruct the NONE fallback and the Discretionary mappings
-	for _, want := range []string{"NONE", "Discretionary", "Amazon", "routine"} {
+	// Should instruct the NONE fallback, Discretionary mappings, and income rule
+	for _, want := range []string{"NONE", "Discretionary", "Amazon", "routine", "income", "Inflow: Ready to Assign"} {
 		if !contains(prompt, want) {
 			t.Errorf("prompt should mention %q", want)
 		}
