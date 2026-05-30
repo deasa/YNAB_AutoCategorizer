@@ -15,6 +15,7 @@ func clearEnv(t *testing.T) {
 		"GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
 		"OPENAI_API_KEY", "OPENAI_BASE_URL",
 		"CONFIDENCE_THRESHOLD", "DRY_RUN", "RUN_INTERVAL", "MAX_TRANSACTIONS",
+		"EXCLUDED_CATEGORY_KEYWORDS",
 	} {
 		t.Setenv(key, "")
 		os.Unsetenv(key)
@@ -305,6 +306,46 @@ func TestLoad_InvalidMaxTransactions(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid MAX_TRANSACTIONS, got nil")
+	}
+}
+
+func TestLoad_ExcludedCategoryKeywords_Default(t *testing.T) {
+	clearEnv(t)
+	setRequiredEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"Birthday", "Gift"}
+	if len(cfg.ExcludedCategoryKeywords) != len(want) {
+		t.Fatalf("ExcludedCategoryKeywords = %v, want %v", cfg.ExcludedCategoryKeywords, want)
+	}
+	for i, w := range want {
+		if cfg.ExcludedCategoryKeywords[i] != w {
+			t.Errorf("ExcludedCategoryKeywords[%d] = %q, want %q", i, cfg.ExcludedCategoryKeywords[i], w)
+		}
+	}
+}
+
+func TestLoad_ExcludedCategoryKeywords_Custom(t *testing.T) {
+	clearEnv(t)
+	setRequiredEnv(t)
+	t.Setenv("EXCLUDED_CATEGORY_KEYWORDS", "Vacation, Holiday ,")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Empty entries trimmed/dropped; surrounding whitespace trimmed.
+	want := []string{"Vacation", "Holiday"}
+	if len(cfg.ExcludedCategoryKeywords) != len(want) {
+		t.Fatalf("ExcludedCategoryKeywords = %v, want %v", cfg.ExcludedCategoryKeywords, want)
+	}
+	for i, w := range want {
+		if cfg.ExcludedCategoryKeywords[i] != w {
+			t.Errorf("ExcludedCategoryKeywords[%d] = %q, want %q", i, cfg.ExcludedCategoryKeywords[i], w)
+		}
 	}
 }
 
