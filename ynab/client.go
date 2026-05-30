@@ -51,19 +51,9 @@ func (c *Client) GetCategories() ([]*category.GroupWithCategories, error) {
 	return snapshot.GroupWithCategories, nil
 }
 
-// GetAllTransactions fetches all transactions from the budget (categorized and uncategorized).
-func (c *Client) GetAllTransactions() ([]*transaction.Transaction, error) {
-	txns, err := c.client.Transaction().GetTransactions(c.budgetID, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching all transactions: %w", err)
-	}
-
-	c.logger.Printf("fetched %d total transactions", len(txns))
-	return txns, nil
-}
-
 // UpdateTransactionCategory updates a transaction's category in YNAB.
-func (c *Client) UpdateTransactionCategory(txn *transaction.Transaction, categoryID string) error {
+// If flagColor is non-nil, sets the flag color on the transaction.
+func (c *Client) UpdateTransactionCategory(txn *transaction.Transaction, categoryID string, flagColor *transaction.FlagColor) error {
 	payload := transaction.PayloadTransaction{
 		ID:         txn.ID,
 		AccountID:  txn.AccountID,
@@ -72,6 +62,7 @@ func (c *Client) UpdateTransactionCategory(txn *transaction.Transaction, categor
 		Cleared:    txn.Cleared,
 		Approved:   txn.Approved,
 		CategoryID: &categoryID,
+		FlagColor:  flagColor,
 	}
 
 	_, err := c.client.Transaction().UpdateTransaction(c.budgetID, txn.ID, payload)

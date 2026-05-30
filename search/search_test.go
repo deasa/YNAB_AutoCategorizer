@@ -20,8 +20,8 @@ func (m *mockAI) GetEmbeddings(_ context.Context, _ string) (AI.EmbeddingRespons
 	return m.embeddings, m.err
 }
 
-func (m *mockAI) GetTokenCount(_ string) (int, error) {
-	return 0, nil
+func (m *mockAI) CategorizeTransaction(_ context.Context, _ string, _ float64, _ []string) (AI.CategorySuggestion, error) {
+	return AI.CategorySuggestion{}, nil
 }
 
 type mockMapper struct {
@@ -42,14 +42,6 @@ func (m *mockMapper) SaveEmbeddings(category, description string, embeddings []f
 	m.savedContent = description
 	m.savedEmbedding = embeddings
 	return m.saveErr
-}
-
-func (m *mockMapper) HasLearnedPayeeCategory(payeeName, category string) (bool, error) {
-	return false, nil
-}
-
-func (m *mockMapper) MarkPayeeLearned(payeeName, category string) error {
-	return nil
 }
 
 // --- Tests ---

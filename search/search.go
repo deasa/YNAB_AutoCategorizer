@@ -47,7 +47,7 @@ type search struct {
 	mapper datastore.SearchStore
 }
 
-func (s search) Search(query string) ([]types.SearchResponse, error) {
+func (s *search) Search(query string) ([]types.SearchResponse, error) {
 	// get embeddings for the query
 	embeddings, err := s.ai.GetEmbeddings(context.Background(), query)
 	if err != nil {
@@ -60,7 +60,7 @@ func (s search) Search(query string) ([]types.SearchResponse, error) {
 	return s.mapper.FindRelevantContent(embeddings.Data[0].Embedding)
 }
 
-func (s search) InsertContent(ctx context.Context, category string, description string) error {
+func (s *search) InsertContent(ctx context.Context, category string, description string) error {
 	// get embeddings for the description
 	embeddings, err := s.ai.GetEmbeddings(ctx, description)
 	if err != nil {
