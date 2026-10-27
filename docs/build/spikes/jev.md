@@ -179,3 +179,98 @@ type Model interface {
   like convention gaps, like Discretionary.
 - Try 3 instead of 5 history labels, and include each label's date.
 - Try larger batches (≈40) to measure cross-talk vs batch size.
+
+## Per-category difficulty (for the category simplification)
+
+Task M0-1b, computed **offline** from M0-1's cached answers with zero API calls. The Jev call counter stayed at 300. To
+reproduce: `cd spikes/jev && go run . -cache <dir> -percat`. `-percat` implies `-offline`, which fails rather than call
+YNAB or Jev. Scope: `batch10+history+policy`, samples A and B pooled (n=200, top-1 79%). The last column is the bare
+`single` variant on sample A (n=100), for contrast. "<τ0.8" is the share of that category's transactions whose p_top is
+below 0.8, so they would be left for review. Sorted hardest first (lowest top-1, then lowest mean p_top). **⚠ low-n** marks
+n<3. A single transaction there decides 0% vs 100%, so treat those rows as anecdotes. All VERIFIED (measured), with
+the sample-size caveat above.
+
+| True category | n | top-1 | mean p_top | <τ0.8 | most common wrong pick | single top-1 (n) |
+|---|---|---|---|---|---|---|
+| Subs - Google Domains Website ⚠ low-n | 1 | 0% | 0.29 | 100% | Discretionary (1) | 0% (1) |
+| Business Bike ⚠ low-n | 1 | 0% | 0.32 | 100% | Discretionary (1) | — |
+| Fun - Brendan Under The Radar ⚠ low-n | 1 | 0% | 0.34 | 100% | Discretionary (1) | 0% (1) |
+| Fun - Hilarie Under The Radar ⚠ low-n | 1 | 0% | 0.53 | 100% | Discretionary (1) | 0% (1) |
+| Home - Tech / Computer Replacement | 5 | 0% | 0.76 | 80% | Discretionary (5) | 0% (3) |
+| Talk About ⚠ low-n | 2 | 0% | 0.82 | 50% | Discretionary (1) | 0% (1) |
+| Subs - GoPro ⚠ low-n | 1 | 0% | 0.97 | 0% | Subs - Disney+ (1) | 0% (1) |
+| Holiday - Christmas | 5 | 20% | 0.90 | 20% | Discretionary (3) | 0% (3) |
+| Fun - Next Trip | 4 | 25% | 0.47 | 100% | Auto - Repairs and Expenses (1) | 0% (1) |
+| Giving - Generosity | 5 | 40% | 0.68 | 60% | Discretionary (3) | 0% (2) |
+| Wise - Medical & Dental | 4 | 75% | 0.97 | 0% | Discretionary (1) | 100% (1) |
+| Auto - Repairs and Expenses | 9 | 78% | 0.88 | 22% | Discretionary (2) | 100% (5) |
+| Home - Kids Classes & Education | 6 | 83% | 0.81 | 33% | Voice Lessons (1) | 100% (2) |
+| Discretionary | 126 | 87% | 0.86 | 25% | Reimbursement (4) | 61% (66) |
+| Voice Lessons ⚠ low-n | 1 | 100% | 0.81 | 0% | — | 100% (1) |
+| Home - Electric ⚠ low-n | 2 | 100% | 0.89 | 50% | — | — |
+| Home - Improvement / Maintenance | 6 | 100% | 0.91 | 17% | — | 100% (3) |
+| Home - Natural Gas ⚠ low-n | 2 | 100% | 0.96 | 0% | — | 0% (2) |
+| Subs - Canva | 3 | 100% | 0.99 | 0% | — | 100% (1) |
+| Subs - TrainerRoad ⚠ low-n | 2 | 100% | 0.99 | 0% | — | 100% (1) |
+| Google One ⚠ low-n | 1 | 100% | 1.00 | 0% | — | — |
+| Home - Highland City Utilities ⚠ low-n | 2 | 100% | 1.00 | 0% | — | — |
+| Home - Internet ⚠ low-n | 1 | 100% | 1.00 | 0% | — | 100% (1) |
+| Home - Mortgage ⚠ low-n | 2 | 100% | 1.00 | 0% | — | — |
+| Stock Investments ⚠ low-n | 1 | 100% | 1.00 | 0% | — | — |
+| Subs - Spotify ⚠ low-n | 2 | 100% | 1.00 | 0% | — | 100% (1) |
+| Subs - YNAB | 4 | 100% | 1.00 | 0% | — | 100% (2) |
+
+**Predicted categories with the lowest precision.** Only those below 100% are listed.
+
+| Predicted | picked | precision | picked at p_top≥0.8 | precision at τ0.8 |
+|---|---|---|---|---|
+| Reimbursement | 4 | 0% | 1 | 0% |
+| Subs - Disney+ | 3 | 0% | 3 | 0% |
+| Subs - Amazon Prime | 2 | 0% | 1 | 0% |
+| Subs - Bark | 1 | 0% | 1 | 0% |
+| Subs - Lawn | 1 | 0% | 0 | — |
+| Giving - Generosity | 4 | 50% | 3 | 33% |
+| Fun - Next Trip | 2 | 50% | 0 | — |
+| Holiday - Christmas | 2 | 50% | 1 | 100% |
+| Voice Lessons | 2 | 50% | 1 | 100% |
+| Home - Kids Classes & Education | 7 | 71% | 4 | 100% |
+| Home - Improvement / Maintenance | 8 | 75% | 5 | 100% |
+| Auto - Repairs and Expenses | 9 | 78% | 6 | 100% |
+| Discretionary | 130 | 85% | 96 | 93% |
+
+**Most frequent confusions (true → predicted).** "≥τ" counts the ones that would have been auto-applied wrongly.
+
+| True → predicted | n | ≥τ0.8 |
+|---|---|---|
+| Home - Tech / Computer Replacement → Discretionary | 5 | 1 |
+| Discretionary → Reimbursement | 4 | 1 |
+| Holiday - Christmas → Discretionary | 3 | 3 |
+| Giving - Generosity → Discretionary | 3 | 1 |
+| Discretionary → Giving - Generosity | 2 | 2 |
+| Discretionary → Subs - Disney+ | 2 | 2 |
+| Auto - Repairs and Expenses → Discretionary | 2 | 1 |
+| Discretionary → Subs - Amazon Prime | 2 | 1 |
+| Discretionary → Home - Kids Classes & Education | 2 | 0 |
+
+**Patterns:**
+- **Discretionary is the gravity well.** It is the true label for 126 of 200 transactions, and 36 of the 42 errors involve
+  it on one side or the other. For 10 of the 13 non-Discretionary categories that miss, Discretionary is the most common
+  wrong pick.
+- **Purpose-based categories can't be read off the transaction.** Tech / Computer Replacement, Christmas, Generosity, both
+  Under The Radar categories, Next Trip, Business Bike and Google Domains name *why* money was spent, but the merchant is
+  an ordinary store. Jev scores 0–40% on them. Either merge them into Discretionary, or keep them as manual-only categories
+  (drop them from the candidate list, as Birthday/Gift already are).
+- **Christmas is confidently wrong**, which τ can't catch: all 3 of its misses had p_top ≥ 0.8. It behaves like
+  Birthday/Gift, so it's a candidate for `EXCLUDED_CATEGORY_KEYWORDS` (or a merge) rather than a description fix.
+- **Subscriptions pull false positives.** Merchant-specific subscriptions with a history are near-perfect (Canva, YNAB,
+  Spotify, TrainerRoad, Google One: 100%, p_top ≈ 1). But as predictions, Disney+, Amazon Prime, Bark and Lawn are
+  0-for-7, and 5 of those 7 had p_top ≥ 0.8. At least 4 of the 7 were Discretionary purchases, and one was GoPro → Disney+,
+  a sub-to-sub swap. Merging into one `Subscriptions` category would remove the sub-to-sub swaps. The Amazon Prime vs
+  "Amazon orders → Discretionary" policy clash needs a description that says Prime is the membership fee only.
+- **Reimbursement and Generosity need descriptions or removal.** Reimbursement is 0-for-4 as a prediction. Generosity is
+  confused with Discretionary in both directions (3 + 2, three of them at ≥ τ). Neither has a note that tells Jev what
+  qualifies.
+- **Fixed bills are solved; keep them.** Mortgage, utilities, internet, electric and natural gas are 100% with p_top ≈ 1
+  (low n each). The bare `single` variant gets Natural Gas 0/2, so payee history is what fixes them. Also, only 27 of the
+  47 candidates appear as a true label at all in these 200 transactions. The other 20 are candidates for deletion, which
+  also shrinks every request's criteria.
