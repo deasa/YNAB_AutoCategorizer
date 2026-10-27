@@ -13,7 +13,7 @@ Updated: 2026-10-27 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:pV | control (w1:t7) | reviewer | — | 2026-10-27 | fresh; review counter 0 (old over-full agy w1:pS closed) |
+| agy | w1:pV | control (w1:t7) | reviewer | — | 2026-10-27 | review counter 1 (M0-5); old over-full agy w1:pS closed |
 | b-m0-5 | w1:pW | build (w1:t8) | builder | M0-5 | 2026-10-27 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
@@ -25,7 +25,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | todo (needs BA-2) | | | | |
 | M0-4 | todo (needs BA-6) | | | | |
-| M0-5 | active | w1:pW (b-m0-5) | t/M0-5 (../YNAB_AutoCategorizer.wt/M0-5) | | started 2026-10-27 |
+| M0-5 | review | w1:pW (b-m0-5) | t/M0-5 (../YNAB_AutoCategorizer.wt/M0-5) | agy #1 requested | DONE 2026-10-27; flags M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less) |
 
 ## Brendan actions (BA)
 | ID | Action | Needed by | Status |
