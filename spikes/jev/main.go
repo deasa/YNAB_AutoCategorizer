@@ -183,10 +183,14 @@ type jevClient struct {
 	http      *http.Client
 	callsPath string // persisted call counter, so the cap holds across runs
 	calls     int
+	offline   bool // -offline: fail before touching the counter or the network
 }
 
 func (j *jevClient) ask(ctx context.Context, state any, questions map[string]any) (*jevResponse, time.Duration, error) {
 	body, _ := json.Marshal(map[string]any{"model": jevModel, "state": state, "questions": questions})
+	if j.offline {
+		return nil, 0, fmt.Errorf("offline: refusing to call Jev")
+	}
 	for attempt := 0; ; attempt++ {
 		if j.calls >= maxJevCalls {
 			return nil, 0, fmt.Errorf("jev call budget (%d) exhausted", maxJevCalls)
@@ -616,10 +620,13 @@ func main() {
 	examples := flag.Bool("examples", false, "print misses to stderr (local eyes only; don't commit)")
 	probe := flag.Int("probe", 0, "if >0, ask the single variant about this many txns (uncached) and exit")
 	offset := flag.Int("offset", 0, "skip this many shuffled pool txns (100 = disjoint holdout)")
+	offline := flag.Bool("offline", false, "use the cache only; fail instead of calling YNAB or Jev")
+	percat := flag.Bool("percat", false, "print the per-category difficulty report from cached answers and exit (implies -offline)")
 	flag.Parse()
+	*offline = *offline || *percat
 	loadEnv("../../.env")
 	for _, k := range []string{"YNAB_ACCESS_TOKEN", "YNAB_BUDGET_ID", "JEV_API_KEY"} {
-		if os.Getenv(k) == "" {
+		if os.Getenv(k) == "" && !*offline {
 			die(fmt.Errorf("%s not set", k))
 		}
 	}
@@ -627,9 +634,19 @@ func main() {
 		die(err)
 	}
 
-	d, hit, err := cached(filepath.Join(*cache, "ynab.json"), fetchYNAB)
+	fetch := fetchYNAB
+	if *offline {
+		fetch = offlineFill[*ynabData]("ynab.json")
+	}
+	d, hit, err := cached(filepath.Join(*cache, "ynab.json"), fetch)
 	if err != nil {
 		die(err)
+	}
+	if *percat {
+		if err := perCategoryReport(*cache, d); err != nil {
+			die(err)
+		}
+		return
 	}
 	gets := d.Gets
 	if hit {
@@ -647,7 +664,7 @@ func main() {
 
 	rulesBaseline(sample, prev, d.Categories)
 
-	j := &jevClient{http: &http.Client{Timeout: 120 * time.Second}, callsPath: filepath.Join(*cache, "jev_calls")}
+	j := &jevClient{http: &http.Client{Timeout: 120 * time.Second}, callsPath: filepath.Join(*cache, "jev_calls"), offline: *offline}
 	if b, err := os.ReadFile(j.callsPath); err == nil {
 		j.calls, _ = strconv.Atoi(string(b))
 	}
