@@ -77,11 +77,12 @@ Your context is the scarcest resource in the system, so:
   1. Read the brief's `## Result` section and run `git -C <worktree> log --oneline main..` plus `diff --stat`.
   2. Request a review (below).
   3. Leave the builder pane open until the review passes, since it may have fixes to make.
-- **Permission prompt or blocked pane:** read the last 30 lines.
-  - Answer it yourself only if it's clearly inside the task brief and `WORKER.md`: for example running tests, or git on the
-    task branch.
-  - Anything touching prod, secrets, money, hoid system config, or a Brendan-only decision goes to Brendan: add it to
-    *Brendan actions* in `STATE.md` and send a `PushNotification`.
+- **Permission prompt, trust prompt, approval dialog or blocked pane:** read the last 30 lines. Brendan granted sup
+  authority to unblock anything in herdr panes in this workspace (STATE.md → Decisions, 2026-10-27), for builders and agy.
+  - Answer it yourself with judgment, within the safety rules: never move money, no live-YNAB writes the brief doesn't
+    allow, never print secrets.
+  - Escalate to Brendan only what needs his accounts or decisions: add it to *Brendan actions* in `STATE.md` and send a
+    `PushNotification`.
 - **Builder at 35% context or more:** it should already be writing its handoff. If not, prompt it: "Write your handoff now
   per WORKER.md and stop." Then start a fresh `b-<id>-2` in the same worktree with:
   ```
