@@ -4,7 +4,7 @@ Updated: 2026-10-27 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 running. Other M0 tasks wait on BA items: M0-1←BA-1, M0-2a←BA-5, M0-3←BA-2, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). Other M0 tasks wait on BA items: M0-1←BA-1, M0-2a←BA-5, M0-3←BA-2, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -14,7 +14,6 @@ Updated: 2026-10-27 by sup (first session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:pV | control (w1:t7) | reviewer | — | 2026-10-27 | review counter 1 (M0-5); old over-full agy w1:pS closed |
-| b-m0-5 | w1:pW | build (w1:t8) | builder | M0-5 | 2026-10-27 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -25,7 +24,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | todo (needs BA-2) | | | | |
 | M0-4 | todo (needs BA-6) | | | | |
-| M0-5 | review | w1:pW (b-m0-5) | t/M0-5 (../YNAB_AutoCategorizer.wt/M0-5) | agy #1 requested | DONE 2026-10-27; flags M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less) |
+| M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
 | ID | Action | Needed by | Status |
@@ -38,6 +37,8 @@ Updated: 2026-10-27 by sup (first session)
 | BA-6 | On hoid, after M0-4 installs claude: run `claude setup-token` and store as `CLAUDE_CODE_OAUTH_TOKEN` in `~/finbot/.env` | M0-4 | open |
 | BA-7 | healthchecks.io (or similar) account → ping URL; connect its alerts to Slack | M1-5 | open |
 | BA-8 | Off-site backup target (Backblaze B2 bucket or Google Drive) + credentials; generate age key, keep a copy offline | M1-5 | open |
+| BA-10 | YNAB: relink 3 credit-card connections in `direct_import_in_error` (found by M0-5) | M1 sync freshness | open |
+| BA-11 | Tell sup whether the old 6h categorizer is running live anywhere (confounds §3.1 payee-memory finding) | M1 | open |
 | BA-9 | YNAB: create an empty "finbot-sandbox" plan in the YNAB UI for write tests (API can't create plans) | M3 | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
