@@ -1,10 +1,10 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-10-27 by planning coordinator, before the first sup started
+Updated: 2026-10-27 by sup (first session)
 
 ## Now
-- Milestone: **M0 — Spikes** (not started)
-- Next actions: Brendan completes BA items below; sup dispatches M0-3 and M0-5 immediately (no BA dependency except Slack for M0-3), then others as BAs land.
+- Milestone: **M0 — Spikes** (in progress)
+- Next actions: M0-5 running. Other M0 tasks wait on BA items: M0-1←BA-1, M0-2a←BA-5, M0-3←BA-2, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -12,7 +12,9 @@ Updated: 2026-10-27 by planning coordinator, before the first sup started
 ## Panes
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
-| agy | w1:pS | 1 (planning tab) | reviewer | — | — | context already large (~147k tokens from planning): REPLACE with a fresh agy in tab `control` before its first review; then counter 0 |
+| sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
+| agy | w1:pV | control (w1:t7) | reviewer | — | 2026-10-27 | fresh; review counter 0 (old over-full agy w1:pS closed) |
+| b-m0-5 | w1:pW | build (w1:t8) | builder | M0-5 | 2026-10-27 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -23,7 +25,7 @@ Updated: 2026-10-27 by planning coordinator, before the first sup started
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | todo (needs BA-2) | | | | |
 | M0-4 | todo (needs BA-6) | | | | |
-| M0-5 | todo | | | | |
+| M0-5 | active | w1:pW (b-m0-5) | t/M0-5 (../YNAB_AutoCategorizer.wt/M0-5) | | started 2026-10-27 |
 
 ## Brendan actions (BA)
 | ID | Action | Needed by | Status |
