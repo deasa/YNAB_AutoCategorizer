@@ -4,7 +4,7 @@ Updated: 2026-10-27 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 running. Brendan will do BA-2/BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-3←BA-2, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. Brendan will do BA-2/BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-3←BA-2, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -14,13 +14,12 @@ Updated: 2026-10-27 by sup (first session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:pV | control (w1:t7) | reviewer | — | 2026-10-27 | review counter 2 (M0-5, M0-1): replace before next review; old over-full agy w1:pS closed |
-| b-m0-1 | w1:pY | build (w1:t9) | builder | M0-1 | 2026-10-27 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M0-1 | review | w1:pY (b-m0-1) | t/M0-1 (../YNAB_AutoCategorizer.wt/M0-1) | agy #2 requested | DONE 2026-10-27: Jev 78–80% top-1, τ=0.8 → ~90% precision / ~73% coverage (holdout); recommend primary; 300/300 Jev calls used. Note: no YNAB approvals since 2026-04-20 |
+| M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
 | M0-2a | todo (needs BA-5) | | | | |
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | todo (needs BA-2) | | | | |
