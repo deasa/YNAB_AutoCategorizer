@@ -13,7 +13,7 @@ Updated: 2026-10-27 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:pV | control (w1:t7) | reviewer | — | 2026-10-27 | review counter 2 (M0-5, M0-1): replace before next review; old over-full agy w1:pS closed |
+| agy | w1:p0 | control (w1:t7) | reviewer | M0-1b | 2026-10-27 | fresh; review counter 1 (M0-1b) |
 | b-m0-1b | w1:pZ | build | builder | M0-1b | 2026-10-27 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
@@ -21,7 +21,7 @@ Updated: 2026-10-27 by sup (first session)
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
-| M0-1b | active | w1:pZ (b-m0-1b) | t/M0-1b (../YNAB_AutoCategorizer.wt/M0-1b) | | started 2026-10-27; offline per-category Jev difficulty for Brendan's category simplification; no .env, cache at ../YNAB_AutoCategorizer.wt/_data/jev-cache |
+| M0-1b | review | w1:pZ (b-m0-1b) | t/M0-1b (../YNAB_AutoCategorizer.wt/M0-1b) | | started 2026-10-27; offline per-category Jev difficulty for Brendan's category simplification; no .env, cache at ../YNAB_AutoCategorizer.wt/_data/jev-cache |
 | M0-2a | todo (needs BA-5) | | | | |
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | todo (needs BA-2) | | | | |
