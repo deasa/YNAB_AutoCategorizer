@@ -32,7 +32,7 @@ Updated: 2026-10-27 by sup (first session)
 | ID | Action | Needed by | Status |
 |---|---|---|---|
 | BA-1 | Jev: API key + docs link / account details → put key in main checkout `.env` as `JEV_API_KEY` | M0-1 | done 2026-10-27 (key = Brendan's TYPESAFE_API_KEY, copied to .env by sup; docs via installed `typesafe-ai` skill) |
-| BA-2 | Slack: create workspace channel `#finances`; create Slack app (Socket Mode on, bot scopes per M0-3 brief) → `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` in `.env`; invite your wife | M0-3 | done 2026-10-28: app finbot (Ashton Clan, 16 humans), private `#finbot-finances`, tokens verified by sup |
+| BA-2 | Slack: create workspace channel `#finances`; create Slack app (Socket Mode on, bot scopes per M0-3 brief) → `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` in `.env`; invite your wife | M0-3 | done 2026-10-28: app finbot (Ashton Clan, 16 humans), private `#finbot-finances`, tokens verified by sup; `message.groups` event added 2026-10-28 |
 | BA-3 | Tell sup the domain served by nginx-proxy-manager; add DNS for `finance.<domain>` | M0-2b | open |
 | BA-4 | nginx-proxy-manager: add proxy host `finance.<domain>` → finbot port with Let's Encrypt (or give sup a way to do it) | M0-2b | open |
 | BA-5 | Google Cloud: OAuth client (web) with redirect URI from M0-2 brief → `GOOGLE_OAUTH_CLIENT_ID/SECRET`; then add claude.ai custom connector when asked | M0-2a | open |
