@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -13,6 +14,8 @@ import (
 type Health struct {
 	StaleAfter time.Duration
 	Now        func() time.Time // defaults to time.Now
+	// Token, if set, is scrubbed from last_error.
+	Token string
 
 	mu      sync.Mutex
 	lastOK  time.Time
@@ -39,7 +42,7 @@ func (h *Health) OK() {
 func (h *Health) Fail(err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.lastErr = redact(err.Error())
+	h.lastErr = scrub(err.Error(), h.Token)
 }
 
 type healthBody struct {
@@ -67,6 +70,12 @@ func (h *Health) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 
 var uuidRE = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
-// redact strips any id that slipped past the ynab package's own redaction
-// before an error is shown on an unauthenticated endpoint.
-func redact(s string) string { return uuidRE.ReplaceAllString(s, "<id>") }
+// scrub strips any id or the token that slipped past the ynab package's
+// own redaction before an error is logged or shown on the unauthenticated
+// /healthz.
+func scrub(s, token string) string {
+	if token != "" {
+		s = strings.ReplaceAll(s, token, "<token>")
+	}
+	return uuidRE.ReplaceAllString(s, "<id>")
+}

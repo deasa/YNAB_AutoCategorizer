@@ -96,7 +96,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 
 	db, err := store.Open(ctx, cfg.DBPath)
 	if err != nil {
-		logger.Error("open store", "err", redact(err.Error()))
+		logger.Error("open store", "err", scrub(err.Error(), cfg.YNABAccessToken))
 		return 1
 	}
 	defer db.Close()
@@ -116,7 +116,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 		syncer:  finsync.New(db, clients, ynabLog),
 	}
 	if err := run(ctx, a, fs); err != nil {
-		logger.Error("finbot "+name+" failed", "err", redact(err.Error()))
+		logger.Error("finbot "+name+" failed", "err", scrub(err.Error(), cfg.YNABAccessToken))
 		return 1
 	}
 	return 0
@@ -130,7 +130,7 @@ var errSkipped = errors.New("sync skipped: rate budget exhausted")
 func (a *app) syncPlan(ctx context.Context, planID, label string) (finsync.Result, error) {
 	res, err := a.syncer.SyncPlan(ctx, planID)
 	if err != nil {
-		a.log.Error("sync tick failed", "plan", label, "err", redact(err.Error()))
+		a.log.Error("sync tick failed", "plan", label, "err", a.redact(err.Error()))
 		return res, err
 	}
 	links := make([]map[string]any, 0, len(res.LinkEvents))
@@ -186,7 +186,7 @@ func (a *app) syncArchived(ctx context.Context, stdout io.Writer) error {
 	case errors.As(scanErr, &se):
 		fmt.Fprintf(stdout, "scan: %d plans scanned, %d with Discretionary, %d failed\n", se.Scanned, len(plans), len(se.Failed))
 		for _, f := range se.Failed {
-			fmt.Fprintf(stdout, "scan: failed: %s: %s\n", f.Name, redact(f.Err))
+			fmt.Fprintf(stdout, "scan: failed: %s: %s\n", f.Name, a.redact(f.Err))
 		}
 	case scanErr != nil:
 		return scanErr
@@ -203,20 +203,27 @@ func (a *app) syncArchived(ctx context.Context, stdout io.Writer) error {
 		res, err := a.syncPlan(ctx, p.ID, p.Name)
 		if err != nil && !errors.Is(err, errSkipped) {
 			failed++
-			fmt.Fprintf(stdout, "sync: %s: failed: %s\n", p.Name, redact(err.Error()))
+			fmt.Fprintf(stdout, "sync: %s: failed: %s\n", p.Name, a.redact(err.Error()))
 			continue
 		}
 		fmt.Fprintf(stdout, "sync: %s: %s\n", p.Name, summary(res))
 	}
 	if failed > 0 || scanErr != nil {
-		return fmt.Errorf("archived sync: %d plan syncs failed, scan error: %v", failed, scanErr != nil)
+		msg := fmt.Sprintf("archived sync: %d plan syncs failed", failed)
+		if scanErr != nil {
+			msg += "; scan had failures"
+		}
+		return errors.New(msg)
 	}
 	return nil
 }
 
-func (a *app) serve(ctx context.Context) error {
+// newScheduler builds serve's scheduler and its health tracker. The import
+// job exists only when IMPORT_ENABLED is set; otherwise Import stays nil and
+// the scheduler never creates an import ticker.
+func (a *app) newScheduler() (*Scheduler, *Health) {
 	cfg := a.cfg
-	health := &Health{StaleAfter: 2 * cfg.SyncInterval}
+	health := &Health{StaleAfter: 2 * cfg.SyncInterval, Token: cfg.YNABAccessToken}
 	sched := &Scheduler{
 		Sync: func(ctx context.Context) error {
 			_, err := a.syncPlan(ctx, cfg.YNABBudgetID, "active")
@@ -230,7 +237,7 @@ func (a *app) serve(ctx context.Context) error {
 		sched.Import = func(ctx context.Context) error {
 			res, err := a.syncer.TriggerImport(ctx, cfg.YNABBudgetID)
 			if err != nil {
-				a.log.Error("import tick failed", "err", redact(err.Error()))
+				a.log.Error("import tick failed", "err", a.redact(err.Error()))
 				return err
 			}
 			a.log.Info("import tick", "imported", res.Imported, "skipped", res.Skipped)
@@ -240,6 +247,12 @@ func (a *app) serve(ctx context.Context) error {
 	} else {
 		a.log.Info("import disabled")
 	}
+	return sched, health
+}
+
+func (a *app) serve(ctx context.Context) error {
+	cfg := a.cfg
+	sched, health := a.newScheduler()
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", health)
@@ -276,3 +289,6 @@ func (a *app) serve(ctx context.Context) error {
 	a.log.Info("stopped")
 	return nil
 }
+
+// redact scrubs ids and the token from s before it is logged or printed.
+func (a *app) redact(s string) string { return scrub(s, a.cfg.YNABAccessToken) }
