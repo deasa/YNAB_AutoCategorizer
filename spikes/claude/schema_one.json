@@ -1,0 +1,1 @@
+{"type":"object","properties":{"category":{"type":"string","enum":["Groceries","Gas","Utilities","Discretionary","Kids Activities","NONE"]},"probabilities":{"type":"object","additionalProperties":{"type":"number","minimum":0,"maximum":1}}},"required":["category","probabilities"],"additionalProperties":false}
