@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -18,73 +17,146 @@ import (
 	"github.com/joho/godotenv"
 )
 
-const liveGETBudget = 15
+// live is the read-only setup shared by the live tests: a transport that
+// refuses anything but GET and stops at a GET budget, a shared governor, a
+// temp store, and a log buffer every line is redacted into.
+type live struct {
+	t       *testing.T
+	token   string
+	active  string
+	gov     *ynab.Governor
+	gets    int
+	budget  int
+	logs    bytes.Buffer
+	db      *store.DB
+	clients ClientFunc
+}
 
-var uuidRE = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
-
-// TestLiveSync is the M1-3 acceptance run, read-only: a full load of the
-// active plan into a temp DB, one delta tick, a one-shot sync of the newest
-// older plan with a "Discretionary" category, and freshness for 3 accounts.
-// The transport refuses anything but GET and stops at liveGETBudget GETs.
-// Skipped unless YNAB_LIVE_SYNC=1.
-//
-//	YNAB_LIVE_SYNC=1 go test ./sync -run TestLiveSync -v
-func TestLiveSync(t *testing.T) {
+func newLive(t *testing.T, getBudget int) *live {
+	t.Helper()
 	if os.Getenv("YNAB_LIVE_SYNC") != "1" {
 		t.Skip("set YNAB_LIVE_SYNC=1 to run against the live plans")
 	}
 	_ = godotenv.Load("../.env")
-	token, active := os.Getenv("YNAB_ACCESS_TOKEN"), os.Getenv("YNAB_BUDGET_ID")
-	if token == "" || active == "" {
+	l := &live{t: t, token: os.Getenv("YNAB_ACCESS_TOKEN"), active: os.Getenv("YNAB_BUDGET_ID"), budget: getBudget}
+	if l.token == "" || l.active == "" {
 		t.Fatal("YNAB_ACCESS_TOKEN and YNAB_BUDGET_ID required")
 	}
-	redact := func(s string) string {
-		return uuidRE.ReplaceAllString(strings.ReplaceAll(s, token, "{token}"), "{id}")
-	}
-	var logs bytes.Buffer
-	logf := func(format string, args ...any) {
-		line := redact(fmt.Sprintf(format, args...))
-		logs.WriteString(line + "\n")
-		t.Log(line)
-	}
-	defer func() {
+	t.Cleanup(func() {
 		if p := os.Getenv("YNAB_LIVE_SYNC_LOG"); p != "" {
-			os.WriteFile(p, logs.Bytes(), 0o600)
+			os.WriteFile(p, l.logs.Bytes(), 0o600)
 		}
-	}()
+	})
 
-	gets := 0
 	readOnly := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodGet {
 			return nil, fmt.Errorf("live sync test is read-only: refused %s", r.Method)
 		}
-		if gets >= liveGETBudget {
-			return nil, fmt.Errorf("live sync test GET budget (%d) exceeded", liveGETBudget)
+		if l.gets >= l.budget {
+			return nil, fmt.Errorf("live sync test GET budget (%d) exceeded", l.budget)
 		}
-		gets++
+		l.gets++
 		return http.DefaultTransport.RoundTrip(r)
 	})
 	post, _ := http.NewRequest(http.MethodPost, "https://api.ynab.com/v1/plans/x/transactions/import", nil)
 	if _, err := readOnly.RoundTrip(post); err == nil {
 		t.Fatal("transport let a POST through")
 	} else {
-		logf("transport refuses non-GET: %v (GETs so far: %d)", err, gets)
+		l.logf("transport refuses non-GET: %v (GETs so far: %d)", err, l.gets)
 	}
 
-	gov := ynab.NewGovernor(ynab.DefaultHourlyLimit, ynab.DefaultWriteReserve, nil)
-	newClient := func(id string) *ynab.Client {
-		return ynab.NewClient(token, id, log.New(&logs, "ynab: ", 0), ynab.WithGovernor(gov),
+	l.gov = ynab.NewGovernor(ynab.DefaultHourlyLimit, ynab.DefaultWriteReserve, nil)
+	l.clients = func(id string) PlanAPI {
+		return ynab.NewClient(l.token, id, log.New(&l.logs, "ynab: ", 0), ynab.WithGovernor(l.gov),
 			ynab.WithBaseTransport(readOnly))
 	}
-	clients := func(id string) PlanAPI { return newClient(id) }
+	var err error
+	if l.db, err = store.Open(context.Background(), filepath.Join(t.TempDir(), "finbot.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.db.Close() })
+	return l
+}
 
+func (l *live) redact(s string) string {
+	return uuidRE.ReplaceAllString(strings.ReplaceAll(s, l.token, "{token}"), "{id}")
+}
+
+func (l *live) logf(format string, args ...any) {
+	line := l.redact(fmt.Sprintf(format, args...))
+	l.logs.WriteString(line + "\n")
+	l.t.Log(line)
+}
+
+func (l *live) planClient(id string) *ynab.Client { return l.clients(id).(*ynab.Client) }
+
+// finish logs the request totals and fails if the log holds the token, any
+// of ids, or any UUID at all.
+func (l *live) finish(ids ...string) {
+	reads, writes := l.gov.Remaining()
+	l.logf("live GETs sent: %d (budget %d); non-GET sent: 0; governor remaining %d reads, %d writes",
+		l.gets, l.budget, reads, writes)
+	for _, secret := range append([]string{l.token, l.active}, ids...) {
+		if strings.Contains(l.logs.String(), secret) {
+			l.t.Error("logs leak a secret or plan id")
+		}
+	}
+	if n := len(uuidRE.FindAllString(l.logs.String(), -1)); n != 0 {
+		l.t.Errorf("logs hold %d UUIDs", n)
+	}
+}
+
+// TestLiveScan is the M1-4a acceptance run, read-only: the archived-plan
+// scan over every plan the token reaches, persisted to a temp DB.
+//
+//	YNAB_LIVE_SYNC=1 go test ./sync -run TestLiveScan -v
+func TestLiveScan(t *testing.T) {
+	l := newLive(t, 60)
 	ctx := context.Background()
-	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "finbot.db"))
+	all, err := l.planClient(l.active).Plans(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	s := New(db, clients, log.New(&logs, "", 0))
+	if len(all)+1 > l.budget {
+		t.Fatalf("%d plans exceed the GET budget %d", len(all), l.budget)
+	}
+	disc, err := ScanDiscretionary(ctx, fakeLister(all), l.clients, l.db)
+	if err != nil {
+		l.logf("scan error: %v", err)
+	}
+	rows, rerr := l.db.PlanScans(ctx)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	failed := 0
+	for _, r := range rows {
+		if r.ScanError != "" {
+			failed++
+			l.logf("plan scan failed: %s", r.ScanError)
+		}
+	}
+	l.logf("scanned %d of %d, %d with Discretionary, %d failed; %d rows persisted",
+		len(rows)-failed, len(all), len(disc), failed, len(rows))
+	if len(rows) != len(all) || failed != 0 || err != nil {
+		t.Errorf("scan incomplete: %d rows for %d plans, %d failed", len(rows), len(all), failed)
+	}
+	ids := make([]string, len(all))
+	for i, p := range all {
+		ids[i] = p.ID
+	}
+	l.finish(ids...)
+}
+
+// TestLiveSync is the M1-3 acceptance run, read-only: a full load of the
+// active plan into a temp DB, one delta tick, a one-shot sync of the newest
+// older plan with a "Discretionary" category, and freshness for 3 accounts.
+//
+//	YNAB_LIVE_SYNC=1 go test ./sync -run TestLiveSync -v
+func TestLiveSync(t *testing.T) {
+	l := newLive(t, 15)
+	active, db, clients, logf := l.active, l.db, l.clients, l.logf
+	ctx := context.Background()
+	s := New(db, clients, log.New(&l.logs, "", 0))
 
 	counts := func(planID string) string {
 		var parts []string
@@ -113,7 +185,7 @@ func TestLiveSync(t *testing.T) {
 
 	// 2. One older plan with a "Discretionary" category: scan at most 8
 	// others, newest first, so the run stays inside the GET budget.
-	all, err := newClient(active).Plans(ctx)
+	all, err := l.planClient(active).Plans(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +197,7 @@ func TestLiveSync(t *testing.T) {
 	}
 	sort.Slice(others, func(i, j int) bool { return others[i].LastModifiedOn.After(others[j].LastModifiedOn) })
 	logf("plans reachable: %d (%d besides the active one; scanning %d)", len(all), len(others), min(8, len(others)))
-	disc, err := DiscretionaryPlans(ctx, others[:min(8, len(others))], clients)
+	disc, err := ScanDiscretionary(ctx, others[:min(8, len(others))], clients, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,12 +234,5 @@ func TestLiveSync(t *testing.T) {
 			shown, f.InError, newest, seen, f.SyncedAt.Format("2006-01-02T15:04Z07:00"))
 	}
 
-	reads, writes := gov.Remaining()
-	logf("live GETs sent: %d (budget %d); non-GET sent: 0; governor remaining %d reads, %d writes",
-		gets, liveGETBudget, reads, writes)
-	for _, secret := range []string{token, active, older.ID} {
-		if strings.Contains(logs.String(), secret) {
-			t.Error("logs leak a secret or plan id")
-		}
-	}
+	l.finish(older.ID)
 }

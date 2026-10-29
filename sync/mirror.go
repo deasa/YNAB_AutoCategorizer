@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -213,25 +214,77 @@ func (s *Syncer) Freshness(ctx context.Context, planID string) ([]AccountFreshne
 // (R8c): plans that have it used the current category scheme.
 const DiscretionaryName = "Discretionary"
 
-// DiscretionaryPlans lists every plan the token can reach and returns those
-// with a live category named "Discretionary" (case-insensitive). It costs one
-// GET for the list plus one per plan.
-func DiscretionaryPlans(ctx context.Context, lister PlanLister, client ClientFunc) ([]ynab.PlanSummary, error) {
+// uuidRE matches a YNAB-style id (plan, account, category, ...).
+var uuidRE = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+
+// ScanDiscretionary is the one-shot archived-plan scan: it lists every plan
+// the token can reach, checks each for a live category named "Discretionary"
+// (case-insensitive), stores the whole result in db (replacing any earlier
+// scan; read it back with db.PlanScans), and returns the plans that have one,
+// in list order. It costs one GET for the list plus one per plan, and is
+// never run per tick.
+//
+// A plan whose categories can't be fetched doesn't stop the scan: it is
+// stored with its redacted error, and the call returns the plans found
+// together with a *ScanError naming every plan that failed. If listing
+// fails, or ctx ends, nothing is stored.
+func ScanDiscretionary(ctx context.Context, lister PlanLister, client ClientFunc, db *store.DB) ([]ynab.PlanSummary, error) {
 	plans, err := lister.Plans(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sync: list plans: %w", err)
 	}
-	var out []ynab.PlanSummary
+	var (
+		out     []ynab.PlanSummary
+		rows    = make([]store.PlanScan, 0, len(plans))
+		scanErr ScanError
+	)
 	for _, p := range plans {
-		groups, err := client(p.ID).GetCategories(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("sync: plan categories: %w", err)
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("sync: scan plans: %w", err)
 		}
-		if hasDiscretionary(groups) {
+		row := store.PlanScan{PlanID: p.ID, Name: p.Name}
+		groups, err := client(p.ID).GetCategories(ctx)
+		row.ScannedAt = time.Now()
+		if err != nil {
+			// *ynab.Client errors are already redacted; strip any id a
+			// different PlanAPI might leave in.
+			row.ScanError = uuidRE.ReplaceAllString(err.Error(), "{id}")
+			scanErr.Failed = append(scanErr.Failed, PlanScanFailure{Name: p.Name, Err: row.ScanError})
+		} else if row.HasDiscretionary = hasDiscretionary(groups); row.HasDiscretionary {
 			out = append(out, p)
 		}
+		rows = append(rows, row)
+	}
+	if err := db.ReplacePlanScans(ctx, rows); err != nil {
+		return nil, fmt.Errorf("sync: save plan scan: %w", err)
+	}
+	if len(scanErr.Failed) > 0 {
+		scanErr.Scanned = len(plans)
+		return out, &scanErr
 	}
 	return out, nil
+}
+
+// ScanError reports the plans whose categories ScanDiscretionary couldn't
+// fetch. Their rows are still stored, with the error and no verdict.
+type ScanError struct {
+	Scanned int
+	Failed  []PlanScanFailure
+}
+
+// PlanScanFailure is one plan that failed the scan. Err is redacted.
+type PlanScanFailure struct {
+	Name string
+	Err  string
+}
+
+func (e *ScanError) Error() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "sync: plan scan: %d of %d plans failed", len(e.Failed), e.Scanned)
+	for _, f := range e.Failed {
+		fmt.Fprintf(&sb, "; %q: %s", f.Name, f.Err)
+	}
+	return sb.String()
 }
 
 func hasDiscretionary(groups []*ynab.CategoryGroup) bool {

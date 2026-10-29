@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,8 +74,8 @@ func TestOpenFailsFastWithoutPragmas(t *testing.T) {
 
 func TestMigrationsIdempotent(t *testing.T) {
 	db, path := openTest(t)
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 1 {
-		t.Fatalf("schema_migrations rows = %d, want 1", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 2 {
+		t.Fatalf("schema_migrations rows = %d, want 2", n)
 	}
 	db.Close()
 
@@ -86,8 +87,45 @@ func TestMigrationsIdempotent(t *testing.T) {
 	if err := migrate(context.Background(), db2.w); err != nil {
 		t.Fatalf("re-migrate: %v", err)
 	}
-	if n := count(t, db2, `SELECT count(*) FROM schema_migrations`); n != 1 {
-		t.Fatalf("schema_migrations rows after reopen = %d, want 1", n)
+	if n := count(t, db2, `SELECT count(*) FROM schema_migrations`); n != 2 {
+		t.Fatalf("schema_migrations rows after reopen = %d, want 2", n)
+	}
+}
+
+// A DB created before 0002 existed (only 0001 applied) picks up 0002 on the
+// next Open, keeping its mirror rows.
+func TestMigration0002OnExisting0001DB(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "finbot.db")
+	w, err := openPool(ctx, path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := fs.ReadFile(migrationFS, "migrations/0001_mirror.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateFS(ctx, w, fstest.MapFS{"migrations/0001_mirror.sql": {Data: body}}); err != nil {
+		t.Fatalf("apply 0001 only: %v", err)
+	}
+	if _, err := w.ExecContext(ctx, `INSERT INTO sync_state VALUES ('p', 7, '2026-10-29T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open on a 0001 DB: %v", err)
+	}
+	defer db.Close()
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 2 {
+		t.Errorf("schema_migrations rows = %d, want 2", n)
+	}
+	if st, ok, err := db.GetSyncState(ctx, "p"); err != nil || !ok || st.ServerKnowledge != 7 {
+		t.Errorf("pre-existing sync_state lost: %+v %v %v", st, ok, err)
+	}
+	if got, err := db.PlanScans(ctx); err != nil || got != nil {
+		t.Errorf("PlanScans on fresh table = %v, %v; want nil, nil", got, err)
 	}
 }
 
@@ -96,19 +134,20 @@ func TestMigrationsOrderedAndAtomic(t *testing.T) {
 	ctx := context.Background()
 	fsys := fstest.MapFS{
 		"migrations/0001_mirror.sql": {Data: []byte(`SELECT 1;`)}, // already applied
-		"migrations/0003_c.sql":      {Data: []byte(`CREATE TABLE c (x INTEGER); CREATE TABLE b_dup (x INTEGER);`)},
-		"migrations/0002_b.sql":      {Data: []byte(`CREATE TABLE b (x INTEGER); CREATE TABLE b_dup (x INTEGER);`)},
+		"migrations/0002_scan.sql":   {Data: []byte(`SELECT 1;`)}, // already applied
+		"migrations/0101_c.sql":      {Data: []byte(`CREATE TABLE c (x INTEGER); CREATE TABLE b_dup (x INTEGER);`)},
+		"migrations/0100_b.sql":      {Data: []byte(`CREATE TABLE b (x INTEGER); CREATE TABLE b_dup (x INTEGER);`)},
 	}
-	// 0002 applies; 0003 fails on b_dup and must leave no trace (no table c,
+	// 0100 applies; 0101 fails on b_dup and must leave no trace (no table c,
 	// no schema_migrations row).
-	if err := migrateFS(ctx, db.w, fsys); err == nil || !strings.Contains(err.Error(), "0003_c.sql") {
-		t.Fatalf("migrateFS = %v, want failure in 0003", err)
+	if err := migrateFS(ctx, db.w, fsys); err == nil || !strings.Contains(err.Error(), "0101_c.sql") {
+		t.Fatalf("migrateFS = %v, want failure in 0101", err)
 	}
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 2 {
-		t.Errorf("schema_migrations rows = %d, want 2", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 3 {
+		t.Errorf("schema_migrations rows = %d, want 3", n)
 	}
 	if n := count(t, db, `SELECT count(*) FROM sqlite_master WHERE name = 'c'`); n != 0 {
-		t.Error("failed migration 0003 left table c behind")
+		t.Error("failed migration 0101 left table c behind")
 	}
 
 	if _, err := loadMigrations(fstest.MapFS{"migrations/x.sql": {}}); err == nil {
