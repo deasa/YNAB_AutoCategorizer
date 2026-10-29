@@ -15,6 +15,9 @@ Updated: 2026-10-29 by sup (first session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p1A | control (w1:t7) | reviewer | M0 acceptance | 2026-10-29 | review counter 2 (M0-2b, M0 acceptance): replace before next review |
+| b-m1-1 | w1:p1B | build | builder | M1-1 | 2026-10-29 | |
+| b-m1-2 | w1:p1C | build (stacked) | builder | M1-2 | 2026-10-29 | |
+| b-m0-docs | w1:p1D | build2 | builder | M0-docs | 2026-10-29 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -27,6 +30,9 @@ Updated: 2026-10-29 by sup (first session)
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4a | merged | — | — | agy PASS (4 low) | merged 2026-10-28; claude 2.1.312 (latest channel) at hoid ~/.local/bin; findings docs/build/spikes/claude-cli.md. agy findings (docs/build/spikes/claude-cli-review.md) feed M0-4b + Dockerfile: pass prompt via stdin/`--` (variadic --tools eats positional prompt); check permission-mode can't auto-approve MCP tools outside --allowedTools; disable auto-memory + CLAUDE.md discovery; Docker: debian-slim or Alpine musl deps, CLAUDE_CONFIG_DIR persistent |
 | M0-4b | merged | — | — | agy PASS (2 low; reproduced the dontAsk finding) | merged 2026-10-28; final §5a command lines in docs/build/spikes/claude-cli.md. MUST for M3/M5 `llm/`: `--permission-mode dontAsk` on the Slack site (auto executed a tool outside --allowedTools); `--system-prompt-snapshot off` with --resume; stdin prompts; `--mcp-config` as a 0600 temp file (bearer token never on argv); test HTTP MCP + Authorization header across --resume; health check `rc==0 && !is_error && trimmed lower result=="ok"`; classifier treats null structured_output as skip. Review kept at docs/build/spikes/claude-cli-review-4b.md |
+| M0-docs | active | w1:p1D | t/M0-docs | | gate docs task, started 2026-10-29 |
+| M1-1 | active | w1:p1B | t/M1-1 | | started 2026-10-29; ≤5 live GETs |
+| M1-2 | active | w1:p1C | t/M1-2 | | started 2026-10-29; go.mod conflict with M1-1 resolved by sup at merge (go mod tidy) |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
