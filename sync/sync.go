@@ -125,9 +125,9 @@ func (s *Syncer) SyncPlan(ctx context.Context, planID string) (Result, error) {
 		}
 	}
 
-	syncedAt := s.now()
+	syncedAt := s.now() // sync_state.synced_at and new transactions' first_seen_at
 	err = s.db.Update(ctx, func(tx *store.Tx) error {
-		if err := upsertBatch(tx, planID, b); err != nil {
+		if err := upsertBatch(tx, planID, b, syncedAt); err != nil {
 			return err
 		}
 		if s.beforeCursor != nil {
@@ -146,18 +146,20 @@ func (s *Syncer) SyncPlan(ctx context.Context, planID string) (Result, error) {
 	if res.Initial {
 		kind = "full export"
 	}
-	s.log.Printf("sync: %s applied: %v; %d orphan subtransactions dropped; %d link events",
-		kind, res.Rows, res.Orphans, len(res.LinkEvents))
+	s.log.Printf("sync: %s applied: %v; %d link events", kind, res.Rows, len(res.LinkEvents))
+	if res.Orphans > 0 {
+		s.log.Printf("sync: dropped %d orphan subtransactions (parent in neither payload nor mirror)", res.Orphans)
+	}
 	return res, nil
 }
 
-func upsertBatch(tx *store.Tx, planID string, b *batch) error {
+func upsertBatch(tx *store.Tx, planID string, b *batch, syncedAt time.Time) error {
 	steps := []func() error{
 		func() error { return tx.UpsertAccounts(planID, b.accounts) },
 		func() error { return tx.UpsertCategoryGroups(planID, b.categoryGroups) },
 		func() error { return tx.UpsertCategories(planID, b.categories) },
 		func() error { return tx.UpsertPayees(planID, b.payees) },
-		func() error { return tx.UpsertTransactions(planID, b.transactions) },
+		func() error { return tx.UpsertTransactions(planID, b.transactions, syncedAt) },
 		func() error { return tx.UpsertSubtransactions(planID, b.subs) },
 		func() error { return tx.UpsertMonths(planID, b.months) },
 		func() error { return tx.UpsertMonthCategories(planID, b.monthCats) },

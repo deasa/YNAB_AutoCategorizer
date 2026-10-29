@@ -13,6 +13,8 @@ import (
 
 const plan = "plan-1"
 
+var testSyncedAt = time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+
 func openTest(t *testing.T) (*DB, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "finbot.db")

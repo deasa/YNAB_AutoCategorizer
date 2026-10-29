@@ -301,6 +301,12 @@ func TestSyncPlan_SplitStitching(t *testing.T) {
 	if res.Orphans != 1 || h.count("subtransactions", "id = 's-orphan'") != 0 {
 		t.Errorf("orphans=%d, want 1 dropped", res.Orphans)
 	}
+	if n := strings.Count(h.logs.String(), "dropped 1 orphan subtransactions"); n != 1 {
+		t.Errorf("orphan log lines = %d, want 1:\n%s", n, h.logs.String())
+	}
+	if strings.Contains(h.logs.String(), "s-orphan") || strings.Contains(h.logs.String(), "t-unknown") {
+		t.Errorf("orphan log names ids:\n%s", h.logs.String())
+	}
 	if h.count("subtransactions", "id = 's-1' AND amount = -4500") != 1 || h.cursor() != 101 {
 		t.Error("child of a mirrored parent not applied")
 	}
@@ -325,6 +331,46 @@ func TestSyncPlan_SplitStitching(t *testing.T) {
 	}
 	if h.count("subtransactions", "id = 's-1' AND amount = -4500") != 1 {
 		t.Error("tombstoned child lost its data")
+	}
+}
+
+// first_seen_at is the tick's sync time, the same instant as synced_at, not
+// a separate time.Now inside the store.
+func TestSyncPlan_FirstSeenIsTickSyncTime(t *testing.T) {
+	h := newHarness(t)
+	t1 := time.Date(2026, 10, 29, 9, 30, 0, 123456789, time.UTC)
+	h.s.now = func() time.Time { return t1 }
+	h.tick()
+
+	t2 := t1.Add(10 * time.Minute)
+	h.s.now = func() time.Time { return t2 }
+	h.api.setDelta(100, 101, &ynab.PlanDetail{Transactions: []ynabapi.TransactionBase{
+		txn("t-new", acctB, 28, -100, ptr("YNAB:-100:2026-10-28:1")),
+	}})
+	h.tick()
+
+	firstSeen := func(id string) time.Time {
+		t.Helper()
+		var s string
+		if err := h.db.Reader().QueryRow(`SELECT first_seen_at FROM transactions WHERE plan_id = ? AND id = ?`,
+			planID, id).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		v, err := time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if got := firstSeen("t-imp"); !got.Equal(t1) {
+		t.Errorf("initial load first_seen_at = %v, want %v", got, t1)
+	}
+	if got := firstSeen("t-new"); !got.Equal(t2) {
+		t.Errorf("delta first_seen_at = %v, want %v", got, t2)
+	}
+	st, _, _ := h.db.GetSyncState(context.Background(), planID)
+	if !st.SyncedAt.Equal(t2) {
+		t.Errorf("synced_at = %v, want %v", st.SyncedAt, t2)
 	}
 }
 
