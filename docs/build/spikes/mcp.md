@@ -251,3 +251,113 @@ Hardening before going public:
   generation. N9 attribution: `TokenInfo.UserID` is the stable hashed user id that tool handlers use for the write log. Map
   it to a display name ("Brendan" / his wife) in config.
 - N7 "revoke quickly": the `revoke` subcommand works without a restart. Add a Slack `/finbot revoke` later as an admin path.
+
+## 11. Deployed on hoid (M0-2b)
+
+Deployed 2026-10-29. It stays running until sup takes it down. Sign-ins are lost on every redeploy because the fosite store
+is in memory (sup's decision for the spike). Persistent storage is M3 work.
+
+### Compose layout
+
+The router doesn't forward 80/443 to hoid, so the server is exposed through a **Cloudflare Tunnel** (`hoid`). Its public
+hostname `finance.hoidlabs.site` routes to `http://finbot:8080`. Cloudflare terminates TLS. Nothing else on hoid is involved:
+no nginx, no nginx-proxy-manager, no certbot, no sudo.
+
+```
+~/finbot-spike/mcp/          (0700)
+  compose.yaml               spikes/mcp/deploy/compose.yaml   (project name: finbot-spike)
+  src/                       rsync of spikes/mcp (built on hoid, no registry)
+  mcp.env       (0600)       GOOGLE_OAUTH_CLIENT_ID/SECRET, MCP_ALLOWED_EMAILS: streamed from local .env over ssh stdin
+  tunnel.env    (0600)       TUNNEL_TOKEN only: sed-extracted on hoid from ~/finbot/.env (never printed)
+services:
+  finbot       image finbot-spike-mcp (multi-stage: golang:1.26-alpine -> distroless/static:nonroot)
+               MCP_LISTEN_ADDR=:8080, MCP_PUBLIC_URL=https://finance.hoidlabs.site, MCP_DATA_DIR=/data
+               volume finbot-spike-data:/data, env_file mcp.env, NO ports:, restart unless-stopped
+  cloudflared  cloudflare/cloudflared:2026.10.6, `tunnel --no-autoupdate run`, env_file tunnel.env,
+               restart unless-stopped
+```
+
+- Deploy: run `spikes/mcp/deploy/deploy.sh` from the repo root (it runs rsync, writes the env files, then
+  `docker compose up -d --build`).
+- Revoke: `docker compose exec -T finbot /mcp-spike revoke --all`. The image has no shell, so `revoke <email>` would need
+  the email on argv; `--all` avoids that.
+- Secret handling: `docker inspect` `Args`/`Cmd` hold no token. finbot's environment has only its own keys. cloudflared's
+  has only `TUNNEL_TOKEN`. Neither sees `CLAUDE_CODE_OAUTH_TOKEN`.
+- Two hoid facts that matter here:
+  - `ledger-web` already publishes host port 8080. That's harmless, since finbot publishes nothing and cloudflared reaches it
+    over the compose network.
+  - The go-sdk loopback DNS-rebinding guard (agy r3) doesn't trigger, because finbot listens on the container interface.
+
+### §8 checklist
+
+| # | Item | Status | Evidence |
+|---|---|---|---|
+| 1 | Public issuer | **VERIFIED** | `/.well-known/oauth-protected-resource` (and `/mcp` variant) → `"resource":"https://finance.hoidlabs.site/mcp","authorization_servers":["https://finance.hoidlabs.site"]`. AS metadata: `"issuer":"https://finance.hoidlabs.site"`, with every endpoint under it. `curl -i …/mcp` → `401`, `www-authenticate: Bearer resource_metadata="https://finance.hoidlabs.site/.well-known/oauth-protected-resource", scope="mcp"` |
+| 2 | Second Google redirect URI | **VERIFIED** | `GET /oauth/google/callback -> 200` after a real Google sign-in through the public URL. The wife's test-user status was not exercised (**UNVERIFIED**) |
+| 3 | Proxy, adapted for Cloudflare | **VERIFIED** | `Authorization` passes through: bearer `POST /mcp -> 200` after sign-in. Streaming works: go-sdk answers POSTs as `text/event-stream` (JSONResponse off), and those 200s reached claude.ai. GET/POST/DELETE/OPTIONS reach finbot (`OPTIONS /mcp -> 204`). `/.well-known/*` is served by finbot (the bodies above come from finbot, not Cloudflare). Nothing to bind on the host: no `ports:` |
+| 4 | Reachability, no blocking, < 10 s | **VERIFIED** | From the Mac, every endpoint answered in 0.12–0.30 s. There was no challenge or bot-fight page for an empty user agent, `python-httpx`, `Claude-User`, `openai-mcp` or `Go-http-client`: each got finbot's own 401 or 200. Anthropic's real egress got through (see 5). No Cloudflare dashboard change was needed |
+| 5 | Real connectors | **VERIFIED** for Claude web and mobile; ChatGPT and Gemini **UNVERIFIED** (skipped) | See the connector results below |
+| 6 | Revoke on hoid | **VERIFIED** | See the revoke section below |
+| 7 | Persistence decision | Decided | In memory for the spike (sup). M3 moves to a SQLite fosite store |
+
+### Connector results (U9)
+
+| Client | Result |
+|---|---|
+| claude.ai web | **VERIFIED**: Settings → Connectors → custom connector, URL `https://finance.hoidlabs.site/mcp`. DCR registered as "Claude", then Google sign-in, consent, Allow, and `hello` succeeded |
+| Claude mobile | **VERIFIED**: the connector synced from web, and `hello` worked with no new DCR or sign-in (it reuses the web connector's tokens) |
+| ChatGPT | **UNVERIFIED** (skipped: Brendan has no plan with developer mode). The RFC 9207 `iss` question stays open |
+| Gemini | **UNVERIFIED** (skipped: not trivially available) |
+
+Server log for the claude.ai web connection (client id redacted):
+```
+POST /mcp -> 401
+GET /.well-known/oauth-protected-resource -> 200
+GET /.well-known/oauth-authorization-server -> 200
+dcr: registered client <id> ("Claude")
+POST /oauth/register -> 201
+GET /oauth/authorize -> 302
+GET /oauth/google/callback -> 200
+login ok for u_9f51ae389a5c (gen 0)
+POST /oauth/consent -> 303
+POST /oauth/token -> 200
+POST /mcp -> 200 …
+```
+
+### Revoke against claude.ai
+
+At 15:06:58 UTC, `docker compose exec -T finbot /mcp-spike revoke --all` printed
+`revoked tokens for * (generation now 1)`. On claude.ai's next call:
+```
+15:07:37 POST /mcp -> 401            old access token rejected
+15:07:38 POST /oauth/token -> 400    refresh attempt → invalid_grant
+15:07:39 POST /mcp -> 401
+15:07:47 POST /oauth/register -> 201 claude.ai re-registers
+15:07:47 GET /oauth/authorize -> 302
+15:07:53 login ok for u_9f51ae389a5c (gen 1)
+15:07:53 POST /oauth/consent -> 303
+15:07:55 POST /oauth/token -> 200
+15:07:56 POST /mcp -> 200
+```
+What the client does: claude.ai tries a silent refresh first. When that fails, it shows the connector as needing to
+reconnect, and Brendan has to re-authenticate. Reconnecting runs a fresh DCR, Google sign-in and consent, after which
+`hello` succeeds again. **VERIFIED**
+
+### Impact on architecture
+
+- §4 exposure is a **Cloudflare Tunnel** (a `cloudflared` sidecar in the finbot compose project), not nginx-proxy-manager.
+  finbot publishes no host port, and hoid needs no inbound ports, TLS certificates or sudo.
+- "Rate-limit + fail2ban at the proxy" doesn't fit any more. fail2ban can't see client IPs on hoid: every request arrives
+  from cloudflared. The replacements are:
+  - Cloudflare **rate-limiting rules** on `/oauth/*` and `/mcp`. They must not challenge Anthropic's egress
+    (`160.79.104.0/21`): either skip that range or use block-only rules (never managed challenge), because API callers can't
+    solve challenges.
+  - Optionally, a WAF custom rule that limits `/mcp` to known client egress ranges.
+  - In-app limits, which already exist: DCR cap 500, pending-login cap 100.
+  
+  If finbot ever logs client IPs, read `CF-Connecting-IP` and trust it only from the cloudflared container.
+- Bot Fight Mode is currently not challenging API callers. If Brendan ever turns on "Bot Fight Mode" or "Under Attack", add
+  a WAF skip rule for `finance.hoidlabs.site` or recheck the connector.
+- §10's "(b) rejected because exposure goes via NPM, not Cloudflare" no longer holds as a reason. Cloudflare Access (b) is
+  still a poor fit, because MCP clients need standard OAuth discovery, so the fosite AS stays.
+- Persistence: every redeploy logs everyone out until M3 moves to a SQLite fosite store plus a persisted HMAC secret.
