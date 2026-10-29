@@ -33,104 +33,54 @@ Automatically categorize uncategorized [YNAB](https://www.ynab.com/) transaction
 
 ## Prerequisites
 
-- Go 1.25+
-- A [YNAB](https://www.ynab.com/) account with a budget
+- Go 1.26+
 - A [YNAB Personal Access Token](https://app.ynab.com/settings/developer)
-- A [Turso](https://turso.tech/) database
-- Google Cloud project with Vertex AI enabled (or an OpenAI API key)
 
 ## Configuration
 
 All configuration is via environment variables. Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
-# YNAB
-YNAB_ACCESS_TOKEN=your-ynab-personal-access-token
-YNAB_BUDGET_ID=last-used              # or a specific budget UUID
-
-# Turso DB
-LIBSQL_DATABASE_URL=libsql://your-db.turso.io
-LIBSQL_AUTH_TOKEN=your-turso-auth-token
-
-# AI Provider (Vertex AI)
-GOOGLE_CLOUD_PROJECT=your-gcp-project
-# GOOGLE_CLOUD_LOCATION=us-central1  # optional, defaults to us-central1
-
-# OR AI Provider (OpenAI)
-# OPENAI_API_KEY=your-openai-key
-
-# App Settings
-CONFIDENCE_THRESHOLD=0.7              # min similarity to auto-categorize (0.0–1.0)
-DRY_RUN=false                         # set to true to log without updating YNAB
-RUN_INTERVAL=6h                       # how often to check for new transactions
+YNAB_ACCESS_TOKEN=your-ynab-personal-access-token   # required
+YNAB_BUDGET_ID=your-active-plan-id                  # required: the active plan
+FINBOT_DB_PATH=/data/finbot.db                      # SQLite mirror
+SYNC_INTERVAL=15m                                   # serve: delta-sync cadence
+IMPORT_INTERVAL=6h                                  # serve: bank-import cadence
+IMPORT_ENABLED=false                                # the import is a YNAB write; off by default
+HTTP_ADDR=:8080                                     # serve: /healthz listener
+LOG_LEVEL=info                                      # debug, info, warn, error
 ```
 
-## Getting Started
-
-### 1. Clone & Install
+## Running
 
 ```bash
-git clone https://github.com/deasa/YNAB_AutoCategorizer.git
-cd YNAB_AutoCategorizer
-go mod download
+go build -o finbot .
+
+./finbot sync              # one delta sync of the active plan (a full export the first time), then exit
+./finbot sync --archived   # scan every plan for a Discretionary category, then sync each plan that has it
+./finbot serve             # daemon: sync now and every SYNC_INTERVAL; GET /healthz on HTTP_ADDR
 ```
 
-### 2. Set Up Your Database
+`/healthz` answers 200 while a sync has succeeded within 2×`SYNC_INTERVAL`, otherwise 503.
 
-The app automatically runs migrations on startup. Ensure your Turso database URL and auth token are set.
-
-### 3. Seed Categories
-
-Before the auto-categorizer can work, your YNAB budget categories need to be embedded into the vector database:
+### Docker
 
 ```bash
-go run ./cmd/seed
-```
-
-This pulls all categories from your YNAB budget and generates vector embeddings for each one. You only need to do this once (or again if you add new categories).
-
-### 4. Run
-
-```bash
-# Load env vars
-source .env
-
-# Run the categorizer
-go run .
-```
-
-The app will:
-1. Immediately categorize any uncategorized transactions
-2. Then repeat every 6 hours (configurable via `RUN_INTERVAL`)
-
-### 5. Docker (Optional)
-
-```bash
-docker build -t ynab-autocategorizer .
-docker run --env-file .env ynab-autocategorizer
+docker build -t finbot .
+docker run --env-file .env -v finbot-data:/data finbot serve
 ```
 
 ## Project Structure
 
 ```
 .
-├── AI/                  # AI embedding providers (Vertex AI, OpenAI)
-│   ├── ai.go            # OpenAI implementation
-│   ├── vertex.go        # Vertex AI implementation
-│   └── types.go         # Provider-agnostic types
-├── categorizer/         # Orchestration — ties YNAB API to search
-├── cmd/
-│   └── seed/            # CLI to seed category embeddings
-├── config/              # Environment configuration
-├── datastore/           # Turso DB data access layer
-│   └── mapper.go        # Embeddings + state persistence
-├── migrations/          # SQL migration files
-├── search/              # Vector similarity search service
-├── types/               # Shared types
-├── ynab/                # YNAB API client wrapper
-├── main.go              # Entry point & scheduler
-├── Dockerfile
-└── .env.example
+├── cmd/       # finbot subcommands: serve (scheduler + /healthz), sync
+├── config/    # environment configuration
+├── store/     # SQLite mirror (modernc.org/sqlite) with embedded migrations
+├── sync/      # delta sync, archived-plan scan, bank-import trigger
+├── ynab/      # YNAB API client wrapper (rate governor, error redaction)
+├── main.go    # entry point
+└── Dockerfile
 ```
 
 ## YNAB API Notes

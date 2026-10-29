@@ -174,24 +174,6 @@ func (c *Client) GetCategories(ctx context.Context) ([]*CategoryGroup, error) {
 	return out, nil
 }
 
-// UpdateTransactionCategory updates a transaction's category in YNAB.
-// If flagColor is non-nil, sets the flag color on the transaction.
-func (c *Client) UpdateTransactionCategory(txn *Transaction, categoryID string, flagColor *FlagColor) error {
-	const op = "update transaction category"
-	if err := c.preflight(op, true); err != nil {
-		return err
-	}
-	update := ynabapi.TransactionUpdate{CategoryID: ynabapi.Set(categoryID)}
-	if flagColor != nil {
-		update.FlagColor = ynabapi.Set(*flagColor)
-	}
-
-	if _, _, err := c.plan.Transactions.Update(asWrite(context.Background()), txn.ID, update); err != nil {
-		return c.red.wrap(op+" "+txn.ID, err)
-	}
-	return nil
-}
-
 // ImportTransactions asks YNAB to import from the plan's linked accounts, the
 // equivalent of pressing Import in the app, and returns the ids of the
 // transactions it created. It is a write: it may spend the write reserve.
