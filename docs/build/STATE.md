@@ -4,7 +4,7 @@ Updated: 2026-10-29 by sup (second session)
 
 ## Now
 - Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29)
-- Next actions: M1-1..M1-4b merged (main 530dce3, pushed). Remaining in M1: **M1-5a** (deploy on hoid + healthcheck; blocked on **BA-12** active-plan id and **BA-7** ping URL; asked Brendan 2026-10-29) → **M1-5b** (backup; blocked on **BA-8**). M1-5a brief must fold in: Dockerfile binary rename to `finbot` + `CMD ["serve"]` + glibc Debian-slim runtime + `/data` volume (M1-4b Result). Then the M1 gate. Reviewer is Claude `rev` until agy quota resets (~2026-11-02). No builders running.
+- Next actions: M1-1..M1-4b merged (main 530dce3, pushed). Remaining in M1: **M1-5a** (deploy on hoid + healthcheck; active; ping optional until **BA-7**) → **M1-5b** (backup; blocked on **BA-8**). M1-5a brief must fold in: Dockerfile binary rename to `finbot` + `CMD ["serve"]` + glibc Debian-slim runtime + `/data` volume (M1-4b Result). Then the M1 gate. Reviewer is Claude `rev` until agy quota resets (~2026-11-02). No builders running.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -32,6 +32,7 @@ Updated: 2026-10-29 by sup (second session)
 | M1-2 | merged | — | — | agy PASS r2 (r1 FIX; 1 low) | merged 2026-10-29; store/ with modernc sqlite, WAL + pragmas verified, embedded migrations, mirror schema 0001 (debt maps, no categories→groups FK, split sentinel), panic-safe writeTx. Low: formatTime RFC3339Nano is not fixed-width (string compares invert at sub-second); fix when next touching store/ |
 | M1-3 | merged | — | — | rev PASS (4 low) | merged 2026-10-29; sync/: export-then-delta, cursor+rows in one tx (crash-safe), tombstones (incl. split children), stitching, link-error transition events (baseline on initial load), freshness §3.1-4, ErrBudgetExhausted/429 → skipped tick, TriggerImport (write reserve; tests only), DiscretionaryPlans one-shot (1+N GETs; live run scanned 8/14). Follow-ups for M1-4: DiscretionaryPlans one-shot only + persist result/full scan; ctx on GetCategories; pass syncedAt to first_seen_at; surface Orphans>0 as event |
 | M1-4a | merged | — | — | rev PASS (4 low) | merged 2026-10-29 (b2414be) (ctx 13%; live scan 15/15 plans, 2 with Discretionary; governor refactored to library Limiter, write intent on ctx); ynab/store/sync follow-ups (persisted full archived scan, first_seen_at=syncedAt, orphans log, ctx on GetCategories, M1-1/M1-2 lows). Open lows (docs/build/../_reviews/M1-4a.md): client test for read *retry* refused at reserve; transport could refuse unmarked non-GET; **scan that hits ErrBudgetExhausted overwrites a prior good plan_scan and ScanError has no Unwrap** (fix when next touching sync/); pre-M1-4a DBs have variable-width timestamps (no prod DB yet) |
+| M1-5a | active | (see Panes) | t/M1-5a | — | dispatched 2026-10-29; Debian-slim non-root image, `finbot health` probe, optional ping, hardened compose (no ports, no cloudflared), deploy.sh; sup deploys |
 | M1-4b | merged | — | — | rev PASS r2 (r1 FIX: committed binary, removed from branch history; 4 low, 3 fixed, unbounded shutdown wait deferred to M3) | merged 2026-10-29 (530dce3) (ctx 12%; live sync/archived/serve OK, docker build OK; Dockerfile golang 1.26 bump; old-categorizer SHA b2414be for M3 guardrail port; **YNAB_BUDGET_ID = archived 'May 2025' plan → BA-12**); serve + sync subcommands, config rewrite, IMPORT_ENABLED off by default, /healthz, delete old categorizer/Turso path, CLAUDE.md |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
@@ -48,7 +49,7 @@ Updated: 2026-10-29 by sup (second session)
 | BA-8 | Off-site backup target (Backblaze B2 bucket or Google Drive) + credentials; generate age key, keep a copy offline | M1-5 | open |
 | BA-10 | YNAB: relink 3 credit-card connections in `direct_import_in_error` (found by M0-5) | M1 sync freshness | open |
 | BA-11 | Tell sup whether the old 6h categorizer is running live anywhere (confounds §3.1 payee-memory finding) | M1 | done 2026-10-27: Brendan believes it is not running → M0-5's 9/75 unapproved+categorized imports are likely YNAB payee memory (§3.1 assumption leans VERIFIED; still confirm by observation in M1) |
-| BA-12 | Confirm the active plan: `.env` `YNAB_BUDGET_ID` points to "May 2025 (Archived on 2026-03-14)". Give sup the plan finbot should sync live (name is enough; sup fixes `.env`) | M1-5a deploy | open |
+| BA-12 | Confirm the active plan: `.env` `YNAB_BUDGET_ID` points to "May 2025 (Archived on 2026-03-14)". Give sup the plan finbot should sync live (name is enough; sup fixes `.env`) | M1-5a deploy | done 2026-10-29: keep the \"May 2025\" plan (already in `.env`); see Decisions |
 | BA-9 | YNAB: create an empty "finbot-sandbox" plan in the YNAB UI for write tests (API can't create plans) | M3 | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
@@ -66,6 +67,8 @@ Updated: 2026-10-29 by sup (second session)
 - 2026-10-29 (M0 gate, sup technical calls, presented to Brendan, no objection): M1-1 fixes the `goal_snoozed_at` decode with the zone-normalizing transport; Go 1.26 for the root module; Debian-based glibc runtime image; persistent fosite storage moves into M2 (not M3). Brendan's reply taken as "continue" → M1 started 2026-10-29.
 
 - 2026-10-29: agy (Antigravity, Google AI Pro) hit its individual quota, which resets ~2026-11-02. Brendan chose a **Claude Opus reviewer** (`rev`, fresh pane per 2 reviews, REVIEWER.md unchanged) until it resets; then switch back to agy. Note that rev draws on the same Claude subscription as the builders (watch `5h`).
+- 2026-10-29: finbot syncs the **"May 2025 (Archived on 2026-03-14)"** plan (Brendan, BA-12). He has no active categorizing plan (categorizing lapsed ~a year); that plan still receives linked-account imports (latest seen 2026-10-24), so it is the live mirror target until the M4 fresh start. `.env` `YNAB_BUDGET_ID` already points to it.
+- 2026-10-29: M1-5a deploys without the healthchecks ping while BA-7 is open (`HEALTHCHECK_PING_URL` optional; sup offered, no objection needed since it is additive). Add the URL when BA-7 lands.
 
 ## Milestone log
 - **M0 Spikes: complete 2026-10-29** (all tasks merged; agy independent testing PASS, report docs/build/spikes/M0-acceptance.md). Outcomes:
