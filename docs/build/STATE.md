@@ -25,7 +25,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-2a | todo (needs BA-5) | | | | |
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
-| M0-4a | active | w1:p12 (b-m0-4a) | t/M0-4a (../YNAB_AutoCategorizer.wt/M0-4a) | | started 2026-10-28; install native claude on hoid (~/.local/bin, no sudo), offline flag check, U11/U12 research |
+| M0-4a | active | w1:p12 (b-m0-4a) | t/M0-4a (../YNAB_AutoCategorizer.wt/M0-4a) | | started 2026-10-28; install native claude on hoid (~/.local/bin, no sudo), offline flag check (U11/U12 research dropped 2026-10-28, Brendan settled them) |
 | M0-4b | todo (needs M0-4a, BA-6) | | | | runtime checks of §5a flags with CLAUDE_CODE_OAUTH_TOKEN |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
@@ -50,6 +50,8 @@ Updated: 2026-10-27 by sup (first session)
 - 2026-10-27: sup must NOT self-restart; Brendan restarts sup by hand from README.md's bootstrap prompt.
 - 2026-10-27: sup may unblock anything in herdr panes in this workspace (Brendan): sup answers permission prompts, trust prompts and approval dialogs for builders and agy itself, using judgment within the plan's safety rules (never move money, no unapproved live-YNAB writes, never print secrets). Escalate only for things needing Brendan's accounts or decisions.
 - 2026-10-27: Category simplification (Brendan): purpose/event categories (Birthday, Trip, Christmas, Giving, etc.) become **savings set-asides only**. Their job is to accumulate enough money to afford the event; spending is NOT tracked per event, and after the event the set-aside balance is zeroed out. Consequences: these categories are never classifier targets (manual-only/excluded, like Birthday/Gift today); M3 old→new category mapping and M4 budget structure (CSP savings goals) follow this. Confirmed by Brendan: event spending is categorized **Discretionary**; zeroing a set-aside is **never automatic**: Brendan does it by hand in YNAB or asks an AI to do it through the MCP (a user-initiated M5 write tool, under the normal confirmation flow). Plan docs to update at M0 gate.
+- 2026-10-28: U11 and U12 resolved by Brendan: subscription capacity is sufficient for finbot's headless `claude` use, and his use is within the approved terms. No further research.
+- 2026-10-28: Headless `claude` on hoid uses **Haiku** (Brendan); applies to both §5a call sites unless a later decision says otherwise. Update architecture.md §5a at the M0 gate.
 
 ## Milestone log
 - (none yet)
