@@ -1,10 +1,10 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-10-27 by sup (first session)
+Updated: 2026-10-29 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. Only M0-2a (BA-5) and M0-2b (BA-3, BA-4) remain. **sup loop PAUSED** (2026-10-28, idle while blocked) until BA-5 lands; Brendan tells sup to resume. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29 → loop resumed, **M0-2a active**. Then only M0-2b (BA-3, BA-4) remains. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -13,7 +13,8 @@ Updated: 2026-10-27 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p13 | control (w1:t7) | reviewer | — | 2026-10-28 | review counter 2 (M0-4a, M0-4b): replace before next review |
+| agy | w1:p15 | control (w1:t7) | reviewer | — | 2026-10-29 | review counter 0 (old w1:p13 was gone on resume) |
+| b-m0-2a | w1:p16 | build | builder | M0-2a | 2026-10-29 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -21,7 +22,7 @@ Updated: 2026-10-27 by sup (first session)
 |---|---|---|---|---|---|
 | M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |
-| M0-2a | todo (needs BA-5) | | | | |
+| M0-2a | active | w1:p16 | t/M0-2a | | started 2026-10-29; needs Brendan's Google sign-in mid-task (QUESTION signal) |
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4a | merged | — | — | agy PASS (4 low) | merged 2026-10-28; claude 2.1.312 (latest channel) at hoid ~/.local/bin; findings docs/build/spikes/claude-cli.md. agy findings (docs/build/spikes/claude-cli-review.md) feed M0-4b + Dockerfile: pass prompt via stdin/`--` (variadic --tools eats positional prompt); check permission-mode can't auto-approve MCP tools outside --allowedTools; disable auto-memory + CLAUDE.md discovery; Docker: debian-slim or Alpine musl deps, CLAUDE_CONFIG_DIR persistent |
@@ -35,7 +36,7 @@ Updated: 2026-10-27 by sup (first session)
 | BA-2 | Slack: create workspace channel `#finances`; create Slack app (Socket Mode on, bot scopes per M0-3 brief) → `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` in `.env`; invite your wife | M0-3 | done 2026-10-28: app finbot (Ashton Clan, 16 humans), private `#finbot-finances`, tokens verified by sup; `message.groups` event added 2026-10-28 |
 | BA-3 | Tell sup the domain served by nginx-proxy-manager; add DNS for `finance.<domain>` | M0-2b | open |
 | BA-4 | nginx-proxy-manager: add proxy host `finance.<domain>` → finbot port with Let's Encrypt (or give sup a way to do it) | M0-2b | open |
-| BA-5 | Google Cloud: OAuth client (web) with redirect URI from M0-2 brief → `GOOGLE_OAUTH_CLIENT_ID/SECRET`; then add claude.ai custom connector when asked | M0-2a | open |
+| BA-5 | Google Cloud: OAuth client (web) with redirect URI from M0-2 brief → `GOOGLE_OAUTH_CLIENT_ID/SECRET`; then add claude.ai custom connector when asked | M0-2a | done 2026-10-29 (project finbot, consent External/Testing with 2 test users, redirect `http://localhost:8080/oauth/google/callback`; sup fixed key-name typo, set `.env` 600, added `MCP_ALLOWED_EMAILS` = Brendan only). Still to do: add `https://finance.<domain>/oauth/google/callback` (M0-2b), claude.ai connector when asked |
 | BA-6 | On hoid: run `DISABLE_UPDATES=1 claude setup-token` (keeps hoid on 2.1.312) and store as `CLAUDE_CODE_OAUTH_TOKEN` in `~/finbot/.env` | M0-4b | done 2026-10-28 (3rd token; perms 600; sup auth probe OK on claude-haiku-5-5). Note: sup accidentally printed ~29 trailing chars of the 1st token while masking a malformed .env; that token was replaced |
 | BA-7 | healthchecks.io (or similar) account → ping URL; connect its alerts to Slack | M1-5 | open |
 | BA-8 | Off-site backup target (Backblaze B2 bucket or Google Drive) + credentials; generate age key, keep a copy offline | M1-5 | open |
