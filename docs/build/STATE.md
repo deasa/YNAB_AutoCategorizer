@@ -4,17 +4,17 @@ Updated: 2026-10-29 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29; M0-2a merged 2026-10-29. **M0-2b active** (Cloudflare Tunnel, decision 2026-10-29). Then the M0 gate. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29; M0-2a merged 2026-10-29. **All M0 tasks merged (2026-10-29). M0 gate in progress**: agy independent testing, docs task for follow-ups, milestone summary, then architecture impact to Brendan and wait for his "continue". Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
+- hoid `finbot-spike` (M0-2 MCP spike, not product): deployed 2026-10-29 from t/M0-2b (merged at 5c47090); live at https://finance.hoidlabs.site; leave running until M0 gate decision
 
 ## Panes
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p1A | control (w1:t7) | reviewer | M0-2b | 2026-10-29 | review counter 1 (M0-2b) |
-| b-m0-2b | w1:p19 | build | builder | M0-2b | 2026-10-29 | |
+| agy | w1:p1A | control (w1:t7) | reviewer | — | 2026-10-29 | review counter 1 (M0-2b) |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -23,7 +23,7 @@ Updated: 2026-10-29 by sup (first session)
 | M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |
 | M0-2a | merged | — | — | agy PASS r3 (r1 FIX, r2 FIX; 1 low) | merged 2026-10-29; findings docs/build/spikes/mcp.md, reviews docs/build/spikes/mcp-review.md. go-sdk v1.8.0 + fosite v0.49.0 AS (DCR, PKCE S256, opaque HMAC tokens, refresh rotation, RFC 7009) + Google sign-in via go-oidc, allowlist on verified email, CSRF consent page, per-user generation revocation; spike module go 1.26. Brendan live sign-in OK twice (incl. consent page). **M0-2b MUST**: proxy to the container on the Docker network with `MCP_LISTEN_ADDR=:8080` and no host port, never via host 127.0.0.1 (go-sdk loopback DNS-rebinding guard → 403 on `finance.<domain>` Host); add `https://finance.<domain>/oauth/google/callback` to the Google client; persist the fosite HMAC secret, or accept re-login per deploy. Other follow-ups in tasks/M0-2a.md Result |
-| M0-2b | review | w1:p19 | t/M0-2b | | started 2026-10-29; deploys spike to hoid; needs Brendan for the claude.ai connector (QUESTION) |
+| M0-2b | merged | — | — | agy PASS (2 low, for M1/M2 hardening) | merged 2026-10-29; spike stack `finbot-spike` (finbot + cloudflared 2026.10.6) running on hoid at https://finance.hoidlabs.site (compose in `~/finbot-spike/mcp/`, secrets in `mcp.env`/`tunnel.env` 0600). claude.ai web + mobile connector VERIFIED live; revoke → reconnect prompt → re-auth OK. ChatGPT skipped (no plan), Gemini skipped. Follow-ups: Cloudflare rate-limit rules (never challenge; spare Anthropic egress), wife's real sign-in, persistent fosite store (M3), deploy.sh pipefail/env asserts, container hardening (cap_drop, no-new-privileges, read_only, log rotation, cloudflared metrics bind). Review appended to docs/build/spikes/mcp-review.md |
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4a | merged | — | — | agy PASS (4 low) | merged 2026-10-28; claude 2.1.312 (latest channel) at hoid ~/.local/bin; findings docs/build/spikes/claude-cli.md. agy findings (docs/build/spikes/claude-cli-review.md) feed M0-4b + Dockerfile: pass prompt via stdin/`--` (variadic --tools eats positional prompt); check permission-mode can't auto-approve MCP tools outside --allowedTools; disable auto-memory + CLAUDE.md discovery; Docker: debian-slim or Alpine musl deps, CLAUDE_CONFIG_DIR persistent |
 | M0-4b | merged | — | — | agy PASS (2 low; reproduced the dontAsk finding) | merged 2026-10-28; final §5a command lines in docs/build/spikes/claude-cli.md. MUST for M3/M5 `llm/`: `--permission-mode dontAsk` on the Slack site (auto executed a tool outside --allowedTools); `--system-prompt-snapshot off` with --resume; stdin prompts; `--mcp-config` as a 0600 temp file (bearer token never on argv); test HTTP MCP + Authorization header across --resume; health check `rc==0 && !is_error && trimmed lower result=="ok"`; classifier treats null structured_output as skip. Review kept at docs/build/spikes/claude-cli-review-4b.md |
