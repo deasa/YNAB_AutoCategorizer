@@ -5,56 +5,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run
 
 ```bash
-go build -o ynab-autocategorizer .
+go build -o finbot .
+./finbot serve                 # daemon: delta sync now + every SYNC_INTERVAL, /healthz on HTTP_ADDR
+./finbot sync                  # one delta sync of the active plan, print a one-line summary, exit
+./finbot sync --archived       # persisted scan of every plan for Discretionary, then SyncPlan each one that has it
+./finbot                       # usage, exit 2 (also for unknown subcommands)
+
 go test ./...                          # all tests
-go test -v ./categorizer               # single package
-go test -run TestHighConfidence ./categorizer  # single test
+go test -v ./sync                      # single package
+go test -run TestScheduler_ ./cmd      # single test pattern
 ```
+
+Env-gated live tests (read-only against the real plans, need `.env`):
+```bash
+YNAB_LIVE_SMOKE=1 go test ./ynab -run TestLiveSmoke -v       # two GETs
+YNAB_LIVE_SYNC=1 go test ./sync -run TestLiveSync -v         # initial + delta on the active plan
+YNAB_LIVE_SYNC=1 go test ./sync -run 'TestLiveScan$' -v      # archived-plan scan over every plan
+```
+Set `YNAB_LIVE_SYNC_LOG=<path>` to keep the live sync log. Grep any live output for UUIDs, the token and the plan id
+before showing it.
 
 Docker:
 ```bash
-docker build -t ynab-autocategorizer .
-docker run --env-file .env ynab-autocategorizer
-```
-
-Seed the vector database with YNAB categories (one-time setup):
-```bash
-go run ./cmd/seed
+docker build -t finbot .
+docker run --env-file .env -v finbot-data:/data finbot serve
 ```
 
 ## Architecture
 
-YNAB AutoCategorizer fetches uncategorized transactions from YNAB, asks an LLM to pick a category, then validates the LLM's suggestion via vector similarity search against pre-seeded category embeddings in a Turso/libSQL vector database, and updates YNAB.
+finbot mirrors YNAB plans into one local SQLite file and keeps the active plan current with one delta request per tick.
+The old 6-hour LLM/vector categorizer (and its Turso, Vertex and OpenAI stack) is gone; categorization returns as
+`classify/` in M3.
 
 **Package roles:**
-- `categorizer/` — Orchestrator: fetches uncategorized txns, asks AI to categorize, validates via vector search, applies safety checks (AI certainty threshold + ambiguity gap), updates YNAB
-- `search/` — Embeds query text via AI provider, queries vector DB for top-K matches
-- `AI/` — Provider-agnostic interface with Vertex AI (`vertex.go`) and OpenAI (`ai.go`) implementations; provides both embedding (768-dim vectors) and LLM chat categorization (`CategorizeTransaction`)
-- `datastore/` — Turso/libSQL persistence using `vector_top_k` for similarity search against `F32_BLOB(768)` columns
-- `ynab/` — Wrapper around `brunomvsouza/ynab.go` SDK for transaction and category operations
-- `config/` — Env var loading/validation via godotenv; requires YNAB token + Turso credentials + one AI provider
-- `types/` — Shared `SearchResponse` struct (Category, Description, Distance)
-- `cmd/seed/` — CLI tool to populate vector DB with category embeddings from YNAB
-- `migrate/` — Embedded SQL migration runner with `schema_migrations` tracking
+- `main.go` → `cmd.Main`: subcommand dispatch (stdlib `flag`).
+- `cmd/` — `serve` and `sync`. `Scheduler` runs the sync job immediately, then every `SYNC_INTERVAL`, and the import
+  job every `IMPORT_INTERVAL` only when `IMPORT_ENABLED`. All jobs run on one goroutine, so ticks never overlap; ticks
+  that come due during a job are dropped. `Health` serves `GET /healthz`: 200 with
+  `{"last_sync_ok","last_error"}` while a sync succeeded within 2×`SYNC_INTERVAL`, else 503 (a rate-budget skip
+  counts as not fresh). Logs are `log/slog` JSON; `sync`/`ynab`'s `*log.Logger` is adapted with `slog.NewLogLogger`.
+  Graceful shutdown on SIGINT/SIGTERM cancels the running tick, closes the HTTP server and the DB.
+- `config/` — env loading (godotenv for `.env`). `LoadFrom(getenv)` for tests. Errors name the variable, never the value.
+- `store/` — SQLite via `modernc.org/sqlite` (pure Go, CGO off), WAL, separate writer/reader pools, embedded
+  migrations in `store/migrations/` (`0001_mirror`, `0002_plan_scan`). Mirror tables per plan, `sync_state` cursor,
+  `plan_scan` (persisted archived scan; read with `DB.PlanScans`). Timestamps are fixed-width UTC strings.
+- `sync/` — `Syncer.SyncPlan`: full export the first time a plan is seen, then one delta per tick; rows and cursor
+  commit in one transaction. Stitches subtransactions, emits bank-link `LinkEvent`s on transitions, counts orphans.
+  `ScanDiscretionary` scans every plan (archived included) and persists the result. `TriggerImport` is the bank-import
+  POST. Nothing logged carries an id.
+- `ynab/` — thin wrapper over `pkg.venceslau.dev/ynab` (V4) with a zone-normalizing, body-capping HTTP transport
+  (`goal_snoozed_at`). A local rate governor (200/hr, write reserve) runs as the library's `Limiter`; write intent
+  travels on ctx (`asWrite`). Every error has the token, plan id and other ids redacted. `ImportTransactions` is the
+  only YNAB write.
 
-**Key data flow:** `main` → `categorizer.Run()` → for each txn: `AI.CategorizeTransaction(payee, amount, categories)` → `search.Search(suggestion)` (embeds via `AI.GetEmbeddings()` + `datastore.FindRelevantContent()`) → categorizer applies safety checks → `ynab.UpdateTransactionCategory()`
+**Key data flow:** `finbot serve` → `Scheduler` tick → `Syncer.SyncPlan(activePlan)` → `ynab.Client.Export`/`Delta` →
+`store` upsert + cursor in one tx → slog line (initial/delta, skipped, row counts, orphans, link events by account name)
+→ `Health.OK`/`Fail`.
 
-**Categorization is precision-first** — it prefers leaving a transaction uncategorized over applying a wrong category, and it never flags or approves transactions (the user keeps final review; transactions stay unapproved). A transaction is **skipped** (left uncategorized) when any of these hold:
-1. It is an account transfer (`TransferAccountID` set) or the payee contains "Venmo"
-2. The AI returns the `NONE` sentinel (not routine / no confident match)
-3. AI certainty is below the confidence threshold (default 0.75)
-4. Best vector match distance exceeds the max vector distance threshold (default 0.8)
-5. Top-2 vector results are ambiguous (gap < 10% of best distance, min 0.01)
-6. The resolved category isn't an applicable YNAB category (unknown, or matched an excluded keyword)
+## Safety
 
-**Categorization rules (in the AI prompt):** only routine/clearly-identifiable purchases are categorized; dining/restaurants/eating/groceries and Amazon map to "Discretionary"; non-routine purchases return `NONE`. Categories matching `EXCLUDED_CATEGORY_KEYWORDS` (default `Birthday,Gift`, case-insensitive) are dropped from both the AI candidate list and the resolution map.
+- YNAB access is read-only except `ImportTransactions`. `IMPORT_ENABLED` defaults to false; turning it on against the
+  live plan needs Brendan's OK.
+- Never log or print ids, the token or the plan id; plan and account names are fine.
 
 ## Testing
 
-All external dependencies are mocked via interfaces (`YNABClient`, `Search`, `AI`, `SearchStore`). Tests cover confidence thresholds, ambiguity detection, dry-run mode, payee/memo fallback, hidden category filtering, and error propagation. No integration tests or external services needed.
+External dependencies sit behind interfaces with fakes (`sync.PlanAPI`, `sync.PlanLister`, an injectable `Ticker` and
+clock in `cmd`). Store tests use a temp SQLite file. Live tests are env-gated (above).
 
 ## Configuration
 
-All config is via environment variables (loaded from `.env`). See `.env.example` for the full list. Key requirement: must provide either `GOOGLE_CLOUD_PROJECT` (Vertex AI) or `OPENAI_API_KEY`.
-
-`MAX_TRANSACTIONS` caps how many uncategorized transactions are processed per run (0 = unlimited); useful for a cautious first live run. `EXCLUDED_CATEGORY_KEYWORDS` (default `Birthday,Gift`) is a comma-separated, case-insensitive list of keywords; any category whose name contains one is never auto-applied.
+All config is via environment variables (loaded from `.env`); see `.env.example`.
+Required: `YNAB_ACCESS_TOKEN`, `YNAB_BUDGET_ID` (the active plan). Defaults: `FINBOT_DB_PATH=/data/finbot.db`,
+`SYNC_INTERVAL=15m`, `IMPORT_INTERVAL=6h`, `IMPORT_ENABLED=false`, `HTTP_ADDR=:8080`, `LOG_LEVEL=info`.
