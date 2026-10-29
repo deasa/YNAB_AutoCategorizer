@@ -7,10 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/brunomvsouza/ynab.go/api/category"
-	"github.com/brunomvsouza/ynab.go/api/transaction"
 	"github.com/deasa/YNAB_AutoCategorizer/AI"
 	"github.com/deasa/YNAB_AutoCategorizer/types"
+	"github.com/deasa/YNAB_AutoCategorizer/ynab"
 )
 
 // --- Mock AI ---
@@ -51,10 +50,10 @@ func (m *queryAwareMockAI) CategorizeTransaction(_ context.Context, payee string
 // --- Mock YNAB Client ---
 
 type mockYNABClient struct {
-	uncategorized    []*transaction.Transaction
+	uncategorized    []*ynab.Transaction
 	uncategorizedErr error
 
-	categoryGroups    []*category.GroupWithCategories
+	categoryGroups    []*ynab.CategoryGroup
 	categoryGroupsErr error
 
 	updatedTxns []updateCall
@@ -64,18 +63,18 @@ type mockYNABClient struct {
 type updateCall struct {
 	TxnID      string
 	CategoryID string
-	FlagColor  *transaction.FlagColor
+	FlagColor  *ynab.FlagColor
 }
 
-func (m *mockYNABClient) GetUncategorizedTransactions() ([]*transaction.Transaction, error) {
+func (m *mockYNABClient) GetUncategorizedTransactions() ([]*ynab.Transaction, error) {
 	return m.uncategorized, m.uncategorizedErr
 }
 
-func (m *mockYNABClient) GetCategories() ([]*category.GroupWithCategories, error) {
+func (m *mockYNABClient) GetCategories() ([]*ynab.CategoryGroup, error) {
 	return m.categoryGroups, m.categoryGroupsErr
 }
 
-func (m *mockYNABClient) UpdateTransactionCategory(txn *transaction.Transaction, categoryID string, flagColor *transaction.FlagColor) error {
+func (m *mockYNABClient) UpdateTransactionCategory(txn *ynab.Transaction, categoryID string, flagColor *ynab.FlagColor) error {
 	m.updatedTxns = append(m.updatedTxns, updateCall{TxnID: txn.ID, CategoryID: categoryID, FlagColor: flagColor})
 	return m.updateErr
 }
@@ -123,7 +122,7 @@ func TestRun_SkipsTransfers(t *testing.T) {
 
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized:  []*transaction.Transaction{txn},
+		uncategorized:  []*ynab.Transaction{txn},
 	}
 	aiMock := &mockAI{
 		suggestion: AI.CategorySuggestion{Category: "Groceries", Certainty: 0.95},
@@ -144,7 +143,7 @@ func TestRun_SkipsTransfers(t *testing.T) {
 func TestRun_SkipsVenmo(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Venmo"), nil),
 		},
 	}
@@ -167,7 +166,7 @@ func TestRun_SkipsVenmo(t *testing.T) {
 func TestRun_NONESuggestion_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Some Rare One-Off Vendor"), nil),
 		},
 	}
@@ -190,16 +189,16 @@ func TestRun_NONESuggestion_Skips(t *testing.T) {
 
 func TestRun_ExcludedCategory_NotApplied(t *testing.T) {
 	ynabClient := &mockYNABClient{
-		categoryGroups: []*category.GroupWithCategories{
+		categoryGroups: []*ynab.CategoryGroup{
 			{
 				Name: "Savings", Hidden: false, Deleted: false,
-				Categories: []*category.Category{
-					{ID: "cat-bday", Name: "Birthday - Marie Gifts", Hidden: false, Deleted: false},
-					{ID: "cat-groceries", Name: "Groceries", Hidden: false, Deleted: false},
+				Categories: []ynab.Category{
+					{CategoryBase: ynab.CategoryBase{ID: "cat-bday", Name: "Birthday - Marie Gifts", Hidden: false, Deleted: false}},
+					{CategoryBase: ynab.CategoryBase{ID: "cat-groceries", Name: "Groceries", Hidden: false, Deleted: false}},
 				},
 			},
 		},
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Toy Store"), nil),
 		},
 	}
@@ -223,7 +222,7 @@ func TestRun_ExcludedCategory_NotApplied(t *testing.T) {
 func TestRun_MaxTransactions_LimitsProcessing(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Whole Foods"), nil),
 			makeTxn("txn-2", strPtr("Whole Foods"), nil),
 			makeTxn("txn-3", strPtr("Whole Foods"), nil),
@@ -250,14 +249,14 @@ func TestRun_MaxTransactions_LimitsProcessing(t *testing.T) {
 	}
 }
 
-func defaultCategoryGroups() []*category.GroupWithCategories {
-	return []*category.GroupWithCategories{
+func defaultCategoryGroups() []*ynab.CategoryGroup {
+	return []*ynab.CategoryGroup{
 		{
 			Name: "Bills", Hidden: false, Deleted: false,
-			Categories: []*category.Category{
-				{ID: "cat-groceries", Name: "Groceries", Hidden: false, Deleted: false},
-				{ID: "cat-dining", Name: "Dining Out", Hidden: false, Deleted: false},
-				{ID: "cat-shopping", Name: "Shopping", Hidden: false, Deleted: false},
+			Categories: []ynab.Category{
+				{CategoryBase: ynab.CategoryBase{ID: "cat-groceries", Name: "Groceries", Hidden: false, Deleted: false}},
+				{CategoryBase: ynab.CategoryBase{ID: "cat-dining", Name: "Dining Out", Hidden: false, Deleted: false}},
+				{CategoryBase: ynab.CategoryBase{ID: "cat-shopping", Name: "Shopping", Hidden: false, Deleted: false}},
 			},
 		},
 	}
@@ -267,12 +266,14 @@ func newLogger() *log.Logger {
 	return log.New(os.Stdout, "TEST ", log.LstdFlags)
 }
 
-func makeTxn(id string, payee *string, memo *string) *transaction.Transaction {
-	return &transaction.Transaction{
-		ID:        id,
+func makeTxn(id string, payee *string, memo *string) *ynab.Transaction {
+	return &ynab.Transaction{
+		TransactionBase: ynab.TransactionBase{
+			ID:     id,
+			Memo:   memo,
+			Amount: -50000, // -$50.00 in milliunits
+		},
 		PayeeName: payee,
-		Memo:      memo,
-		Amount:    -50000, // -$50.00 in milliunits
 	}
 }
 
@@ -283,7 +284,7 @@ func makeTxn(id string, payee *string, memo *string) *transaction.Transaction {
 func TestRun_HighCertainty_ClearMatch_Updates(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Whole Foods"), nil),
 		},
 	}
@@ -320,7 +321,7 @@ func TestRun_HighCertainty_ClearMatch_Updates(t *testing.T) {
 func TestRun_LowAICertainty_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Mystery Vendor"), nil),
 		},
 	}
@@ -351,7 +352,7 @@ func TestRun_LowAICertainty_Skips(t *testing.T) {
 func TestRun_AmbiguousVectorMatch_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Corner Store"), nil),
 		},
 	}
@@ -383,7 +384,7 @@ func TestRun_AmbiguousVectorMatch_Skips(t *testing.T) {
 func TestRun_LowCertaintyAndAmbiguous_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Weird Place"), nil),
 		},
 	}
@@ -414,7 +415,7 @@ func TestRun_LowCertaintyAndAmbiguous_Skips(t *testing.T) {
 func TestRun_AIError_ContinuesProcessing(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-err", strPtr("Error Vendor"), nil),
 			makeTxn("txn-ok", strPtr("Good Vendor"), nil),
 		},
@@ -455,7 +456,7 @@ func TestRun_AIError_ContinuesProcessing(t *testing.T) {
 func TestRun_DryRun_DoesNotUpdate(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Whole Foods"), nil),
 		},
 	}
@@ -486,7 +487,7 @@ func TestRun_DryRun_DoesNotUpdate(t *testing.T) {
 func TestRun_FallsBackToMemo(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", nil, strPtr("Grocery store purchase")),
 		},
 	}
@@ -517,7 +518,7 @@ func TestRun_FallsBackToMemo(t *testing.T) {
 func TestRun_NoPayeeNoMemo_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", nil, nil),
 		},
 	}
@@ -543,7 +544,7 @@ func TestRun_NoPayeeNoMemo_Skips(t *testing.T) {
 func TestRun_EmptyPayeeString_UseMemo(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr(""), strPtr("Amazon purchase")),
 		},
 	}
@@ -574,7 +575,7 @@ func TestRun_EmptyPayeeString_UseMemo(t *testing.T) {
 func TestRun_NoVectorResults_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Totally Unique Vendor"), nil),
 		},
 	}
@@ -602,7 +603,7 @@ func TestRun_NoVectorResults_Skips(t *testing.T) {
 func TestRun_CategoryNotInYNAB_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Vendor"), nil),
 		},
 	}
@@ -632,7 +633,7 @@ func TestRun_CategoryNotInYNAB_Skips(t *testing.T) {
 func TestRun_ZeroTransactions_NoOp(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized:  []*transaction.Transaction{},
+		uncategorized:  []*ynab.Transaction{},
 	}
 	aiMock := &mockAI{}
 	searchSvc := &mockSearch{}
@@ -653,23 +654,23 @@ func TestRun_ZeroTransactions_NoOp(t *testing.T) {
 
 func TestRun_HiddenDeletedCategoriesExcluded(t *testing.T) {
 	ynabClient := &mockYNABClient{
-		categoryGroups: []*category.GroupWithCategories{
+		categoryGroups: []*ynab.CategoryGroup{
 			{
 				Name: "Everyday", Hidden: false, Deleted: false,
-				Categories: []*category.Category{
-					{ID: "cat-active", Name: "Active Category", Hidden: false, Deleted: false},
-					{ID: "cat-hidden", Name: "Hidden Category", Hidden: true, Deleted: false},
-					{ID: "cat-deleted", Name: "Deleted Category", Hidden: false, Deleted: true},
+				Categories: []ynab.Category{
+					{CategoryBase: ynab.CategoryBase{ID: "cat-active", Name: "Active Category", Hidden: false, Deleted: false}},
+					{CategoryBase: ynab.CategoryBase{ID: "cat-hidden", Name: "Hidden Category", Hidden: true, Deleted: false}},
+					{CategoryBase: ynab.CategoryBase{ID: "cat-deleted", Name: "Deleted Category", Hidden: false, Deleted: true}},
 				},
 			},
 			{
 				Name: "Old Group", Hidden: true, Deleted: false,
-				Categories: []*category.Category{
-					{ID: "cat-in-hidden-group", Name: "In Hidden Group", Hidden: false, Deleted: false},
+				Categories: []ynab.Category{
+					{CategoryBase: ynab.CategoryBase{ID: "cat-in-hidden-group", Name: "In Hidden Group", Hidden: false, Deleted: false}},
 				},
 			},
 		},
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Test Vendor"), nil),
 		},
 	}
@@ -699,7 +700,7 @@ func TestRun_HiddenDeletedCategoriesExcluded(t *testing.T) {
 func TestRun_SearchError_ContinuesProcessing(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Vendor 1"), nil),
 			makeTxn("txn-2", strPtr("Vendor 2"), nil),
 		},
@@ -766,7 +767,7 @@ func TestRun_GetTransactionsError_ReturnsError(t *testing.T) {
 func TestRun_UpdateError_CountsAsError(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Whole Foods"), nil),
 		},
 		updateErr: fmt.Errorf("YNAB update failed"),
@@ -795,7 +796,7 @@ func TestRun_UpdateError_CountsAsError(t *testing.T) {
 func TestRun_ClearNonAmbiguousMatch_NoFlag(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Chipotle"), nil),
 		},
 	}
@@ -829,7 +830,7 @@ func TestRun_ClearNonAmbiguousMatch_NoFlag(t *testing.T) {
 func TestRun_SingleVectorResult_Updates(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Whole Foods"), nil),
 		},
 	}
@@ -858,21 +859,21 @@ func TestRun_SingleVectorResult_Updates(t *testing.T) {
 
 func TestRun_DeletedGroupExcluded(t *testing.T) {
 	ynabClient := &mockYNABClient{
-		categoryGroups: []*category.GroupWithCategories{
+		categoryGroups: []*ynab.CategoryGroup{
 			{
 				Name: "Active", Hidden: false, Deleted: false,
-				Categories: []*category.Category{
-					{ID: "cat-active", Name: "Active Cat", Hidden: false, Deleted: false},
+				Categories: []ynab.Category{
+					{CategoryBase: ynab.CategoryBase{ID: "cat-active", Name: "Active Cat", Hidden: false, Deleted: false}},
 				},
 			},
 			{
 				Name: "Deleted Group", Hidden: false, Deleted: true,
-				Categories: []*category.Category{
-					{ID: "cat-in-deleted", Name: "In Deleted Group", Hidden: false, Deleted: false},
+				Categories: []ynab.Category{
+					{CategoryBase: ynab.CategoryBase{ID: "cat-in-deleted", Name: "In Deleted Group", Hidden: false, Deleted: false}},
 				},
 			},
 		},
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Test"), nil),
 		},
 	}
@@ -902,7 +903,7 @@ func TestRun_DeletedGroupExcluded(t *testing.T) {
 func TestRun_MultipleTransactions_MixedResults(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-good", strPtr("Whole Foods"), nil),
 			makeTxn("txn-err", strPtr("Error Vendor"), nil),
 		},
@@ -943,7 +944,7 @@ func TestRun_MultipleTransactions_MixedResults(t *testing.T) {
 func TestRun_VectorDistanceTooHigh_Skips(t *testing.T) {
 	ynabClient := &mockYNABClient{
 		categoryGroups: defaultCategoryGroups(),
-		uncategorized: []*transaction.Transaction{
+		uncategorized: []*ynab.Transaction{
 			makeTxn("txn-1", strPtr("Random Vendor"), nil),
 		},
 	}
@@ -987,9 +988,9 @@ func TestPayeeNameOrMemo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			txn := &transaction.Transaction{
-				PayeeName: tt.payee,
-				Memo:      tt.memo,
+			txn := &ynab.Transaction{
+				TransactionBase: ynab.TransactionBase{Memo: tt.memo},
+				PayeeName:       tt.payee,
 			}
 			result := payeeNameOrMemo(txn)
 			if result != tt.expected {
