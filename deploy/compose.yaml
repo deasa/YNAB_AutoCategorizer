@@ -1,0 +1,37 @@
+# Compose project finbot, deployed by deploy/deploy.sh to hoid:~/finbot
+# (source in ~/finbot/src, this file at ~/finbot/src/deploy/compose.yaml).
+# The project directory is this file's, so compose never reads ~/finbot/.env.
+# No cloudflared yet: finbot-spike owns the tunnel until M2.
+services:
+  finbot:
+    build: ..
+    image: finbot:latest
+    command: ["serve"]
+    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, optional HEALTHCHECK_PING_URL only.
+    # deploy.sh points FINBOT_ENV_FILE at ~/finbot/finbot.env (0600).
+    env_file: ${FINBOT_ENV_FILE:-finbot.env}
+    environment:
+      FINBOT_DB_PATH: /data/finbot.db
+      IMPORT_ENABLED: "false"
+    volumes:
+      - finbot-data:/data
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "finbot", "health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  finbot-data:

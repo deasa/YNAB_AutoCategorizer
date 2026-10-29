@@ -32,6 +32,10 @@ type Config struct {
 	// HTTPAddr is where `finbot serve` listens (/healthz).
 	HTTPAddr string
 	LogLevel slog.Level
+
+	// HealthcheckPingURL, if set, is a dead-man URL pinged after each sync
+	// tick (HEALTHCHECK_PING_URL). It is a secret: never log it.
+	HealthcheckPingURL string
 }
 
 // Load reads configuration from the environment, after loading .env if one
@@ -57,6 +61,8 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		YNABBudgetID:    getenv("YNAB_BUDGET_ID"),
 		DBPath:          get("FINBOT_DB_PATH", "/data/finbot.db"),
 		HTTPAddr:        get("HTTP_ADDR", ":8080"),
+
+		HealthcheckPingURL: getenv("HEALTHCHECK_PING_URL"),
 	}
 	for _, key := range []string{"YNAB_ACCESS_TOKEN", "YNAB_BUDGET_ID"} {
 		if getenv(key) == "" {

@@ -70,12 +70,14 @@ func (h *Health) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 
 var uuidRE = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
-// scrub strips any id or the token that slipped past the ynab package's
-// own redaction before an error is logged or shown on the unauthenticated
-// /healthz.
-func scrub(s, token string) string {
-	if token != "" {
-		s = strings.ReplaceAll(s, token, "<token>")
+// scrub strips any id or secret (the token, the ping URL) that slipped past
+// the ynab package's own redaction before an error is logged or shown on the
+// unauthenticated /healthz.
+func scrub(s string, secrets ...string) string {
+	for _, secret := range secrets {
+		if secret != "" {
+			s = strings.ReplaceAll(s, secret, "<secret>")
+		}
 	}
 	return uuidRE.ReplaceAllString(s, "<id>")
 }

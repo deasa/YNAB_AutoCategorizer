@@ -1,5 +1,5 @@
-// Package cmd implements the finbot subcommands: `serve` (the daemon) and
-// `sync` (one-shot). Nothing it logs or prints carries a plan, account or
+// Package cmd implements the finbot subcommands: `serve` (the daemon),
+// `sync` (one-shot) and `health` (the container healthcheck). Nothing it logs or prints carries a plan, account or
 // transaction id, or the token.
 package cmd
 
@@ -13,7 +13,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,6 +31,7 @@ commands:
   serve             run the daemon: delta sync every SYNC_INTERVAL, /healthz on HTTP_ADDR
   sync              run one delta sync of the active plan and exit
   sync --archived   scan every plan for Discretionary (persisted), then sync each plan that has it
+  health            GET /healthz on the local server (HTTP_ADDR); exit 0 on 200, else 1
 `
 
 // Main runs finbot with args (without the program name) and returns the
@@ -53,6 +56,12 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}, func(fs *flag.FlagSet) {
 			fs.BoolVar(&archived, "archived", false, "scan every plan for Discretionary, then sync each plan that has it")
 		})
+	case "health":
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "finbot health: unexpected arguments\n\n%s", usage)
+			return 2
+		}
+		return probe(os.Getenv("HTTP_ADDR"), stderr)
 	default:
 		fmt.Fprintf(stderr, "finbot: unknown command %q\n\n%s", args[0], usage)
 		return 2
@@ -96,7 +105,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 
 	db, err := store.Open(ctx, cfg.DBPath)
 	if err != nil {
-		logger.Error("open store", "err", scrub(err.Error(), cfg.YNABAccessToken))
+		logger.Error("open store", "err", scrub(err.Error(), cfg.YNABAccessToken, cfg.HealthcheckPingURL))
 		return 1
 	}
 	defer db.Close()
@@ -116,7 +125,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 		syncer:  finsync.New(db, clients, ynabLog),
 	}
 	if err := run(ctx, a, fs); err != nil {
-		logger.Error("finbot "+name+" failed", "err", scrub(err.Error(), cfg.YNABAccessToken))
+		logger.Error("finbot "+name+" failed", "err", scrub(err.Error(), cfg.YNABAccessToken, cfg.HealthcheckPingURL))
 		return 1
 	}
 	return 0
@@ -224,9 +233,14 @@ func (a *app) syncArchived(ctx context.Context, stdout io.Writer) error {
 func (a *app) newScheduler() (*Scheduler, *Health) {
 	cfg := a.cfg
 	health := &Health{StaleAfter: 2 * cfg.SyncInterval, Token: cfg.YNABAccessToken}
+	pinger := &Pinger{URL: cfg.HealthcheckPingURL, Log: a.log}
+	a.log.Info("healthcheck ping", "enabled", pinger.URL != "")
 	sched := &Scheduler{
 		Sync: func(ctx context.Context) error {
 			_, err := a.syncPlan(ctx, cfg.YNABBudgetID, "active")
+			if ctx.Err() == nil {
+				pinger.After(ctx, err)
+			}
 			return err
 		},
 		SyncEvery: cfg.SyncInterval,
@@ -290,5 +304,8 @@ func (a *app) serve(ctx context.Context) error {
 	return nil
 }
 
-// redact scrubs ids and the token from s before it is logged or printed.
-func (a *app) redact(s string) string { return scrub(s, a.cfg.YNABAccessToken) }
+// redact scrubs ids, the token and the ping URL from s before it is logged
+// or printed.
+func (a *app) redact(s string) string {
+	return scrub(s, a.cfg.YNABAccessToken, a.cfg.HealthcheckPingURL, strings.TrimRight(a.cfg.HealthcheckPingURL, "/"))
+}

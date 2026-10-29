@@ -49,12 +49,15 @@ func TestLoadFrom_Overrides(t *testing.T) {
 		"IMPORT_ENABLED":  "true",
 		"HTTP_ADDR":       "127.0.0.1:9090",
 		"LOG_LEVEL":       "debug",
+
+		"HEALTHCHECK_PING_URL": "https://hc.example/abc",
 	})))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.DBPath != "/tmp/x.db" || cfg.SyncInterval != time.Minute || cfg.ImportInterval != 2*time.Hour ||
-		!cfg.ImportEnabled || cfg.HTTPAddr != "127.0.0.1:9090" || cfg.LogLevel != slog.LevelDebug {
+		!cfg.ImportEnabled || cfg.HTTPAddr != "127.0.0.1:9090" || cfg.LogLevel != slog.LevelDebug ||
+		cfg.HealthcheckPingURL != "https://hc.example/abc" {
 		t.Errorf("overrides not applied: %+v", *cfg)
 	}
 }
