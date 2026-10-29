@@ -13,7 +13,7 @@ Updated: 2026-10-29 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p17 | control (w1:t7) | reviewer | — | 2026-10-29 | review counter 1 (M0-2a r3) |
+| agy | — | control (w1:t7) | reviewer | — | — | pane w1:p17 gone (2nd idle agy to vanish); start fresh agy at next review |
 | b-m0-2b | w1:p19 | build | builder | M0-2b | 2026-10-29 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
