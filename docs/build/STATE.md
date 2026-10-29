@@ -4,7 +4,7 @@ Updated: 2026-10-27 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a merged; M0-4b running. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -13,8 +13,7 @@ Updated: 2026-10-27 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p13 | control (w1:t7) | reviewer | M0-4b | 2026-10-28 | review counter 2 (M0-4a, M0-4b): replace before next review |
-| b-m0-4b | w1:p14 | build | builder | M0-4b | 2026-10-28 | |
+| agy | w1:p13 | control (w1:t7) | reviewer | — | 2026-10-28 | review counter 2 (M0-4a, M0-4b): replace before next review |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -26,7 +25,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4a | merged | — | — | agy PASS (4 low) | merged 2026-10-28; claude 2.1.312 (latest channel) at hoid ~/.local/bin; findings docs/build/spikes/claude-cli.md. agy findings (docs/build/spikes/claude-cli-review.md) feed M0-4b + Dockerfile: pass prompt via stdin/`--` (variadic --tools eats positional prompt); check permission-mode can't auto-approve MCP tools outside --allowedTools; disable auto-memory + CLAUDE.md discovery; Docker: debian-slim or Alpine musl deps, CLAUDE_CONFIG_DIR persistent |
-| M0-4b | review | w1:p14 (b-m0-4b) | t/M0-4b (../YNAB_AutoCategorizer.wt/M0-4b) | agy #2 requested | DONE 2026-10-28: all 6 checks VERIFIED, 24 calls. SECURITY: --permission-mode auto executed a tool outside --allowedTools → Slack site must use --permission-mode dontAsk |
+| M0-4b | merged | — | — | agy PASS (2 low; reproduced the dontAsk finding) | merged 2026-10-28; final §5a command lines in docs/build/spikes/claude-cli.md. MUST for M3/M5 `llm/`: `--permission-mode dontAsk` on the Slack site (auto executed a tool outside --allowedTools); `--system-prompt-snapshot off` with --resume; stdin prompts; `--mcp-config` as a 0600 temp file (bearer token never on argv); test HTTP MCP + Authorization header across --resume; health check `rc==0 && !is_error && trimmed lower result=="ok"`; classifier treats null structured_output as skip. Review kept at docs/build/spikes/claude-cli-review-4b.md |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
