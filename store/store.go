@@ -8,6 +8,8 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"net/url"
+	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -72,7 +74,16 @@ func dsn(path string, readOnly bool) string {
 	if readOnly {
 		q.Add("_pragma", "query_only(ON)")
 	}
-	return "file:" + path + "?" + q.Encode()
+	return "file:" + uriPath(path) + "?" + q.Encode()
+}
+
+// uriPath escapes a filesystem path for a SQLite "file:" URI: '%', '?' and '#'
+// are URI syntax, and a leading "//" would be read as an authority.
+func uriPath(path string) string {
+	if path != ":memory:" {
+		path = filepath.Clean(path)
+	}
+	return strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(path)
 }
 
 func openPool(ctx context.Context, path string, readOnly bool) (*sql.DB, error) {
@@ -130,7 +141,9 @@ func verifyPragmas(ctx context.Context, db *sql.DB, readOnly bool) error {
 // checked at COMMIT). sql.Tx considers itself finished after a failed Commit
 // and won't roll back, which would leave the single writer connection stuck
 // inside a transaction.
-func writeTx(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) (err error) {
+//
+// Any exit other than a successful COMMIT, including a panic in fn, rolls back.
+func writeTx(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) error {
 	c, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("store: acquire writer: %w", err)
@@ -139,8 +152,9 @@ func writeTx(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) (err err
 	if _, err := c.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return fmt.Errorf("store: begin: %w", err)
 	}
+	committed := false
 	defer func() {
-		if err == nil {
+		if committed {
 			return
 		}
 		// A background context so a cancelled ctx can't skip the rollback.
@@ -155,5 +169,6 @@ func writeTx(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) (err err
 	if _, err := c.ExecContext(ctx, "COMMIT"); err != nil {
 		return fmt.Errorf("store: commit: %w", err)
 	}
+	committed = true
 	return nil
 }

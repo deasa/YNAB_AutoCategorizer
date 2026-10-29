@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -178,9 +180,6 @@ func TestForeignKeysEnforced(t *testing.T) {
 		"subtransaction without parent": func(tx *Tx) error {
 			return tx.UpsertSubtransactions(plan, []Subtransaction{{ID: "s9", TransactionID: "missing"}})
 		},
-		"category without group": func(tx *Tx) error {
-			return tx.UpsertCategories(plan, []Category{{ID: "c9", CategoryGroupID: "missing", Name: "x"}})
-		},
 		"month category without month": func(tx *Tx) error {
 			return tx.UpsertMonthCategories(plan, []MonthCategory{{Month: "1999-01-01", CategoryID: "c1"}})
 		},
@@ -211,6 +210,13 @@ func TestForeignKeysEnforced(t *testing.T) {
 	if err := db.Update(ctx, func(tx *Tx) error { return fullPlan(tx, "m", false) }); err != nil {
 		t.Fatalf("split sentinel rejected: %v", err)
 	}
+	// Full exports include deleted categories but omit deleted groups, so a
+	// category whose group is unknown must be accepted.
+	if err := db.Update(ctx, func(tx *Tx) error {
+		return tx.UpsertCategories(plan, []Category{{ID: "c9", CategoryGroupID: "deleted-group", Name: "x", Deleted: true}})
+	}); err != nil {
+		t.Fatalf("category with unknown group rejected: %v", err)
+	}
 }
 
 func TestSyncState(t *testing.T) {
@@ -231,5 +237,98 @@ func TestSyncState(t *testing.T) {
 	}
 	if got.ServerKnowledge != 250 || !got.SyncedAt.Equal(at) || got.PlanID != plan {
 		t.Errorf("GetSyncState = %+v", got)
+	}
+}
+
+func TestDebtTermsRoundTrip(t *testing.T) {
+	db, _ := openTest(t)
+	ctx := context.Background()
+	mortgage := Account{
+		ID: "m1", Name: "Mortgage", Type: "mortgage", Balance: -250000000,
+		DebtInterestRates:   map[string]int64{"2024-01-01": 6125, "2020-06-01": 3250},
+		DebtMinimumPayments: map[string]int64{"2024-01-01": 1850000},
+		DebtEscrowAmounts:   map[string]int64{"2024-01-01": 420000},
+	}
+	plain := Account{ID: "a2", Name: "Cash", Type: "cash", DebtInterestRates: map[string]int64{}}
+	if err := db.Update(ctx, func(tx *Tx) error { return tx.UpsertAccounts(plan, []Account{mortgage, plain}) }); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range []Account{mortgage, plain} {
+		var cols [3]*string
+		if err := db.r.QueryRow(`SELECT debt_interest_rates, debt_minimum_payments, debt_escrow_amounts
+			FROM accounts WHERE id = ?`, a.ID).Scan(&cols[0], &cols[1], &cols[2]); err != nil {
+			t.Fatal(err)
+		}
+		for i, want := range []map[string]int64{a.DebtInterestRates, a.DebtMinimumPayments, a.DebtEscrowAmounts} {
+			if len(want) == 0 {
+				if cols[i] != nil {
+					t.Errorf("%s col %d = %q, want NULL", a.ID, i, *cols[i])
+				}
+				continue
+			}
+			var got map[string]int64
+			if cols[i] == nil || json.Unmarshal([]byte(*cols[i]), &got) != nil || !reflect.DeepEqual(got, want) {
+				t.Errorf("%s col %d = %v, want %v", a.ID, i, cols[i], want)
+			}
+		}
+	}
+}
+
+func TestFirstSeenResetsWhenImportIDAppears(t *testing.T) {
+	db, _ := openTest(t)
+	ctx := context.Background()
+	manual := Transaction{ID: "t1", Date: "2026-10-01", Amount: -500, Cleared: "uncleared", AccountID: "a1"}
+	put := func(x Transaction) string {
+		t.Helper()
+		if err := db.Update(ctx, func(tx *Tx) error { return tx.UpsertTransactions(plan, []Transaction{x}) }); err != nil {
+			t.Fatal(err)
+		}
+		var s string
+		db.r.QueryRow(`SELECT first_seen_at FROM transactions WHERE id = 't1'`).Scan(&s)
+		time.Sleep(2 * time.Millisecond)
+		return s
+	}
+	created := put(manual)
+	if again := put(manual); again != created {
+		t.Errorf("first_seen_at changed without import_id: %q -> %q", created, again)
+	}
+	imported := manual
+	imported.ImportID = ptr("YNAB:-500:2026-10-01:1")
+	matched := put(imported)
+	if matched <= created {
+		t.Errorf("first_seen_at not reset on import_id appearance: %q -> %q", created, matched)
+	}
+	if again := put(imported); again != matched {
+		t.Errorf("first_seen_at changed after import_id already set: %q -> %q", matched, again)
+	}
+}
+
+func TestPanicInUpdateRollsBack(t *testing.T) {
+	db, _ := openTest(t)
+	ctx := context.Background()
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected panic")
+			}
+		}()
+		db.Update(ctx, func(tx *Tx) error {
+			if err := tx.UpsertPayees(plan, []Payee{{ID: "p1", Name: "Half-written"}}); err != nil {
+				return err
+			}
+			panic("boom")
+		})
+	}()
+	if n := count(t, db, `SELECT count(*) FROM payees`); n != 0 {
+		t.Errorf("payees after panicked Update = %d, want 0", n)
+	}
+	// The single writer connection must not be left inside a transaction.
+	if err := db.Update(ctx, func(tx *Tx) error {
+		return tx.UpsertPayees(plan, []Payee{{ID: "p2", Name: "After"}})
+	}); err != nil {
+		t.Fatalf("Update after panic: %v", err)
+	}
+	if n := count(t, db, `SELECT count(*) FROM payees`); n != 1 {
+		t.Errorf("payees = %d, want 1", n)
 	}
 }

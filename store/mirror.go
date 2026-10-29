@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -27,6 +28,11 @@ type Account struct {
 	DirectImportInError bool
 	LastReconciledAt    *time.Time
 	DebtOriginalBalance *int64
+	// Loan terms keyed by effective date "YYYY-MM-DD", values in milliunits
+	// (interest rates are percent × 1000).
+	DebtInterestRates   map[string]int64
+	DebtMinimumPayments map[string]int64
+	DebtEscrowAmounts   map[string]int64
 	Deleted             bool
 }
 
@@ -207,8 +213,9 @@ func (t *Tx) UpsertAccounts(planID string, rows []Account) error {
 	return upsert(t, "accounts", `INSERT INTO accounts (
 		plan_id, id, name, type, on_budget, closed, note, balance, cleared_balance,
 		uncleared_balance, transfer_payee_id, direct_import_linked, direct_import_in_error,
-		last_reconciled_at, debt_original_balance, deleted
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		last_reconciled_at, debt_original_balance, debt_interest_rates, debt_minimum_payments,
+		debt_escrow_amounts, deleted
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT (plan_id, id) DO UPDATE SET
 		name = excluded.name, type = excluded.type, on_budget = excluded.on_budget,
 		closed = excluded.closed, note = excluded.note, balance = excluded.balance,
@@ -217,11 +224,16 @@ func (t *Tx) UpsertAccounts(planID string, rows []Account) error {
 		direct_import_linked = excluded.direct_import_linked,
 		direct_import_in_error = excluded.direct_import_in_error,
 		last_reconciled_at = excluded.last_reconciled_at,
-		debt_original_balance = excluded.debt_original_balance, deleted = excluded.deleted`,
+		debt_original_balance = excluded.debt_original_balance,
+		debt_interest_rates = excluded.debt_interest_rates,
+		debt_minimum_payments = excluded.debt_minimum_payments,
+		debt_escrow_amounts = excluded.debt_escrow_amounts, deleted = excluded.deleted`,
 		rows, func(a Account) []any {
 			return []any{planID, a.ID, a.Name, a.Type, a.OnBudget, a.Closed, a.Note, a.Balance,
 				a.ClearedBalance, a.UnclearedBalance, a.TransferPayeeID, a.DirectImportLinked,
-				a.DirectImportInError, formatTimePtr(a.LastReconciledAt), a.DebtOriginalBalance, a.Deleted}
+				a.DirectImportInError, formatTimePtr(a.LastReconciledAt), a.DebtOriginalBalance,
+				periodicJSON(a.DebtInterestRates), periodicJSON(a.DebtMinimumPayments),
+				periodicJSON(a.DebtEscrowAmounts), a.Deleted}
 		})
 }
 
@@ -297,7 +309,7 @@ func (t *Tx) UpsertPayees(planID string, rows []Payee) error {
 }
 
 // UpsertTransactions inserts or updates transactions. first_seen_at is set on
-// insert only.
+// insert, and reset when an existing row first gains an import_id.
 func (t *Tx) UpsertTransactions(planID string, rows []Transaction) error {
 	now := formatTime(time.Now())
 	return upsert(t, "transactions", `INSERT INTO transactions (
@@ -316,7 +328,10 @@ func (t *Tx) UpsertTransactions(planID string, rows []Transaction) error {
 		matched_transaction_id = excluded.matched_transaction_id, import_id = excluded.import_id,
 		import_payee_name = excluded.import_payee_name,
 		import_payee_name_original = excluded.import_payee_name_original,
-		debt_transaction_type = excluded.debt_transaction_type, deleted = excluded.deleted`,
+		debt_transaction_type = excluded.debt_transaction_type, deleted = excluded.deleted,
+		first_seen_at = CASE
+			WHEN transactions.import_id IS NULL AND excluded.import_id IS NOT NULL
+			THEN excluded.first_seen_at ELSE transactions.first_seen_at END`,
 		rows, func(x Transaction) []any {
 			return []any{planID, x.ID, x.Date, x.Amount, x.Memo, x.Cleared, x.Approved, x.FlagColor,
 				x.FlagName, x.AccountID, x.PayeeID, x.CategoryID, x.TransferAccountID,
@@ -442,6 +457,17 @@ func (d *DB) GetSyncState(ctx context.Context, planID string) (s SyncState, ok b
 		return SyncState{}, false, fmt.Errorf("store: parse sync_state.synced_at: %w", err)
 	}
 	return s, true, nil
+}
+
+// periodicJSON encodes a loan periodic-value map as JSON (keys sorted by
+// encoding/json), or NULL when empty.
+func periodicJSON(m map[string]int64) *string {
+	if len(m) == 0 {
+		return nil
+	}
+	b, _ := json.Marshal(m) // map[string]int64 cannot fail to marshal
+	s := string(b)
+	return &s
 }
 
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

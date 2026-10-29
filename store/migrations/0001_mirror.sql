@@ -5,12 +5,14 @@
 -- 'YYYY-MM-DD' TEXT; timestamps are RFC 3339 UTC TEXT.
 --
 -- Foreign keys are declared only for parent/child composition that YNAB
--- guarantees (group->category, transaction->subtransaction, month->month
--- category, scheduled->scheduled sub). They are DEFERRABLE INITIALLY DEFERRED
+-- guarantees (transaction->subtransaction, month->month category,
+-- scheduled->scheduled sub). They are DEFERRABLE INITIALLY DEFERRED
 -- so a sync batch can write rows in any order inside one transaction.
 -- Cross-entity references (account_id, payee_id, category_id, ...) are not
 -- FKs: a split parent's category_id is YNAB's internal "Split" sentinel, which
--- is not in categories, and full exports omit deleted accounts and payees.
+-- is not in categories, and full exports omit deleted accounts, payees and
+-- category groups (while including deleted categories), so category ->
+-- category_group is not an FK either.
 
 CREATE TABLE accounts (
     plan_id                TEXT    NOT NULL,
@@ -28,6 +30,10 @@ CREATE TABLE accounts (
     direct_import_in_error INTEGER NOT NULL,
     last_reconciled_at     TEXT,
     debt_original_balance  INTEGER,
+    -- Loan terms: JSON objects of {"YYYY-MM-DD": milliunits}, NULL when empty.
+    debt_interest_rates    TEXT,
+    debt_minimum_payments  TEXT,
+    debt_escrow_amounts    TEXT,
     deleted                INTEGER NOT NULL DEFAULT 0,
     -- Local only; never written by sync.
     tax_bucket             TEXT,
@@ -72,9 +78,7 @@ CREATE TABLE categories (
     goal_overall_left          INTEGER,
     goal_snoozed_at            TEXT,
     deleted                    INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (plan_id, id),
-    FOREIGN KEY (plan_id, category_group_id) REFERENCES category_groups (plan_id, id)
-        DEFERRABLE INITIALLY DEFERRED
+    PRIMARY KEY (plan_id, id)
 ) STRICT;
 CREATE INDEX categories_group ON categories (plan_id, category_group_id);
 
@@ -109,7 +113,8 @@ CREATE TABLE transactions (
     import_payee_name_original TEXT,
     debt_transaction_type      TEXT,
     deleted                    INTEGER NOT NULL DEFAULT 0,
-    -- Local: when this mirror first stored the row (import freshness, F6).
+    -- Local: when this mirror first stored the row, reset when import_id first
+    -- appears (a manual entry matched to a bank import). Import freshness, F6.
     first_seen_at              TEXT    NOT NULL,
     PRIMARY KEY (plan_id, id)
 ) STRICT;

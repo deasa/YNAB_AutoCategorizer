@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -180,4 +181,20 @@ func TestSchemaDump(t *testing.T) {
 		b.WriteString(s + ";\n")
 	}
 	t.Log("\n" + b.String())
+}
+
+func TestOpenEscapesURIPath(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "odd #1 ?x %41")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "finbot.db")
+	db, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Open(%q): %v", path, err)
+	}
+	db.Close()
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("database not created at the literal path: %v", err)
+	}
 }
