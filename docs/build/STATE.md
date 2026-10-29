@@ -56,4 +56,11 @@ Updated: 2026-10-29 by sup (first session)
 - 2026-10-29: Public exposure = **Cloudflare Tunnel** (Brendan, on sup's recommendation), replacing Q16's nginx-proxy-manager assumption. Found: domain is `hoidlabs.site` (Squarespace Domains, exp. 2028), served by hoid's *system* nginx with certbot; NPM installed but unused; router does not forward 80/443 (ECONNREFUSED from outside); home IP fixedness unknown. Tunnel needs no port forwarding, no sudo, works with a dynamic IP/CGNAT, hides the home IP. cloudflared runs in the finbot compose project and reaches `finbot:8080` over the compose network. Plan docs (§4 exposure, rate-limit/fail2ban → Cloudflare rules) updated at the M0 gate.
 
 ## Milestone log
-- (none yet)
+- **M0 Spikes: complete 2026-10-29** (all tasks merged; agy independent testing PASS, report docs/build/spikes/M0-acceptance.md). Outcomes:
+  - YNAB (ynab.md): `pkg.venceslau.dev/ynab` v1.6.1 + `Plan.Delta` as the only sync read. F1 `goal_snoozed_at` decode fix needed before M1-1; zone-normalizing transport proven in spike.
+  - Jev (jev.md): primary classifier behind rules, payee history + Discretionary policy in state, start τ=0.8 (~90% precision / ~73% coverage, n=200). Category simplification decided (Decisions); re-measure afterwards.
+  - Slack (slack.md): Socket Mode with slack-go v0.32.0 (Go 1.26), private channel needs `message.groups`; extend §2 `questions`.
+  - claude CLI (claude-cli.md): 2.1.312 on hoid, Haiku, `--permission-mode dontAsk` required on the Slack site, plus the §5a flag set.
+  - MCP (mcp.md): go-sdk v1.8.0 + fosite v0.49.0 + Google sign-in; exposed via Cloudflare Tunnel at finance.hoidlabs.site; claude.ai web + mobile verified.
+  - Cross-cutting: Go 1.26, glibc runtime image (claude needs it), split 0600 env files, Cloudflare rate limits replace fail2ban.
+  - Gate status: architecture impact presented to Brendan 2026-10-29; waiting for his "continue". Then: docs task applying all follow-ups (map in M0-acceptance.md), expand the M1 backlog.
