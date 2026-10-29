@@ -14,7 +14,7 @@ Updated: 2026-10-29 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p1A | control (w1:t7) | reviewer | — | 2026-10-29 | review counter 1 (M0-2b) |
+| agy | w1:p1A | control (w1:t7) | reviewer | M0 acceptance | 2026-10-29 | review counter 2 (M0-2b, M0 acceptance): replace before next review |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
