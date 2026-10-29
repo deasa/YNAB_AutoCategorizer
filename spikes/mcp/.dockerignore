@@ -1,0 +1,5 @@
+.data
+mcp-spike
+deploy
+*.env
+.env

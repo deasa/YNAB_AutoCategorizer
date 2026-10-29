@@ -1,0 +1,28 @@
+# Compose project finbot-spike, deployed to ~/finbot-spike/mcp on hoid.
+# The Cloudflare Tunnel "hoid" routes finance.hoidlabs.site -> http://finbot:8080
+# over this project's network, so finbot publishes no host port.
+name: finbot-spike
+
+services:
+  finbot:
+    build: ./src
+    image: finbot-spike-mcp:latest
+    environment:
+      MCP_LISTEN_ADDR: ":8080" # container IP, not loopback: keeps go-sdk's DNS-rebinding guard off
+      MCP_PUBLIC_URL: https://finance.hoidlabs.site
+      MCP_DATA_DIR: /data
+    env_file: mcp.env # GOOGLE_OAUTH_CLIENT_ID/SECRET, MCP_ALLOWED_EMAILS only
+    volumes:
+      - finbot-spike-data:/data
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.6
+    command: tunnel --no-autoupdate run # token comes from TUNNEL_TOKEN, never argv
+    env_file: tunnel.env # TUNNEL_TOKEN only, extracted from ~/finbot/.env
+    depends_on:
+      - finbot
+    restart: unless-stopped
+
+volumes:
+  finbot-spike-data:
