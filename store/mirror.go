@@ -308,10 +308,11 @@ func (t *Tx) UpsertPayees(planID string, rows []Payee) error {
 		})
 }
 
-// UpsertTransactions inserts or updates transactions. first_seen_at is set on
-// insert, and reset when an existing row first gains an import_id.
-func (t *Tx) UpsertTransactions(planID string, rows []Transaction) error {
-	now := formatTime(time.Now())
+// UpsertTransactions inserts or updates transactions. first_seen_at is set to
+// syncedAt (the tick's sync time) on insert, and reset to it when an existing
+// row first gains an import_id.
+func (t *Tx) UpsertTransactions(planID string, rows []Transaction, syncedAt time.Time) error {
+	now := formatTime(syncedAt)
 	return upsert(t, "transactions", `INSERT INTO transactions (
 		plan_id, id, date, amount, memo, cleared, approved, flag_color, flag_name, account_id,
 		payee_id, category_id, transfer_account_id, transfer_transaction_id,
@@ -470,7 +471,13 @@ func periodicJSON(m map[string]int64) *string {
 	return &s
 }
 
-func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+// timeLayout is RFC 3339 with a fixed nine-digit fraction. Stored in UTC it
+// has a fixed width, so comparing the strings orders the times, sub-second
+// precision included (RFC3339Nano trims trailing zeros and breaks that).
+// time.RFC3339Nano parses it.
+const timeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+func formatTime(t time.Time) string { return t.UTC().Format(timeLayout) }
 
 func formatTimePtr(t *time.Time) *string {
 	if t == nil {

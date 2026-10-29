@@ -70,7 +70,7 @@ func (m *mockYNABClient) GetUncategorizedTransactions() ([]*ynab.Transaction, er
 	return m.uncategorized, m.uncategorizedErr
 }
 
-func (m *mockYNABClient) GetCategories() ([]*ynab.CategoryGroup, error) {
+func (m *mockYNABClient) GetCategories(context.Context) ([]*ynab.CategoryGroup, error) {
 	return m.categoryGroups, m.categoryGroupsErr
 }
 

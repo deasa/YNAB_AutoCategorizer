@@ -67,7 +67,7 @@ func (f *fakeAPI) ImportTransactions(context.Context) ([]string, error) {
 	return f.imported, f.err
 }
 
-func (f *fakeAPI) GetCategories() ([]*ynab.CategoryGroup, error) {
+func (f *fakeAPI) GetCategories(context.Context) ([]*ynab.CategoryGroup, error) {
 	f.calls = append(f.calls, "categories")
 	return f.groups, f.err
 }
@@ -301,6 +301,12 @@ func TestSyncPlan_SplitStitching(t *testing.T) {
 	if res.Orphans != 1 || h.count("subtransactions", "id = 's-orphan'") != 0 {
 		t.Errorf("orphans=%d, want 1 dropped", res.Orphans)
 	}
+	if n := strings.Count(h.logs.String(), "dropped 1 orphan subtransactions"); n != 1 {
+		t.Errorf("orphan log lines = %d, want 1:\n%s", n, h.logs.String())
+	}
+	if strings.Contains(h.logs.String(), "s-orphan") || strings.Contains(h.logs.String(), "t-unknown") {
+		t.Errorf("orphan log names ids:\n%s", h.logs.String())
+	}
 	if h.count("subtransactions", "id = 's-1' AND amount = -4500") != 1 || h.cursor() != 101 {
 		t.Error("child of a mirrored parent not applied")
 	}
@@ -325,6 +331,46 @@ func TestSyncPlan_SplitStitching(t *testing.T) {
 	}
 	if h.count("subtransactions", "id = 's-1' AND amount = -4500") != 1 {
 		t.Error("tombstoned child lost its data")
+	}
+}
+
+// first_seen_at is the tick's sync time, the same instant as synced_at, not
+// a separate time.Now inside the store.
+func TestSyncPlan_FirstSeenIsTickSyncTime(t *testing.T) {
+	h := newHarness(t)
+	t1 := time.Date(2026, 10, 29, 9, 30, 0, 123456789, time.UTC)
+	h.s.now = func() time.Time { return t1 }
+	h.tick()
+
+	t2 := t1.Add(10 * time.Minute)
+	h.s.now = func() time.Time { return t2 }
+	h.api.setDelta(100, 101, &ynab.PlanDetail{Transactions: []ynabapi.TransactionBase{
+		txn("t-new", acctB, 28, -100, ptr("YNAB:-100:2026-10-28:1")),
+	}})
+	h.tick()
+
+	firstSeen := func(id string) time.Time {
+		t.Helper()
+		var s string
+		if err := h.db.Reader().QueryRow(`SELECT first_seen_at FROM transactions WHERE plan_id = ? AND id = ?`,
+			planID, id).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		v, err := time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if got := firstSeen("t-imp"); !got.Equal(t1) {
+		t.Errorf("initial load first_seen_at = %v, want %v", got, t1)
+	}
+	if got := firstSeen("t-new"); !got.Equal(t2) {
+		t.Errorf("delta first_seen_at = %v, want %v", got, t2)
+	}
+	st, _, _ := h.db.GetSyncState(context.Background(), planID)
+	if !st.SyncedAt.Equal(t2) {
+		t.Errorf("synced_at = %v, want %v", st.SyncedAt, t2)
 	}
 }
 
@@ -506,22 +552,46 @@ type fakeLister []ynab.PlanSummary
 
 func (l fakeLister) Plans(context.Context) ([]ynab.PlanSummary, error) { return l, nil }
 
-func TestDiscretionaryPlans(t *testing.T) {
+func TestScanDiscretionary(t *testing.T) {
 	group := func(name string, deleted bool) []*ynab.CategoryGroup {
 		c := ynabapi.Category{}
 		c.Name, c.Deleted = name, deleted
 		return []*ynab.CategoryGroup{{Name: "G", Categories: []ynabapi.Category{c}}}
 	}
+	const brokenID = "33333333-3333-3333-3333-333333333333"
 	apis := map[string]*fakeAPI{
 		"old":     {groups: group(" discretionary", false)},
 		"gone":    {groups: group("Discretionary", true)},
 		"other":   {groups: group("Groceries", false)},
+		brokenID:  {groups: group("Discretionary", false), err: fmt.Errorf("fetch categories %s: boom", brokenID)},
 		"current": {groups: group("Discretionary", false)},
 	}
-	lister := fakeLister{{ID: "old"}, {ID: "gone"}, {ID: "other"}, {ID: "current"}}
-	got, err := DiscretionaryPlans(context.Background(), lister, func(id string) PlanAPI { return apis[id] })
+	// More plans than the old live run's cap of 8, so a cap would show.
+	lister := fakeLister{{ID: "old", Name: "Old"}, {ID: "gone", Name: "Gone"}, {ID: "other", Name: "Other"},
+		{ID: brokenID, Name: "Broken"}, {ID: "current", Name: "Current"}}
+	for i := range 6 {
+		id := fmt.Sprintf("extra-%d", i)
+		apis[id] = &fakeAPI{groups: group("Rent", false)}
+		lister = append(lister, ynab.PlanSummary{ID: id, Name: id})
+	}
+	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "finbot.db"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	defer db.Close()
+	// A previous scan's plan that is no longer reachable must not survive.
+	if err := db.ReplacePlanScans(context.Background(), []store.PlanScan{{PlanID: "stale", Name: "Stale"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ScanDiscretionary(context.Background(), lister, func(id string) PlanAPI { return apis[id] }, db)
+	var scanErr *ScanError
+	if !errors.As(err, &scanErr) || scanErr.Scanned != len(lister) || len(scanErr.Failed) != 1 ||
+		scanErr.Failed[0].Name != "Broken" {
+		t.Fatalf("err = %v, want a ScanError naming the broken plan", err)
+	}
+	if strings.Contains(err.Error(), brokenID) {
+		t.Errorf("scan error leaks the plan id: %v", err)
 	}
 	var ids []string
 	for _, p := range got {
@@ -530,7 +600,47 @@ func TestDiscretionaryPlans(t *testing.T) {
 	if strings.Join(ids, ",") != "old,current" {
 		t.Errorf("got %v, want [old current]", ids)
 	}
+	for id, api := range apis {
+		if len(api.calls) != 1 {
+			t.Errorf("plan %s: calls %v, want one categories fetch", id, api.calls)
+		}
+	}
+
+	rows, err := db.PlanScans(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != len(lister) {
+		t.Fatalf("stored %d rows, want %d", len(rows), len(lister))
+	}
+	for _, r := range rows {
+		switch {
+		case r.PlanID == "stale":
+			t.Error("stale row from an earlier scan survived")
+		case r.ScannedAt.IsZero():
+			t.Errorf("%s: no scanned_at", r.PlanID)
+		case r.PlanID == brokenID:
+			if r.ScanError == "" || strings.Contains(r.ScanError, brokenID) || r.HasDiscretionary {
+				t.Errorf("broken plan row = %+v", r)
+			}
+		case r.HasDiscretionary != (r.PlanID == "old" || r.PlanID == "current"):
+			t.Errorf("%s: has_discretionary = %v", r.PlanID, r.HasDiscretionary)
+		}
+	}
+
+	// A failed list stores nothing.
+	failing := failingLister{errors.New("down")}
+	if _, err := ScanDiscretionary(context.Background(), failing, nil, db); err == nil {
+		t.Fatal("want list error")
+	}
+	if rows2, _ := db.PlanScans(context.Background()); len(rows2) != len(lister) {
+		t.Errorf("failed list changed stored rows: %d", len(rows2))
+	}
 }
+
+type failingLister struct{ err error }
+
+func (l failingLister) Plans(context.Context) ([]ynab.PlanSummary, error) { return nil, l.err }
 
 func TestSyncPlan_PlansAreKeyedByID(t *testing.T) {
 	h := newHarness(t)

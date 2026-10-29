@@ -25,7 +25,7 @@ func fullPlan(tx *Tx, txnMemo string, deleted bool) error {
 				AccountID: "a1", PayeeID: ptr("p1"), CategoryID: ptr("split-sentinel"),
 				ImportID: ptr("YNAB:-10000:2026-10-01:1"), MatchedTransactionID: ptr("t0"),
 				FlagColor: ptr("red"), Deleted: deleted,
-			}})
+			}}, testSyncedAt)
 		},
 		func() error {
 			return tx.UpsertAccounts(plan, []Account{{
@@ -117,7 +117,7 @@ func TestUpsertThenReupsertUpdatesInPlace(t *testing.T) {
 	}
 	var recon string
 	db.r.QueryRow(`SELECT last_reconciled_at FROM accounts WHERE id = 'a1'`).Scan(&recon)
-	if recon != "2026-09-01T12:00:00Z" {
+	if recon != "2026-09-01T12:00:00.000000000Z" {
 		t.Errorf("last_reconciled_at = %q", recon)
 	}
 }
@@ -154,7 +154,7 @@ func TestTombstoneMarksDeleted(t *testing.T) {
 	}
 	if err := db.Update(ctx, func(tx *Tx) error {
 		if err := tx.UpsertTransactions(plan, []Transaction{{ID: "t1", Date: "2026-10-01", Amount: -10000,
-			Cleared: "cleared", AccountID: "a1", Deleted: true}}); err != nil {
+			Cleared: "cleared", AccountID: "a1", Deleted: true}}, testSyncedAt); err != nil {
 			return err
 		}
 		return tx.UpsertPayees(plan, []Payee{{ID: "p1", Name: "Costco", Deleted: true}})
@@ -187,7 +187,7 @@ func TestForeignKeysEnforced(t *testing.T) {
 			return tx.UpsertScheduledSubtransactions(plan, []ScheduledSubtransaction{{ID: "x", ScheduledTransactionID: "missing"}})
 		},
 		"parent in another plan": func(tx *Tx) error {
-			if err := tx.UpsertTransactions("other-plan", []Transaction{{ID: "t1", Date: "2026-01-01", Cleared: "cleared", AccountID: "a"}}); err != nil {
+			if err := tx.UpsertTransactions("other-plan", []Transaction{{ID: "t1", Date: "2026-01-01", Cleared: "cleared", AccountID: "a"}}, testSyncedAt); err != nil {
 				return err
 			}
 			return tx.UpsertSubtransactions(plan, []Subtransaction{{ID: "s9", TransactionID: "t1"}})
@@ -278,28 +278,64 @@ func TestFirstSeenResetsWhenImportIDAppears(t *testing.T) {
 	db, _ := openTest(t)
 	ctx := context.Background()
 	manual := Transaction{ID: "t1", Date: "2026-10-01", Amount: -500, Cleared: "uncleared", AccountID: "a1"}
-	put := func(x Transaction) string {
+	tick := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	put := func(x Transaction) time.Time {
 		t.Helper()
-		if err := db.Update(ctx, func(tx *Tx) error { return tx.UpsertTransactions(plan, []Transaction{x}) }); err != nil {
+		tick = tick.Add(1500 * time.Millisecond)
+		if err := db.Update(ctx, func(tx *Tx) error { return tx.UpsertTransactions(plan, []Transaction{x}, tick) }); err != nil {
 			t.Fatal(err)
 		}
 		var s string
 		db.r.QueryRow(`SELECT first_seen_at FROM transactions WHERE id = 't1'`).Scan(&s)
-		time.Sleep(2 * time.Millisecond)
-		return s
+		got, err := time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			t.Fatalf("parse first_seen_at %q: %v", s, err)
+		}
+		return got
 	}
 	created := put(manual)
-	if again := put(manual); again != created {
-		t.Errorf("first_seen_at changed without import_id: %q -> %q", created, again)
+	if !created.Equal(tick) {
+		t.Errorf("first_seen_at = %v, want the injected syncedAt %v", created, tick)
+	}
+	if again := put(manual); !again.Equal(created) {
+		t.Errorf("first_seen_at changed without import_id: %v -> %v", created, again)
 	}
 	imported := manual
 	imported.ImportID = ptr("YNAB:-500:2026-10-01:1")
 	matched := put(imported)
-	if matched <= created {
-		t.Errorf("first_seen_at not reset on import_id appearance: %q -> %q", created, matched)
+	if !matched.Equal(tick) {
+		t.Errorf("first_seen_at = %v on import_id appearance, want the injected syncedAt %v", matched, tick)
 	}
-	if again := put(imported); again != matched {
-		t.Errorf("first_seen_at changed after import_id already set: %q -> %q", matched, again)
+	if again := put(imported); !again.Equal(matched) {
+		t.Errorf("first_seen_at changed after import_id already set: %v -> %v", matched, again)
+	}
+}
+
+// Stored times compare as strings in time order, even when one has a
+// zero fraction and the other doesn't (RFC3339Nano would write
+// "...:05Z" and "...:05.5Z", and "Z" sorts after ".").
+func TestFormatTimeOrdersAsStrings(t *testing.T) {
+	base := time.Date(2026, 10, 29, 12, 0, 5, 0, time.UTC)
+	times := []time.Time{
+		base,
+		base.Add(time.Nanosecond),
+		base.Add(100 * time.Millisecond),
+		base.Add(500 * time.Millisecond),
+		base.Add(time.Second),
+		base.Add(2 * time.Second).In(time.FixedZone("x", -7*3600)), // zone must not matter
+	}
+	for i := 1; i < len(times); i++ {
+		a, b := formatTime(times[i-1]), formatTime(times[i])
+		if len(a) != len(b) {
+			t.Errorf("widths differ: %q vs %q", a, b)
+		}
+		if !(a < b) {
+			t.Errorf("%q should sort before %q", a, b)
+		}
+		back, err := time.Parse(time.RFC3339Nano, b)
+		if err != nil || !back.Equal(times[i]) {
+			t.Errorf("round trip %q = %v, %v", b, back, err)
+		}
 	}
 }
 

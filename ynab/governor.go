@@ -3,6 +3,7 @@ package ynab
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 )
@@ -40,6 +41,7 @@ func NewGovernor(hourlyLimit, reserve int, now func() time.Time) *Governor {
 	if now == nil {
 		now = time.Now
 	}
+	hourlyLimit = max(hourlyLimit, 1)
 	if reserve < 0 {
 		reserve = 0
 	}
@@ -81,8 +83,9 @@ func (g *Governor) Take(write bool) error {
 	g.refill()
 	need := g.floor(write) + 1
 	if g.tokens < need {
-		wait := time.Duration((need - g.tokens) / g.perSec * float64(time.Second))
-		return fmt.Errorf("%w: next %s in %s", ErrBudgetExhausted, kind(write), wait.Round(time.Second))
+		// Round up: "in 0s" while still short of a token would be wrong.
+		wait := time.Duration(math.Ceil((need-g.tokens)/g.perSec)) * time.Second
+		return fmt.Errorf("%w: next %s in %s", ErrBudgetExhausted, kind(write), wait)
 	}
 	g.tokens--
 	return nil

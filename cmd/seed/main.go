@@ -57,7 +57,7 @@ func main() {
 
 	// Fetch categories from YNAB
 	client := ynab.NewClient(cfg.YNABAccessToken, cfg.YNABBudgetID, logger)
-	groups, err := client.GetCategories()
+	groups, err := client.GetCategories(context.TODO())
 	if err != nil {
 		logger.Fatalf("error fetching categories: %v", err)
 	}

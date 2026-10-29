@@ -1,7 +1,7 @@
-// Package ynab wraps pkg.venceslau.dev/ynab for this app. Every request goes
-// through a transport that counts it against a local rate budget (YNAB sends
-// no usage header) and normalizes zone-less timestamps the library can't
-// decode. Every error returned has the token, plan id and other ids redacted.
+// Package ynab wraps pkg.venceslau.dev/ynab for this app. Every request
+// attempt is counted against a local rate budget (YNAB sends no usage
+// header), and every response goes through a transport that caps its size
+// and normalizes zone-less timestamps the library can't decode. Every error returned has the token, plan id and other ids redacted.
 package ynab
 
 import (
@@ -40,6 +40,7 @@ type options struct {
 	gov     *Governor
 	base    http.RoundTripper
 	baseURL string
+	retry   *ynabapi.RetryPolicy // tests
 }
 
 // Option configures NewClient.
@@ -65,10 +66,13 @@ func NewClient(accessToken, budgetID string, logger *log.Logger, opts ...Option)
 	if o.gov == nil {
 		o.gov = NewGovernor(DefaultHourlyLimit, DefaultWriteReserve, nil)
 	}
-	hc := &http.Client{Transport: &governedTransport{base: o.base, gov: o.gov}}
-	apiOpts := []ynabapi.Option{ynabapi.WithHTTPClient(hc)}
+	hc := &http.Client{Transport: &normalizingTransport{base: o.base}}
+	apiOpts := []ynabapi.Option{ynabapi.WithHTTPClient(hc), ynabapi.WithLimiter(governorLimiter{o.gov})}
 	if o.baseURL != "" {
 		apiOpts = append(apiOpts, ynabapi.WithBaseURL(o.baseURL))
+	}
+	if o.retry != nil {
+		apiOpts = append(apiOpts, ynabapi.WithRetryPolicy(*o.retry))
 	}
 	api := ynabapi.New(accessToken, apiOpts...)
 	return &Client{
@@ -152,12 +156,12 @@ func (c *Client) GetUncategorizedTransactions() ([]*Transaction, error) {
 }
 
 // GetCategories fetches all category groups with their categories from the budget.
-func (c *Client) GetCategories() ([]*CategoryGroup, error) {
+func (c *Client) GetCategories(ctx context.Context) ([]*CategoryGroup, error) {
 	const op = "fetch categories"
 	if err := c.preflight(op, false); err != nil {
 		return nil, err
 	}
-	groups, _, err := c.plan.Categories.List(context.Background())
+	groups, _, err := c.plan.Categories.List(ctx)
 	if err != nil {
 		return nil, c.red.wrap(op, err)
 	}
@@ -182,7 +186,7 @@ func (c *Client) UpdateTransactionCategory(txn *Transaction, categoryID string, 
 		update.FlagColor = ynabapi.Set(*flagColor)
 	}
 
-	if _, _, err := c.plan.Transactions.Update(context.Background(), txn.ID, update); err != nil {
+	if _, _, err := c.plan.Transactions.Update(asWrite(context.Background()), txn.ID, update); err != nil {
 		return c.red.wrap(op+" "+txn.ID, err)
 	}
 	return nil
@@ -196,7 +200,7 @@ func (c *Client) ImportTransactions(ctx context.Context) ([]string, error) {
 	if err := c.preflight(op, true); err != nil {
 		return nil, err
 	}
-	ids, err := c.plan.Transactions.Import(ctx)
+	ids, err := c.plan.Transactions.Import(asWrite(ctx))
 	if err != nil {
 		return nil, c.red.wrap(op, err)
 	}

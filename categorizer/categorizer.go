@@ -20,7 +20,7 @@ const noneSuggestion = "NONE"
 // This interface is satisfied by *ynab.Client.
 type YNABClient interface {
 	GetUncategorizedTransactions() ([]*ynab.Transaction, error)
-	GetCategories() ([]*ynab.CategoryGroup, error)
+	GetCategories(ctx context.Context) ([]*ynab.CategoryGroup, error)
 	UpdateTransactionCategory(txn *ynab.Transaction, categoryID string, flagColor *ynab.FlagColor) error
 }
 
@@ -130,7 +130,7 @@ func (c *Categorizer) Run() error {
 
 // refreshCategoryMap fetches all categories from YNAB and builds a name→ID lookup.
 func (c *Categorizer) refreshCategoryMap() error {
-	groups, err := c.ynab.GetCategories()
+	groups, err := c.ynab.GetCategories(context.TODO())
 	if err != nil {
 		return err
 	}

@@ -213,6 +213,39 @@ func TestClient_ExhaustedBudgetFailsFast(t *testing.T) {
 	}
 }
 
+// When a retry finds the budget exhausted, the call ends there: no further
+// backoff sleep and attempt. The backoff is pinned to 200ms, so one sleep
+// (after the 503, before the refused retry) takes ~200ms; the old transport
+// refusal was retried and slept a second time (~400ms).
+func TestClient_NoBackoffAfterBudgetExhausted(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		io.WriteString(w, `{"error":{"id":"503","name":"service_unavailable","detail":"x"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	gov := NewGovernor(1, 0, (&fakeClock{t: time.Unix(0, 0)}).Now) // one token, no refill
+	const backoff = 200 * time.Millisecond
+	c := NewClient(testToken, testPlanID, log.New(io.Discard, "", 0), WithBaseURL(srv.URL+"/v1"),
+		WithGovernor(gov), func(o *options) {
+			o.retry = &ynabapi.RetryPolicy{MaxAttempts: 3, MinBackoff: backoff, MaxBackoff: backoff}
+		})
+
+	start := time.Now()
+	_, _, err := c.Export(context.Background())
+	el := time.Since(start)
+	if !errors.Is(err, ErrBudgetExhausted) {
+		t.Fatalf("got %v, want ErrBudgetExhausted", err)
+	}
+	if calls != 1 || el >= 2*backoff {
+		t.Errorf("calls=%d after %v; want 1 call and a single %v backoff", calls, el, backoff)
+	}
+	if strings.Contains(err.Error(), testPlanID) {
+		t.Errorf("error leaks plan id: %v", err)
+	}
+}
+
 func TestClient_ImportUsesWriteReserve(t *testing.T) {
 	var method, path string
 	gov := NewGovernor(1, 1, (&fakeClock{t: time.Unix(0, 0)}).Now) // reads refused, one write left
