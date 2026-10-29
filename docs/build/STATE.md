@@ -4,7 +4,7 @@ Updated: 2026-10-27 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a merged; M0-4b (runtime flag checks) waits on BA-6. **sup loop PAUSED** (2026-10-28, idle while blocked) until BA-5 or BA-6 lands; Brendan tells sup to resume. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a merged; M0-4b running. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -14,6 +14,7 @@ Updated: 2026-10-27 by sup (first session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p13 | control (w1:t7) | reviewer | — | 2026-10-28 | fresh; review counter 1 (M0-4a) |
+| b-m0-4b | w1:p14 | build | builder | M0-4b | 2026-10-28 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -25,7 +26,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4a | merged | — | — | agy PASS (4 low) | merged 2026-10-28; claude 2.1.312 (latest channel) at hoid ~/.local/bin; findings docs/build/spikes/claude-cli.md. agy findings (docs/build/spikes/claude-cli-review.md) feed M0-4b + Dockerfile: pass prompt via stdin/`--` (variadic --tools eats positional prompt); check permission-mode can't auto-approve MCP tools outside --allowedTools; disable auto-memory + CLAUDE.md discovery; Docker: debian-slim or Alpine musl deps, CLAUDE_CONFIG_DIR persistent |
-| M0-4b | todo (needs BA-6) | | | | runtime checks of §5a flags with CLAUDE_CODE_OAUTH_TOKEN |
+| M0-4b | active | w1:p14 (b-m0-4b) | t/M0-4b (../YNAB_AutoCategorizer.wt/M0-4b) | | started 2026-10-28; runtime §5a checks on hoid, Haiku only, ≤40 calls |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
@@ -36,7 +37,7 @@ Updated: 2026-10-27 by sup (first session)
 | BA-3 | Tell sup the domain served by nginx-proxy-manager; add DNS for `finance.<domain>` | M0-2b | open |
 | BA-4 | nginx-proxy-manager: add proxy host `finance.<domain>` → finbot port with Let's Encrypt (or give sup a way to do it) | M0-2b | open |
 | BA-5 | Google Cloud: OAuth client (web) with redirect URI from M0-2 brief → `GOOGLE_OAUTH_CLIENT_ID/SECRET`; then add claude.ai custom connector when asked | M0-2a | open |
-| BA-6 | On hoid: run `DISABLE_UPDATES=1 claude setup-token` (keeps hoid on 2.1.312) and store as `CLAUDE_CODE_OAUTH_TOKEN` in `~/finbot/.env` | M0-4b | open |
+| BA-6 | On hoid: run `DISABLE_UPDATES=1 claude setup-token` (keeps hoid on 2.1.312) and store as `CLAUDE_CODE_OAUTH_TOKEN` in `~/finbot/.env` | M0-4b | done 2026-10-28 (3rd token; perms 600; sup auth probe OK on claude-haiku-5-5). Note: sup accidentally printed ~29 trailing chars of the 1st token while masking a malformed .env; that token was replaced |
 | BA-7 | healthchecks.io (or similar) account → ping URL; connect its alerts to Slack | M1-5 | open |
 | BA-8 | Off-site backup target (Backblaze B2 bucket or Google Drive) + credentials; generate age key, keep a copy offline | M1-5 | open |
 | BA-10 | YNAB: relink 3 credit-card connections in `direct_import_in_error` (found by M0-5) | M1 sync freshness | open |
