@@ -100,3 +100,7 @@ docs. Every "Docs follow-ups" item from M0 is applied once, and nothing else cha
 - Deviations from brief: none. Small judgement calls: deploy-script hardening (agy M0-2b finding 1, "M1's production deploy script") went into the M1-5a note alongside the Debian/split-env note; mcp.md's §9/§11 "M3" mentions are corrected by the §10 note rather than edited in place.
 - Follow-ups for backlog: none new (M3 items already flow through architecture §2/§3.2/§5).
 - Docs follow-ups: CLAUDE.md (M1-4): ynab v1.6.1 zone-less `goal_snoozed_at` transport, Go 1.26; config docs for `MCP_PUBLIC_URL`, `MCP_LISTEN_ADDR`, `MCP_DATA_DIR`, `MCP_ALLOWED_EMAILS`, Google OAuth vars when M2 lands.
+- Review r1 (agy FIX, `../_reviews/M0-docs-r1.md`), all 3 findings fixed in `architecture.md`:
+  1. Splits: §2 now says category reads/aggregations use `subtransactions`, never the parent sentinel; §3.2 step 1 skips existing splits (V6/R7a: delete + recreate is structural tier).
+  2. §3.1 step 2: "Both (a) and (b) → labeled examples" re-attached; §3.2 step 1 adds an explicit `Inflow: Ready to Assign` skip for unapproved txns.
+  3. §5: scope list (`connections:write`; `chat:write`, `groups:read`, `groups:history`, `users:read`; drop `groups:write`/`channels:*`) + DM note (`im:history`, `im:write`, `message.im`, UNVERIFIED). §5a: `--resume` + new `--mcp-config` VERIFIED for a stdio stub only; HTTP MCP + `Authorization` across `--resume` to be integration-tested in M3/M5.
