@@ -4,7 +4,7 @@ Updated: 2026-10-29 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29; M0-2a merged 2026-10-29. **Only M0-2b remains (needs BA-3, BA-4)**; then the M0 gate. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29; M0-2a merged 2026-10-29. **Only M0-2b remains (needs BA-3, BA-4)**; then the M0 gate. **sup loop PAUSED** (2026-10-29, idle while blocked) until BA-3/BA-4 land; Brendan tells sup to resume. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
