@@ -23,6 +23,8 @@ output schemas. This matches architecture §4.
 
 ## 2. OAuth approach
 
+> **Superseded in part by §11:** exposure is a Cloudflare Tunnel, not nginx-proxy-manager; the NPM reasoning below is pre-M0-2b.
+
 Neither SDK ships an authorization server, so option (c) alone isn't enough. It covers the resource server only.
 
 **Chosen: (a) + (c).** The authorization server is a minimal **`github.com/ory/fosite` v0.49.0** setup inside the binary.
@@ -137,6 +139,8 @@ Google's access and refresh tokens are discarded right after the ID token is ver
 
 ## 6. Client support (U9)
 
+> **Superseded by §11 "Connector results":** claude.ai web + mobile are VERIFIED live; ChatGPT and Gemini stay UNVERIFIED. The table below is the pre-deploy doc check.
+
 | Client | Remote MCP + OAuth | DCR | Status | Source |
 |---|---|---|---|---|
 | Claude web (claude.ai) | Yes, custom connector by URL | Yes (default), or CIMD | **VERIFIED (docs)** | [Claude connector auth](https://claude.com/docs/connectors/building/authentication): "The same authentication infrastructure backs claude.ai, Claude Desktop, Claude mobile, Claude Code, and Cowork" |
@@ -239,6 +243,8 @@ Hardening before going public:
 - Expire unused DCR clients.
 
 ## 10. Impact on architecture (§4)
+
+> **Superseded in part by §11:** the NPM reason for rejecting (b) no longer holds (Cloudflare Access is still rejected, see §11), and the M3 package/milestone in §9–§11 is now **M2** under `mcp/` + `auth/` (architecture.md §1, §7).
 
 - §4 "Auth (Q17)": resolved as option **(a) fosite AS + (c) go-sdk resource-server helpers**. (b) was rejected because
   exposure goes via NPM, not Cloudflare. No hand-rolled crypto.
