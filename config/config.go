@@ -1,10 +1,13 @@
+// Package config loads finbot's settings from environment variables (and a
+// local .env, if present). Validation errors name the variable and never
+// echo its value, so a misplaced secret can't leak into a log.
 package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -14,104 +17,76 @@ import (
 type Config struct {
 	// YNAB API
 	YNABAccessToken string
-	YNABBudgetID    string
+	YNABBudgetID    string // the active plan
 
-	// Turso DB
-	LibSQLDatabaseURL string
-	LibSQLAuthToken   string
+	// DBPath is the SQLite mirror's file (FINBOT_DB_PATH).
+	DBPath string
 
-	// AI Provider
-	GoogleCloudProject  string
-	GoogleCloudLocation string
-	OpenAIAPIKey        string
-	OpenAIBaseURL       string
+	// SyncInterval is the delta-sync cadence for `finbot serve`.
+	SyncInterval time.Duration
+	// ImportInterval is the bank-import trigger cadence, used only when
+	// ImportEnabled. The import is a YNAB write.
+	ImportInterval time.Duration
+	ImportEnabled  bool
 
-	// Chat model override (empty = provider default)
-	ChatModel string
-
-	// App settings
-	ConfidenceThreshold float64 // AI certainty threshold (0.0–1.0); default 0.75
-	DryRun              bool
-	RunInterval         time.Duration
-	MaxTransactions     int // max uncategorized txns to process per run; 0 = unlimited
-
-	// ExcludedCategoryKeywords: categories whose name contains any of these
-	// (case-insensitive) are never auto-applied. Default: Birthday, Gift.
-	ExcludedCategoryKeywords []string
+	// HTTPAddr is where `finbot serve` listens (/healthz).
+	HTTPAddr string
+	LogLevel slog.Level
 }
 
-// Load reads configuration from environment variables, returning an error
-// if any required value is missing.
+// Load reads configuration from the environment, after loading .env if one
+// exists. It returns an error if a required value is missing or a value
+// doesn't parse.
 func Load() (*Config, error) {
 	// Load .env if present; not required (env vars may be set directly).
 	_ = godotenv.Load()
+	return LoadFrom(os.Getenv)
+}
+
+// LoadFrom is Load with an injected environment lookup (tests).
+func LoadFrom(getenv func(string) string) (*Config, error) {
+	get := func(key, def string) string {
+		if v := getenv(key); v != "" {
+			return v
+		}
+		return def
+	}
 
 	cfg := &Config{
-		YNABAccessToken:     os.Getenv("YNAB_ACCESS_TOKEN"),
-		YNABBudgetID:        getEnvDefault("YNAB_BUDGET_ID", "last-used"),
-		LibSQLDatabaseURL:   os.Getenv("LIBSQL_DATABASE_URL"),
-		LibSQLAuthToken:     os.Getenv("LIBSQL_AUTH_TOKEN"),
-		GoogleCloudProject:  os.Getenv("GOOGLE_CLOUD_PROJECT"),
-		GoogleCloudLocation: getEnvDefault("GOOGLE_CLOUD_LOCATION", "us-central1"),
-		OpenAIAPIKey:        os.Getenv("OPENAI_API_KEY"),
-		OpenAIBaseURL:       os.Getenv("OPENAI_BASE_URL"),
+		YNABAccessToken: getenv("YNAB_ACCESS_TOKEN"),
+		YNABBudgetID:    getenv("YNAB_BUDGET_ID"),
+		DBPath:          get("FINBOT_DB_PATH", "/data/finbot.db"),
+		HTTPAddr:        get("HTTP_ADDR", ":8080"),
 	}
-
-	// Chat model override
-	cfg.ChatModel = os.Getenv("CHAT_MODEL")
-
-	// Confidence threshold (AI certainty; default 0.75)
-	threshStr := getEnvDefault("CONFIDENCE_THRESHOLD", "0.75")
-	threshold, err := strconv.ParseFloat(threshStr, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid CONFIDENCE_THRESHOLD %q: %w", threshStr, err)
-	}
-	cfg.ConfidenceThreshold = threshold
-
-	// Dry run
-	cfg.DryRun = os.Getenv("DRY_RUN") == "true"
-
-	// Run interval
-	intervalStr := getEnvDefault("RUN_INTERVAL", "6h")
-	interval, err := time.ParseDuration(intervalStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid RUN_INTERVAL %q: %w", intervalStr, err)
-	}
-	cfg.RunInterval = interval
-
-	// Max transactions per run (0 = unlimited)
-	maxTxnStr := getEnvDefault("MAX_TRANSACTIONS", "0")
-	maxTxn, err := strconv.Atoi(maxTxnStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid MAX_TRANSACTIONS %q: %w", maxTxnStr, err)
-	}
-	cfg.MaxTransactions = maxTxn
-
-	// Excluded category keywords (case-insensitive substring match; default Birthday, Gift)
-	excludedStr := getEnvDefault("EXCLUDED_CATEGORY_KEYWORDS", "Birthday,Gift")
-	for _, kw := range strings.Split(excludedStr, ",") {
-		if kw = strings.TrimSpace(kw); kw != "" {
-			cfg.ExcludedCategoryKeywords = append(cfg.ExcludedCategoryKeywords, kw)
+	for _, key := range []string{"YNAB_ACCESS_TOKEN", "YNAB_BUDGET_ID"} {
+		if getenv(key) == "" {
+			return nil, fmt.Errorf("config: %s is required", key)
 		}
 	}
 
-	// Validate required fields
-	if cfg.YNABAccessToken == "" {
-		return nil, fmt.Errorf("YNAB_ACCESS_TOKEN is required")
+	var err error
+	if cfg.SyncInterval, err = duration(get, "SYNC_INTERVAL", "15m"); err != nil {
+		return nil, err
 	}
-	if cfg.LibSQLDatabaseURL == "" {
-		return nil, fmt.Errorf("LIBSQL_DATABASE_URL is required")
+	if cfg.ImportInterval, err = duration(get, "IMPORT_INTERVAL", "6h"); err != nil {
+		return nil, err
 	}
-	if cfg.GoogleCloudProject == "" && cfg.OpenAIAPIKey == "" {
-		return nil, fmt.Errorf("either GOOGLE_CLOUD_PROJECT or OPENAI_API_KEY is required")
+	if cfg.ImportEnabled, err = strconv.ParseBool(get("IMPORT_ENABLED", "false")); err != nil {
+		return nil, fmt.Errorf("config: IMPORT_ENABLED must be true or false")
 	}
-
+	if err := cfg.LogLevel.UnmarshalText([]byte(get("LOG_LEVEL", "info"))); err != nil {
+		return nil, fmt.Errorf("config: LOG_LEVEL must be debug, info, warn or error")
+	}
 	return cfg, nil
 }
 
-func getEnvDefault(key, defaultVal string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func duration(get func(key, def string) string, key, def string) (time.Duration, error) {
+	d, err := time.ParseDuration(get(key, def))
+	if err != nil {
+		return 0, fmt.Errorf("config: %s must be a Go duration such as 15m", key)
 	}
-	return defaultVal
+	if d <= 0 {
+		return 0, fmt.Errorf("config: %s must be positive", key)
+	}
+	return d, nil
 }

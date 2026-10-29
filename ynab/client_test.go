@@ -152,19 +152,6 @@ func TestClient_ErrorsAreRedacted(t *testing.T) {
 	assertRedacted(t, err)
 }
 
-func TestClient_UpdateErrorRedactsTransactionID(t *testing.T) {
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		io.WriteString(w, `{"error":{"id":"400","name":"bad_request","detail":"nope"}}`)
-	}, fullGovernor())
-	txn := &Transaction{TransactionBase: TransactionBase{ID: testAccountID}}
-	err := c.UpdateTransactionCategory(txn, "c1", nil)
-	if err == nil {
-		t.Fatal("want error")
-	}
-	assertRedacted(t, err)
-}
-
 func assertRedacted(t *testing.T, err error) {
 	t.Helper()
 	for _, secret := range []string{testPlanID, testAccountID, testToken} {

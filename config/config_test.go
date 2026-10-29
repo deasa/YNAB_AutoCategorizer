@@ -1,364 +1,123 @@
 package config
 
 import (
-	"os"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
 
-// clearEnv unsets all config-related env vars to isolate tests.
-func clearEnv(t *testing.T) {
-	t.Helper()
-	for _, key := range []string{
-		"YNAB_ACCESS_TOKEN", "YNAB_BUDGET_ID",
-		"LIBSQL_DATABASE_URL", "LIBSQL_AUTH_TOKEN",
-		"GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
-		"OPENAI_API_KEY", "OPENAI_BASE_URL",
-		"CONFIDENCE_THRESHOLD", "DRY_RUN", "RUN_INTERVAL", "MAX_TRANSACTIONS",
-		"EXCLUDED_CATEGORY_KEYWORDS",
+const secret = "s3cr3t-token-value"
+
+func env(kv map[string]string) func(string) string {
+	return func(k string) string { return kv[k] }
+}
+
+func required(extra map[string]string) map[string]string {
+	m := map[string]string{"YNAB_ACCESS_TOKEN": secret, "YNAB_BUDGET_ID": "plan-1"}
+	for k, v := range extra {
+		m[k] = v
+	}
+	return m
+}
+
+func TestLoadFrom_Defaults(t *testing.T) {
+	cfg, err := LoadFrom(env(required(nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Config{
+		YNABAccessToken: secret,
+		YNABBudgetID:    "plan-1",
+		DBPath:          "/data/finbot.db",
+		SyncInterval:    15 * time.Minute,
+		ImportInterval:  6 * time.Hour,
+		ImportEnabled:   false,
+		HTTPAddr:        ":8080",
+		LogLevel:        slog.LevelInfo,
+	}
+	if *cfg != want {
+		t.Errorf("got %+v\nwant %+v", *cfg, want)
+	}
+}
+
+func TestLoadFrom_Overrides(t *testing.T) {
+	cfg, err := LoadFrom(env(required(map[string]string{
+		"FINBOT_DB_PATH":  "/tmp/x.db",
+		"SYNC_INTERVAL":   "1m",
+		"IMPORT_INTERVAL": "2h",
+		"IMPORT_ENABLED":  "true",
+		"HTTP_ADDR":       "127.0.0.1:9090",
+		"LOG_LEVEL":       "debug",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DBPath != "/tmp/x.db" || cfg.SyncInterval != time.Minute || cfg.ImportInterval != 2*time.Hour ||
+		!cfg.ImportEnabled || cfg.HTTPAddr != "127.0.0.1:9090" || cfg.LogLevel != slog.LevelDebug {
+		t.Errorf("overrides not applied: %+v", *cfg)
+	}
+}
+
+func TestLoadFrom_ImportEnabledParsing(t *testing.T) {
+	for _, tc := range []struct {
+		val     string
+		want    bool
+		wantErr bool
+	}{
+		{"", false, false},
+		{"false", false, false},
+		{"0", false, false},
+		{"true", true, false},
+		{"TRUE", true, false},
+		{"1", true, false},
+		{"yes", false, true},
+		{"on", false, true},
 	} {
-		t.Setenv(key, "")
-		os.Unsetenv(key)
+		t.Run(tc.val, func(t *testing.T) {
+			cfg, err := LoadFrom(env(required(map[string]string{"IMPORT_ENABLED": tc.val})))
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "IMPORT_ENABLED") {
+					t.Fatalf("want IMPORT_ENABLED error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ImportEnabled != tc.want {
+				t.Errorf("ImportEnabled = %v, want %v", cfg.ImportEnabled, tc.want)
+			}
+		})
 	}
 }
 
-// setRequiredEnv sets the minimum required env vars for a valid config.
-func setRequiredEnv(t *testing.T) {
-	t.Helper()
-	t.Setenv("YNAB_ACCESS_TOKEN", "test-token")
-	t.Setenv("LIBSQL_DATABASE_URL", "libsql://test.turso.io")
-	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-}
-
-func TestLoad_AllRequiredVars(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if cfg.YNABAccessToken != "test-token" {
-		t.Errorf("YNABAccessToken = %q, want %q", cfg.YNABAccessToken, "test-token")
-	}
-	if cfg.LibSQLDatabaseURL != "libsql://test.turso.io" {
-		t.Errorf("LibSQLDatabaseURL = %q, want %q", cfg.LibSQLDatabaseURL, "libsql://test.turso.io")
-	}
-	if cfg.GoogleCloudProject != "test-project" {
-		t.Errorf("GoogleCloudProject = %q, want %q", cfg.GoogleCloudProject, "test-project")
-	}
-}
-
-func TestLoad_Defaults(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// README: YNAB_BUDGET_ID defaults to "last-used"
-	if cfg.YNABBudgetID != "last-used" {
-		t.Errorf("YNABBudgetID = %q, want %q", cfg.YNABBudgetID, "last-used")
-	}
-
-	// CONFIDENCE_THRESHOLD defaults to 0.75 (AI certainty threshold)
-	if cfg.ConfidenceThreshold != 0.75 {
-		t.Errorf("ConfidenceThreshold = %v, want %v", cfg.ConfidenceThreshold, 0.75)
-	}
-
-	// README: DRY_RUN defaults to false
-	if cfg.DryRun != false {
-		t.Errorf("DryRun = %v, want false", cfg.DryRun)
-	}
-
-	// README: RUN_INTERVAL defaults to 6h
-	if cfg.RunInterval != 6*time.Hour {
-		t.Errorf("RunInterval = %v, want %v", cfg.RunInterval, 6*time.Hour)
-	}
-
-	// README: GOOGLE_CLOUD_LOCATION defaults to us-central1
-	if cfg.GoogleCloudLocation != "us-central1" {
-		t.Errorf("GoogleCloudLocation = %q, want %q", cfg.GoogleCloudLocation, "us-central1")
-	}
-}
-
-func TestLoad_MissingYNABAccessToken(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("LIBSQL_DATABASE_URL", "libsql://test.turso.io")
-	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing YNAB_ACCESS_TOKEN, got nil")
-	}
-}
-
-func TestLoad_MissingLibSQLDatabaseURL(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("YNAB_ACCESS_TOKEN", "test-token")
-	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing LIBSQL_DATABASE_URL, got nil")
-	}
-}
-
-func TestLoad_MissingAIProvider(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("YNAB_ACCESS_TOKEN", "test-token")
-	t.Setenv("LIBSQL_DATABASE_URL", "libsql://test.turso.io")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error when no AI provider is configured, got nil")
-	}
-}
-
-func TestLoad_OpenAIProviderOnly(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("YNAB_ACCESS_TOKEN", "test-token")
-	t.Setenv("LIBSQL_DATABASE_URL", "libsql://test.turso.io")
-	t.Setenv("OPENAI_API_KEY", "sk-test")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.OpenAIAPIKey != "sk-test" {
-		t.Errorf("OpenAIAPIKey = %q, want %q", cfg.OpenAIAPIKey, "sk-test")
-	}
-}
-
-func TestLoad_InvalidConfidenceThreshold(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("CONFIDENCE_THRESHOLD", "not-a-number")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid CONFIDENCE_THRESHOLD, got nil")
-	}
-}
-
-func TestLoad_InvalidRunInterval(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("RUN_INTERVAL", "not-a-duration")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid RUN_INTERVAL, got nil")
-	}
-}
-
-func TestLoad_DryRunTrue(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("DRY_RUN", "true")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.DryRun {
-		t.Error("DryRun = false, want true")
-	}
-}
-
-func TestLoad_CustomRunInterval(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("RUN_INTERVAL", "1h")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.RunInterval != time.Hour {
-		t.Errorf("RunInterval = %v, want %v", cfg.RunInterval, time.Hour)
-	}
-}
-
-func TestLoad_DryRunNonTrue(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("DRY_RUN", "false")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DryRun {
-		t.Error("DryRun = true, want false for DRY_RUN=false")
-	}
-}
-
-func TestLoad_DryRunArbitraryString(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("DRY_RUN", "yes")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DryRun {
-		t.Error("DryRun = true, want false for DRY_RUN=yes (only 'true' enables dry run)")
-	}
-}
-
-func TestLoad_CustomBudgetID(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("YNAB_BUDGET_ID", "my-budget-123")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.YNABBudgetID != "my-budget-123" {
-		t.Errorf("YNABBudgetID = %q, want %q", cfg.YNABBudgetID, "my-budget-123")
-	}
-}
-
-func TestLoad_OpenAIBaseURL(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("YNAB_ACCESS_TOKEN", "test-token")
-	t.Setenv("LIBSQL_DATABASE_URL", "libsql://test.turso.io")
-	t.Setenv("OPENAI_API_KEY", "sk-test")
-	t.Setenv("OPENAI_BASE_URL", "https://custom.openai.com/v1")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.OpenAIBaseURL != "https://custom.openai.com/v1" {
-		t.Errorf("OpenAIBaseURL = %q, want %q", cfg.OpenAIBaseURL, "https://custom.openai.com/v1")
-	}
-}
-
-func TestLoad_BothAIProviders(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("YNAB_ACCESS_TOKEN", "test-token")
-	t.Setenv("LIBSQL_DATABASE_URL", "libsql://test.turso.io")
-	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-	t.Setenv("OPENAI_API_KEY", "sk-test")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.GoogleCloudProject != "test-project" || cfg.OpenAIAPIKey != "sk-test" {
-		t.Error("both AI providers should be loaded when both are set")
-	}
-}
-
-func TestLoad_CustomGoogleCloudLocation(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("GOOGLE_CLOUD_LOCATION", "europe-west1")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.GoogleCloudLocation != "europe-west1" {
-		t.Errorf("GoogleCloudLocation = %q, want %q", cfg.GoogleCloudLocation, "europe-west1")
-	}
-}
-
-func TestLoad_MaxTransactions(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("MAX_TRANSACTIONS", "5")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.MaxTransactions != 5 {
-		t.Errorf("MaxTransactions = %d, want 5", cfg.MaxTransactions)
-	}
-}
-
-func TestLoad_MaxTransactions_DefaultsZero(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.MaxTransactions != 0 {
-		t.Errorf("MaxTransactions = %d, want 0", cfg.MaxTransactions)
-	}
-}
-
-func TestLoad_InvalidMaxTransactions(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("MAX_TRANSACTIONS", "not-a-number")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid MAX_TRANSACTIONS, got nil")
-	}
-}
-
-func TestLoad_ExcludedCategoryKeywords_Default(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := []string{"Birthday", "Gift"}
-	if len(cfg.ExcludedCategoryKeywords) != len(want) {
-		t.Fatalf("ExcludedCategoryKeywords = %v, want %v", cfg.ExcludedCategoryKeywords, want)
-	}
-	for i, w := range want {
-		if cfg.ExcludedCategoryKeywords[i] != w {
-			t.Errorf("ExcludedCategoryKeywords[%d] = %q, want %q", i, cfg.ExcludedCategoryKeywords[i], w)
-		}
-	}
-}
-
-func TestLoad_ExcludedCategoryKeywords_Custom(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("EXCLUDED_CATEGORY_KEYWORDS", "Vacation, Holiday ,")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Empty entries trimmed/dropped; surrounding whitespace trimmed.
-	want := []string{"Vacation", "Holiday"}
-	if len(cfg.ExcludedCategoryKeywords) != len(want) {
-		t.Fatalf("ExcludedCategoryKeywords = %v, want %v", cfg.ExcludedCategoryKeywords, want)
-	}
-	for i, w := range want {
-		if cfg.ExcludedCategoryKeywords[i] != w {
-			t.Errorf("ExcludedCategoryKeywords[%d] = %q, want %q", i, cfg.ExcludedCategoryKeywords[i], w)
-		}
-	}
-}
-
-func TestLoad_CustomConfidenceThreshold(t *testing.T) {
-	clearEnv(t)
-	setRequiredEnv(t)
-	t.Setenv("CONFIDENCE_THRESHOLD", "0.9")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.ConfidenceThreshold != 0.9 {
-		t.Errorf("ConfidenceThreshold = %v, want %v", cfg.ConfidenceThreshold, 0.9)
+func TestLoadFrom_Errors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		env     map[string]string
+		wantVar string
+	}{
+		{"missing token", map[string]string{"YNAB_BUDGET_ID": "plan-1"}, "YNAB_ACCESS_TOKEN"},
+		{"missing plan", map[string]string{"YNAB_ACCESS_TOKEN": secret}, "YNAB_BUDGET_ID"},
+		{"bad sync interval", required(map[string]string{"SYNC_INTERVAL": secret}), "SYNC_INTERVAL"},
+		{"zero sync interval", required(map[string]string{"SYNC_INTERVAL": "0s"}), "SYNC_INTERVAL"},
+		{"negative import interval", required(map[string]string{"IMPORT_INTERVAL": "-1h"}), "IMPORT_INTERVAL"},
+		{"bad import interval", required(map[string]string{"IMPORT_INTERVAL": "6 hours"}), "IMPORT_INTERVAL"},
+		{"bad import flag", required(map[string]string{"IMPORT_ENABLED": secret}), "IMPORT_ENABLED"},
+		{"bad log level", required(map[string]string{"LOG_LEVEL": secret}), "LOG_LEVEL"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadFrom(env(tc.env))
+			if err == nil {
+				t.Fatal("want error")
+			}
+			if !strings.Contains(err.Error(), tc.wantVar) {
+				t.Errorf("error %q doesn't name %s", err, tc.wantVar)
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Errorf("error echoes the value: %q", err)
+			}
+		})
 	}
 }
