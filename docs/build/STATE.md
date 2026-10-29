@@ -4,7 +4,7 @@ Updated: 2026-10-29 by sup (first session)
 
 ## Now
 - Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29; M0-2a merged 2026-10-29. **All M0 tasks merged (2026-10-29). M0 gate in progress**: agy independent testing, docs task for follow-ups, milestone summary, then architecture impact to Brendan and wait for his "continue". Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M1-1, M1-2, M1-3 merged 2026-10-29. Next: write + dispatch M1-4 (see handoff docs/build/handoffs/sup-2026-10-29-1430.md for the folded-in follow-ups). M1-5a needs BA-7, M1-5b needs BA-8. Reviewer is Claude `rev` until agy quota resets (~2026-11-02). sup handed off at ctx ~31%; watchers stopped.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
