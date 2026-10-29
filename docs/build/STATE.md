@@ -3,7 +3,7 @@
 Updated: 2026-10-29 by sup (first session)
 
 ## Now
-- Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29, gate docs task M0-docs running)
+- Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29)
 - Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29; M0-2a merged 2026-10-29. **All M0 tasks merged (2026-10-29). M0 gate in progress**: agy independent testing, docs task for follow-ups, milestone summary, then architecture impact to Brendan and wait for his "continue". Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
@@ -14,9 +14,8 @@ Updated: 2026-10-29 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p1F | control (w1:t7) | reviewer | M0-docs r2 | 2026-10-29 | review counter 1 (M0-docs r2) |
+| agy | w1:p1F | control (w1:t7) | reviewer | M1-2 | 2026-10-29 | review counter 2 (M0-docs r2, M1-2): replace before next review |
 | b-m1-2 | w1:p1C | build (stacked) | builder | M1-2 | 2026-10-29 | |
-| b-m0-docs | w1:p1D | build2 | builder | M0-docs | 2026-10-29 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -29,9 +28,9 @@ Updated: 2026-10-29 by sup (first session)
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4a | merged | — | — | agy PASS (4 low) | merged 2026-10-28; claude 2.1.312 (latest channel) at hoid ~/.local/bin; findings docs/build/spikes/claude-cli.md. agy findings (docs/build/spikes/claude-cli-review.md) feed M0-4b + Dockerfile: pass prompt via stdin/`--` (variadic --tools eats positional prompt); check permission-mode can't auto-approve MCP tools outside --allowedTools; disable auto-memory + CLAUDE.md discovery; Docker: debian-slim or Alpine musl deps, CLAUDE_CONFIG_DIR persistent |
 | M0-4b | merged | — | — | agy PASS (2 low; reproduced the dontAsk finding) | merged 2026-10-28; final §5a command lines in docs/build/spikes/claude-cli.md. MUST for M3/M5 `llm/`: `--permission-mode dontAsk` on the Slack site (auto executed a tool outside --allowedTools); `--system-prompt-snapshot off` with --resume; stdin prompts; `--mcp-config` as a 0600 temp file (bearer token never on argv); test HTTP MCP + Authorization header across --resume; health check `rc==0 && !is_error && trimmed lower result=="ok"`; classifier treats null structured_output as skip. Review kept at docs/build/spikes/claude-cli-review-4b.md |
-| M0-docs | review r2 (r1 agy FIX: split parents, RTA skip, Slack scopes) | w1:p1D | t/M0-docs | | gate docs task, started 2026-10-29 |
+| M0-docs | merged | — | — | agy PASS r2 (r1 FIX) | merged 2026-10-29; architecture.md §0–§9, requirements U1, BACKLOG M1/M2 notes, spike doc cleanups. r1 fixes: existing splits skipped by routine categorizer, Inflow: Ready to Assign skip, Slack scopes, --resume stdio-only caveat |
 | M1-1 | merged | — | — | agy PASS (4 low) | merged 2026-10-29; Go 1.26, pkg.venceslau.dev/ynab v1.6.1, zone shim, governor 200/h with 20 write reserve (fast-fail), redacted errors (no Unwrap). Low follow-ups: LimitReader on body; retry after ErrBudgetExhausted sleeps one backoff; ceil the wait seconds; drop txn.ID from op strings in M3. Docs follow-up for CLAUDE.md (M1-4) |
-| M1-2 | done, review queued | w1:p1C | t/M1-2 | | started 2026-10-29; go.mod conflict with M1-1 resolved by sup at merge (go mod tidy) |
+| M1-2 | review | w1:p1C | t/M1-2 | | started 2026-10-29; go.mod conflict with M1-1 resolved by sup at merge (go mod tidy) |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
