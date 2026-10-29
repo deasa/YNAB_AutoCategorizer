@@ -187,3 +187,18 @@ func (c *Client) UpdateTransactionCategory(txn *Transaction, categoryID string, 
 	}
 	return nil
 }
+
+// ImportTransactions asks YNAB to import from the plan's linked accounts, the
+// equivalent of pressing Import in the app, and returns the ids of the
+// transactions it created. It is a write: it may spend the write reserve.
+func (c *Client) ImportTransactions(ctx context.Context) ([]string, error) {
+	const op = "import transactions"
+	if err := c.preflight(op, true); err != nil {
+		return nil, err
+	}
+	ids, err := c.plan.Transactions.Import(ctx)
+	if err != nil {
+		return nil, c.red.wrap(op, err)
+	}
+	return ids, nil
+}
