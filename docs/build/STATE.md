@@ -4,7 +4,7 @@ Updated: 2026-10-27 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 running. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -13,8 +13,7 @@ Updated: 2026-10-27 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p0 | control (w1:t7) | reviewer | M0-3 | 2026-10-27 | review counter 2 (M0-1b, M0-3): replace before next review |
-| b-m0-3 | w1:p11 | build | builder | M0-3 | 2026-10-28 | |
+| agy | w1:p0 | control (w1:t7) | reviewer | — | 2026-10-27 | review counter 2 (M0-1b, M0-3): replace before next review |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -24,7 +23,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |
 | M0-2a | todo (needs BA-5) | | | | |
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
-| M0-3 | review | w1:p11 (b-m0-3) | t/M0-3 (../YNAB_AutoCategorizer.wt/M0-3) | agy #2 requested | DONE 2026-10-28: Socket Mode, buttons, thread replies, user id→identity all VERIFIED; reconnect 722ms. Needed `message.groups` (added). Follow-up: drop `groups:write` (and channels:* if private-only) |
+| M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4 | todo (needs BA-6) | | | | |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
