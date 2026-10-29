@@ -1,15 +1,15 @@
 module github.com/deasa/YNAB_AutoCategorizer
 
-go 1.25.7
+go 1.26
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/brunomvsouza/ynab.go v1.5.0
 	github.com/joho/godotenv v1.5.1
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/tursodatabase/libsql-client-go v0.0.0-20240628122535-1c47b26184e8
 	google.golang.org/genai v1.49.0
 	modernc.org/sqlite v1.37.1
+	pkg.venceslau.dev/ynab v1.6.1
 )
 
 require (

@@ -8,12 +8,12 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/brunomvsouza/ynab.go"
 	"github.com/deasa/YNAB_AutoCategorizer/AI"
 	"github.com/deasa/YNAB_AutoCategorizer/config"
 	"github.com/deasa/YNAB_AutoCategorizer/datastore"
 	"github.com/deasa/YNAB_AutoCategorizer/migrate"
 	"github.com/deasa/YNAB_AutoCategorizer/search"
+	"github.com/deasa/YNAB_AutoCategorizer/ynab"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
@@ -56,14 +56,14 @@ func main() {
 	}
 
 	// Fetch categories from YNAB
-	client := ynab.NewClient(cfg.YNABAccessToken)
-	snapshot, err := client.Category().GetCategories(cfg.YNABBudgetID, nil)
+	client := ynab.NewClient(cfg.YNABAccessToken, cfg.YNABBudgetID, logger)
+	groups, err := client.GetCategories()
 	if err != nil {
 		logger.Fatalf("error fetching categories: %v", err)
 	}
 
 	seeded := 0
-	for _, group := range snapshot.GroupWithCategories {
+	for _, group := range groups {
 		if group.Deleted || group.Hidden {
 			continue
 		}

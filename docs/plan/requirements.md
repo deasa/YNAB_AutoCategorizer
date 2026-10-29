@@ -75,7 +75,7 @@ Verified 2026-10-27 against the live YNAB OpenAPI spec (v1.87.0, saved at resear
 - V5. Amazon item enrichment is feasible: existing tools use email receipts, order-page scraping (Chrome extension), or Amazon's "Request My Data" export (legacy order-report tool sunset 2023).
 
 Still unverified:
-- U1. Jev: model name, pricing, latency, API shape.
+- U1. Resolved in M0 (2026-10-29): Jev is viable as the primary classifier; API shape, latency and accuracy in `docs/build/spikes/jev.md`, design in architecture.md §3.3.
 - U2/U3. Moot for v1 (YNAB only).
 
 API limits verified 2026-10-27 (agy found, Claude confirmed in spec):
