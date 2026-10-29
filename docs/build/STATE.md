@@ -13,7 +13,7 @@ Updated: 2026-10-27 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p13 | control (w1:t7) | reviewer | — | 2026-10-28 | fresh; review counter 1 (M0-4a) |
+| agy | w1:p13 | control (w1:t7) | reviewer | M0-4b | 2026-10-28 | review counter 2 (M0-4a, M0-4b): replace before next review |
 | b-m0-4b | w1:p14 | build | builder | M0-4b | 2026-10-28 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
@@ -26,7 +26,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
 | M0-4a | merged | — | — | agy PASS (4 low) | merged 2026-10-28; claude 2.1.312 (latest channel) at hoid ~/.local/bin; findings docs/build/spikes/claude-cli.md. agy findings (docs/build/spikes/claude-cli-review.md) feed M0-4b + Dockerfile: pass prompt via stdin/`--` (variadic --tools eats positional prompt); check permission-mode can't auto-approve MCP tools outside --allowedTools; disable auto-memory + CLAUDE.md discovery; Docker: debian-slim or Alpine musl deps, CLAUDE_CONFIG_DIR persistent |
-| M0-4b | active | w1:p14 (b-m0-4b) | t/M0-4b (../YNAB_AutoCategorizer.wt/M0-4b) | | started 2026-10-28; runtime §5a checks on hoid, Haiku only, ≤40 calls |
+| M0-4b | review | w1:p14 (b-m0-4b) | t/M0-4b (../YNAB_AutoCategorizer.wt/M0-4b) | agy #2 requested | DONE 2026-10-28: all 6 checks VERIFIED, 24 calls. SECURITY: --permission-mode auto executed a tool outside --allowedTools → Slack site must use --permission-mode dontAsk |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
