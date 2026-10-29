@@ -34,9 +34,14 @@ The resource server uses the go-sdk auth helpers. Login is delegated to Google v
   RFC 7009 revocation, and introspection.
 - go-oidc verifies Google's ID token (signature via Google JWKS, `aud`, `iss`, `exp`). We also check the nonce, and we use
   PKCE on the Google leg too.
-- Code we own (~350 lines, no crypto): endpoint wiring, the RFC 8414 metadata JSON, DCR bookkeeping (validate redirect URIs,
-  store a public client), parking the authorize request while the user is at Google, the allowlist check, and the revocation
-  generation counter.
+- Code we own (~500 lines, no crypto): endpoint wiring, the RFC 8414 metadata JSON, DCR bookkeeping (strict redirect-URI
+  validation, store a public client), a pre-Google PKCE check, parking the authorize request while the user is at Google,
+  the allowlist check, a CSRF-protected consent page, and the revocation generation counter.
+- fosite settings that matter:
+  - `EnforcePKCE`, with plain PKCE disabled.
+  - `DisableRefreshTokenValidation: true`, so introspection never accepts a refresh token. The `/mcp` verifier also rejects
+    any token whose use isn't `access_token`.
+  - `ExactScopeStrategy`. Authorize always adds the `mcp` scope, and `/mcp` requires it (403 otherwise).
 
 Why not (b), an external AS: Cloudflare Access for MCP requires the domain to be proxied through Cloudflare, but hoid is
 exposed via nginx-proxy-manager (Q16). A self-hosted AS such as Ory Hydra or Keycloak is another container, another DB and
@@ -70,9 +75,10 @@ fetched 2026-10-29. Each item is VERIFIED against that doc:
 | `POST /mcp` (+ GET/DELETE) | Streamable HTTP MCP endpoint, behind the bearer middleware |
 | `GET /.well-known/oauth-protected-resource[/mcp]` | RFC 9728 metadata (`resource`, `authorization_servers`, `scopes_supported: [mcp]`) |
 | `GET /.well-known/oauth-authorization-server` | RFC 8414 metadata |
-| `POST /oauth/register` | RFC 7591 DCR. Public clients only. Redirect URIs must be https, or http on loopback. Capped at 500 clients |
-| `GET /oauth/authorize` | fosite validates the request (client, redirect, PKCE, scope, state), parks it and redirects to Google |
-| `GET /oauth/google/callback` | Google redirect URI (registered in GCP) |
+| `POST /oauth/register` | RFC 7591 DCR. Public clients only. Each redirect URI must be https, or http on loopback, and must have a host. It must have no userinfo, no fragment, must not be opaque, and must not point at our own `/oauth/*`. Capped at 500 clients |
+| `GET /oauth/authorize` | fosite validates the request (client, redirect, scope, state). We require an S256 `code_challenge` **before** parking anything (otherwise `invalid_request` goes back to the client), add the `mcp` scope, park the request (cap: 100 pending logins plus consents, else 503), and redirect to Google |
+| `GET /oauth/google/callback` | Google redirect URI (registered in GCP). It checks the allowlist, then renders the consent page |
+| `POST /oauth/consent` | Consent form (CSRF token in the form and in a `SameSite=Strict` HttpOnly cookie). Allow issues the code; Deny returns `access_denied` |
 | `POST /oauth/token` | `authorization_code` and `refresh_token` grants |
 | `POST /oauth/revoke` | RFC 7009 single-token revocation |
 
@@ -89,7 +95,10 @@ Sequence:
    to be in `MCP_ALLOWED_EMAILS`.
    - If either check fails, the client gets `error=access_denied&error_description=… google account is not allowed to use this server`.
      No code is issued.
-   - If both pass, a session is created with `subject=u_<sha256(email)[:12 hex]>`, the display name, and the user's current
+   - If both pass, finbot shows its **consent page**: the signed-in user's name, the client's `client_name`, and the
+     `redirect_uri` host. Loopback hosts get an extra warning. The page sets `X-Frame-Options: DENY` and a CSP with
+     `frame-ancestors 'none'`. The user's Allow/Deny goes as a CSRF-checked, single-use `POST /oauth/consent`.
+   - On Allow, a session is created with `subject=u_<sha256(email)[:12 hex]>`, the display name, and the user's current
      revocation generation. fosite then redirects to the client's `redirect_uri` with `code` and `state`.
 8. The client calls `POST /oauth/token` with `grant_type=authorization_code`, the `code_verifier` and its `client_id`, and
    gets back an `access_token`, a `refresh_token` and `expires_in`.
@@ -162,6 +171,17 @@ running MCP Inspector via `npx` was blocked as external code in this environment
 - Revocation: `./mcp-spike revoke <email>` → `revoked tokens for u_9f51ae389a5c (generation now 1)`. On Claude Code's next
   call with the same token, the log shows `POST /mcp -> 401`. Its refresh attempt then shows `POST /oauth/token -> 400`
   (`invalid_grant`), and Claude Code drops the tools until the user re-authenticates. VERIFIED
+- Review fixes (agy, 4 findings), re-checked live on a fresh `go run .`. Brendan's sign-in wasn't repeated because the
+  Google leg is unchanged. VERIFIED:
+  - 401 now reads `Bearer resource_metadata="…", scope="mcp"`.
+  - DCR now returns 400 for `https:///cb`, `https:opaque`, `https://claude.ai@evil.example/cb` and `http://localhost:8080/oauth/token`.
+    `https://claude.ai/api/mcp/auth_callback` still returns 201.
+  - `/oauth/authorize` without PKCE returns 303 to the client with `error=invalid_request`, not to Google. With S256 it
+    returns 302 to Google.
+  - Unit tests: refresh token as bearer → 401; token without `mcp` → 403; the `mcp` scope is always granted; missing,
+    plain or method-less PKCE → `invalid_request` with nothing parked; wrong `code_verifier` → `invalid_grant`; pending cap
+    → 503; consent page escaping, cookie flags and no-framing; consent with no cookie, wrong CSRF, unknown id or a replay
+    → 403; Deny → `access_denied`; generation check fails closed.
 - Non-allowlisted, unverified-email and empty-allowlist cases: these are covered by unit tests through the full DCR,
   authorize, callback and redirect path, using a fake IdP (`TestNonAllowlistedAccountRejected`, `TestUnverifiedEmailRejected`).
   Each test expects `error=access_denied`, `error_description` containing "not allowed", and no code. A real second Google
@@ -203,8 +223,6 @@ swap `storage.MemoryStore` for a SQLite-backed fosite store.
 
 Hardening before going public:
 - Add CIMD only if DCR client sprawl becomes a problem. It won't at 2 users, and the 500-client cap is fine.
-- Add a short consent page that shows the redirect host. The MCP spec recommends this, and today the only consent step is
-  Google's account picker.
 - Expire unused DCR clients.
 
 ## 10. Impact on architecture (§4)

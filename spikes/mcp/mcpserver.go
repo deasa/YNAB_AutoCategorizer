@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -39,10 +40,15 @@ func newMCPServer() *mcp.Server {
 
 // mcpHandler is the Streamable HTTP endpoint behind bearer-token auth. A
 // request without a valid token gets 401 with a WWW-Authenticate header that
-// points at the protected-resource metadata.
-func mcpHandler(as *AuthServer) http.Handler {
-	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return newMCPServer() }, nil)
-	return auth.RequireBearerToken(as.VerifyToken, &auth.RequireBearerTokenOptions{
-		ResourceMetadataURL: as.ResourceMetadataURL(),
+// points at the protected-resource metadata; a token without the mcp scope
+// gets 403. One server is shared by all sessions; the SDK binds each session
+// to the TokenInfo.UserID that created it.
+func mcpHandler(verify auth.TokenVerifier, resourceMetadataURL string) http.Handler {
+	srv := newMCPServer()
+	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv },
+		&mcp.StreamableHTTPOptions{SessionTimeout: 30 * time.Minute})
+	return auth.RequireBearerToken(verify, &auth.RequireBearerTokenOptions{
+		ResourceMetadataURL: resourceMetadataURL,
+		Scopes:              []string{scopeMCP},
 	})(h)
 }

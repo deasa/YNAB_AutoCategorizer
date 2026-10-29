@@ -27,6 +27,7 @@ const (
 	refreshTokenTTL = 30 * 24 * time.Hour
 	pendingLoginTTL = 10 * time.Minute
 	maxClients      = 500
+	maxPending      = 100 // parked logins + consents awaiting the user
 
 	scopeMCP     = "mcp"
 	scopeOffline = "offline_access"
@@ -44,8 +45,9 @@ type AuthServer struct {
 	allow    Allowlist
 	gens     *Generations
 
-	mu      sync.Mutex
-	pending map[string]pendingLogin // keyed by the state sent to Google
+	mu       sync.Mutex
+	pending  map[string]pendingLogin   // keyed by the state sent to Google
+	consents map[string]pendingConsent // keyed by consent id, after Google
 }
 
 type pendingLogin struct {
@@ -53,6 +55,15 @@ type pendingLogin struct {
 	pkceVerifier string
 	nonce        string
 	created      time.Time
+}
+
+// pendingConsent is an allowlisted login waiting for the user to approve the
+// client on finbot's consent page.
+type pendingConsent struct {
+	ar      fosite.AuthorizeRequester
+	id      Identity
+	csrf    string
+	created time.Time
 }
 
 func NewAuthServer(issuer string, idp IdentityProvider, allow Allowlist, gens *Generations) (*AuthServer, error) {
@@ -66,12 +77,13 @@ func NewAuthServer(issuer string, idp IdentityProvider, allow Allowlist, gens *G
 		AuthorizeCodeLifespan:          5 * time.Minute,
 		GlobalSecret:                   secret, // in memory: a restart invalidates every token
 		EnforcePKCE:                    true,
+		DisableRefreshTokenValidation:  true, // introspection must never accept a refresh token as a bearer
 		EnablePKCEPlainChallengeMethod: false,
 		RefreshTokenScopes:             []string{}, // always issue a refresh token
 		ScopeStrategy:                  fosite.ExactScopeStrategy,
 		TokenURL:                       issuer + "/oauth/token",
 	}
-	store := &clientStore{MemoryStore: storage.NewMemoryStore(), clients: map[string]fosite.Client{}}
+	store := &clientStore{MemoryStore: storage.NewMemoryStore(), clients: map[string]fosite.Client{}, names: map[string]string{}}
 	provider := compose.Compose(cfg, store,
 		&compose.CommonStrategy{CoreStrategy: compose.NewOAuth2HMACStrategy(cfg)},
 		compose.OAuth2AuthorizeExplicitFactory,
@@ -82,7 +94,7 @@ func NewAuthServer(issuer string, idp IdentityProvider, allow Allowlist, gens *G
 	)
 	return &AuthServer{
 		issuer: issuer, provider: provider, store: store, idp: idp, allow: allow, gens: gens,
-		pending: map[string]pendingLogin{},
+		pending: map[string]pendingLogin{}, consents: map[string]pendingConsent{},
 	}, nil
 }
 
@@ -102,6 +114,7 @@ func (s *AuthServer) Register(mux *http.ServeMux, mcpPath string) {
 	mux.HandleFunc("POST /oauth/register", s.handleRegister)
 	mux.HandleFunc("GET /oauth/authorize", s.handleAuthorize)
 	mux.HandleFunc("GET /oauth/google/callback", s.handleGoogleCallback)
+	mux.HandleFunc("POST /oauth/consent", s.handleConsent)
 	mux.HandleFunc("POST /oauth/token", s.handleToken)
 	mux.HandleFunc("POST /oauth/revoke", s.handleRevoke)
 }
@@ -145,7 +158,7 @@ func (s *AuthServer) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, u := range req.RedirectURIs {
-		if err := validRedirectURI(u); err != nil {
+		if err := s.validRedirectURI(u); err != nil {
 			registrationError(w, "invalid_redirect_uri", err.Error())
 			return
 		}
@@ -159,7 +172,7 @@ func (s *AuthServer) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Scopes:        []string{scopeMCP, scopeOffline},
 		Public:        true,
 	}
-	if err := s.store.add(client); err != nil {
+	if err := s.store.add(client, req.ClientName); err != nil {
 		registrationError(w, "invalid_client_metadata", err.Error())
 		return
 	}
@@ -176,11 +189,15 @@ func (s *AuthServer) handleRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// validRedirectURI allows https, or http on a loopback host (native clients).
-func validRedirectURI(raw string) error {
+// validRedirectURI allows https, or http on a loopback host (native clients),
+// with a real host, no userinfo, and never one of finbot's own OAuth endpoints.
+func (s *AuthServer) validRedirectURI(raw string) error {
 	u, err := url.Parse(raw)
-	if err != nil || !u.IsAbs() || u.Fragment != "" {
-		return fmt.Errorf("redirect_uri %q is not an absolute URI without fragment", raw)
+	if err != nil || !u.IsAbs() || u.Fragment != "" || u.Opaque != "" || u.User != nil || u.Hostname() == "" {
+		return fmt.Errorf("redirect_uri %q must be an absolute URI with a host and no userinfo or fragment", raw)
+	}
+	if strings.HasPrefix(strings.ToLower(raw), strings.ToLower(s.issuer)+"/oauth/") {
+		return fmt.Errorf("redirect_uri %q points at this server's OAuth endpoints", raw)
 	}
 	switch u.Scheme {
 	case "https":
@@ -203,15 +220,24 @@ func (s *AuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		s.provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
-	state, verifier, nonce := rand.Text(), oauth2.GenerateVerifier(), rand.Text()
-	s.mu.Lock()
-	for k, p := range s.pending {
-		if time.Since(p.created) > pendingLoginTTL {
-			delete(s.pending, k)
-		}
+	// fosite checks PKCE only when issuing the code; check it before parking
+	// anything or sending the user to Google.
+	form := ar.GetRequestForm()
+	if form.Get("code_challenge") == "" || form.Get("code_challenge_method") != "S256" {
+		s.provider.WriteAuthorizeError(ctx, w, ar, fosite.ErrInvalidRequest.WithHint("PKCE with code_challenge_method=S256 is required."))
+		return
 	}
-	s.pending[state] = pendingLogin{ar: ar, pkceVerifier: verifier, nonce: nonce, created: time.Now()}
-	s.mu.Unlock()
+	// Every token is for /mcp, so always grant the mcp scope.
+	if !ar.GetRequestedScopes().Has(scopeMCP) {
+		ar.(*fosite.AuthorizeRequest).AppendRequestedScope(scopeMCP)
+	}
+	state, verifier, nonce := rand.Text(), oauth2.GenerateVerifier(), rand.Text()
+	if !s.park(func() {
+		s.pending[state] = pendingLogin{ar: ar, pkceVerifier: verifier, nonce: nonce, created: time.Now()}
+	}) {
+		http.Error(w, "too many sign-ins in progress; try again in a few minutes", http.StatusServiceUnavailable)
+		return
+	}
 	http.Redirect(w, r, s.idp.AuthCodeURL(state, verifier, nonce), http.StatusFound)
 }
 
@@ -238,22 +264,75 @@ func (s *AuthServer) handleGoogleCallback(w http.ResponseWriter, r *http.Request
 		s.provider.WriteAuthorizeError(ctx, w, p.ar, fosite.ErrAccessDenied.WithHint("Google sign-in could not be verified."))
 		return
 	}
-	resp, err := s.completeLogin(ctx, p.ar, id)
-	if err != nil {
-		s.provider.WriteAuthorizeError(ctx, w, p.ar, err)
-		return
-	}
-	s.provider.WriteAuthorizeResponse(ctx, w, p.ar, resp)
-}
-
-// completeLogin maps a verified Google identity to a finbot session, or
-// rejects it with access_denied.
-func (s *AuthServer) completeLogin(ctx context.Context, ar fosite.AuthorizeRequester, id Identity) (fosite.AuthorizeResponder, error) {
 	uid := UserID(id.Email)
 	if err := s.allow.Check(id.Email, id.EmailVerified); err != nil {
 		log.Printf("login rejected for %s: %v", uid, err)
-		return nil, fosite.ErrAccessDenied.WithHint(err.Error())
+		s.provider.WriteAuthorizeError(ctx, w, p.ar, fosite.ErrAccessDenied.WithHint(err.Error()))
+		return
 	}
+	consentID, csrf := rand.Text(), rand.Text()
+	if !s.park(func() { s.consents[consentID] = pendingConsent{ar: p.ar, id: id, csrf: csrf, created: time.Now()} }) {
+		http.Error(w, "too many sign-ins in progress; try again in a few minutes", http.StatusServiceUnavailable)
+		return
+	}
+	s.renderConsent(w, p.ar, consentID, csrf, id)
+}
+
+// park stores a pending login or consent unless the server is at capacity,
+// dropping expired entries first.
+func (s *AuthServer) park(store func()) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, p := range s.pending {
+		if time.Since(p.created) > pendingLoginTTL {
+			delete(s.pending, k)
+		}
+	}
+	for k, c := range s.consents {
+		if time.Since(c.created) > pendingLoginTTL {
+			delete(s.consents, k)
+		}
+	}
+	if len(s.pending)+len(s.consents) >= maxPending {
+		return false
+	}
+	store()
+	return true
+}
+
+// handleConsent is the CSRF-protected POST from the consent page. The form's
+// csrf value must match both the parked consent and the SameSite=Strict
+// cookie set when the page was rendered.
+func (s *AuthServer) handleConsent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := r.PostFormValue("consent_id")
+	s.mu.Lock()
+	c, ok := s.consents[id]
+	delete(s.consents, id)
+	s.mu.Unlock()
+	cookie, err := r.Cookie(consentCookie)
+	if !ok || time.Since(c.created) > pendingLoginTTL || err != nil ||
+		!constantEq(r.PostFormValue("csrf"), c.csrf) || !constantEq(cookie.Value, c.csrf) {
+		http.Error(w, "invalid or expired consent; start again from your MCP client", http.StatusForbidden)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: consentCookie, Path: "/oauth/consent", MaxAge: -1})
+	if r.PostFormValue("decision") != "approve" {
+		s.provider.WriteAuthorizeError(ctx, w, c.ar, fosite.ErrAccessDenied.WithHint("You declined access."))
+		return
+	}
+	resp, err := s.issueCode(ctx, c.ar, c.id)
+	if err != nil {
+		s.provider.WriteAuthorizeError(ctx, w, c.ar, err)
+		return
+	}
+	s.provider.WriteAuthorizeResponse(ctx, w, c.ar, resp)
+}
+
+// issueCode maps an allowlisted, consented Google identity to a finbot
+// session and authorization code.
+func (s *AuthServer) issueCode(ctx context.Context, ar fosite.AuthorizeRequester, id Identity) (fosite.AuthorizeResponder, error) {
+	uid := UserID(id.Email)
 	gen, err := s.gens.Current(uid)
 	if err != nil {
 		return nil, fosite.ErrServerError.WithWrap(err)
@@ -304,7 +383,21 @@ func (s *AuthServer) checkGeneration(sess fosite.Session) error {
 	if !ok {
 		return errRevoked
 	}
-	issued, _ := ds.Extra[genKey].(int)
+	if ds.Subject == "" {
+		return errRevoked
+	}
+	var issued int
+	switch v := ds.Extra[genKey].(type) {
+	case int:
+		issued = v
+	case float64: // after a JSON round trip (persistent storage)
+		if v != float64(int(v)) {
+			return errRevoked
+		}
+		issued = int(v)
+	default: // missing or non-numeric: fail closed
+		return errRevoked
+	}
 	cur, err := s.gens.Current(ds.Subject)
 	if err != nil {
 		return err
@@ -317,11 +410,17 @@ func (s *AuthServer) checkGeneration(sess fosite.Session) error {
 
 // VerifyToken is the go-sdk auth.TokenVerifier for /mcp.
 func (s *AuthServer) VerifyToken(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
-	_, ar, err := s.provider.IntrospectToken(ctx, token, fosite.AccessToken, &fosite.DefaultSession{})
+	tu, ar, err := s.provider.IntrospectToken(ctx, token, fosite.AccessToken, &fosite.DefaultSession{})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", auth.ErrInvalidToken, fosite.ErrorToRFC6749Error(err).ErrorField)
 	}
-	sess := ar.GetSession().(*fosite.DefaultSession)
+	if tu != fosite.AccessToken {
+		return nil, fmt.Errorf("%w: not an access token", auth.ErrInvalidToken)
+	}
+	sess, ok := ar.GetSession().(*fosite.DefaultSession)
+	if !ok {
+		return nil, fmt.Errorf("%w: unexpected session", auth.ErrInvalidToken)
+	}
 	if err := s.checkGeneration(sess); err != nil {
 		return nil, fmt.Errorf("%w: %v", auth.ErrInvalidToken, err)
 	}
@@ -339,6 +438,7 @@ type clientStore struct {
 	*storage.MemoryStore
 	mu      sync.RWMutex
 	clients map[string]fosite.Client
+	names   map[string]string // client_name from DCR, for the consent page
 }
 
 func (c *clientStore) GetClient(_ context.Context, id string) (fosite.Client, error) {
@@ -351,14 +451,21 @@ func (c *clientStore) GetClient(_ context.Context, id string) (fosite.Client, er
 	return cl, nil
 }
 
-func (c *clientStore) add(cl fosite.Client) error {
+func (c *clientStore) add(cl fosite.Client, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.clients) >= maxClients {
 		return errors.New("too many registered clients")
 	}
 	c.clients[cl.GetID()] = cl
+	c.names[cl.GetID()] = name
 	return nil
+}
+
+func (c *clientStore) name(id string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.names[id]
 }
 
 func registrationError(w http.ResponseWriter, code, desc string) {

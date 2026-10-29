@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -75,9 +76,15 @@ func serve(gens *Generations) error {
 	}
 	mux := http.NewServeMux()
 	as.Register(mux, mcpPath)
-	mux.Handle(mcpPath, mcpHandler(as))
+	mux.Handle(mcpPath, mcpHandler(as.VerifyToken, as.ResourceMetadataURL()))
 	log.Printf("serving MCP at %s%s (%d allowlisted)", issuer, mcpPath, len(allow))
-	return http.ListenAndServe(addr, logRequests(cors(mux)))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           logRequests(cors(mux)),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	return srv.ListenAndServe()
 }
 
 // logRequests logs method, path and status; never query strings (codes) or headers (tokens).
