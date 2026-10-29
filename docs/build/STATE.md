@@ -13,7 +13,7 @@ Updated: 2026-10-27 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p0 | control (w1:t7) | reviewer | — | 2026-10-27 | review counter 2 (M0-1b, M0-3): replace before next review |
+| agy | w1:p13 | control (w1:t7) | reviewer | M0-4a | 2026-10-28 | fresh; review counter 1 (M0-4a) |
 | b-m0-4a | w1:p12 | build | builder | M0-4a | 2026-10-28 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
@@ -25,7 +25,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-2a | todo (needs BA-5) | | | | |
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
 | M0-3 | merged | — | — | agy PASS (2 low, for M3) | merged 2026-10-28; findings docs/build/spikes/slack.md. M3 notes: extend existing `questions` table (§2) rather than new `slack_questions`; slack-go v0.32.0 needs Go 1.26 → bump go.mod + Dockerfile (or pin older slack-go). Slack app tidy-up (drop `groups:write`, maybe `channels:*`) at M0 gate |
-| M0-4a | active | w1:p12 (b-m0-4a) | t/M0-4a (../YNAB_AutoCategorizer.wt/M0-4a) | | started 2026-10-28; install native claude on hoid (~/.local/bin, no sudo), offline flag check (U11/U12 research dropped 2026-10-28, Brendan settled them) |
+| M0-4a | review | w1:p12 (b-m0-4a) | t/M0-4a (../YNAB_AutoCategorizer.wt/M0-4a) | | started 2026-10-28; install native claude on hoid (~/.local/bin, no sudo), offline flag check (U11/U12 research dropped 2026-10-28, Brendan settled them) |
 | M0-4b | todo (needs M0-4a, BA-6) | | | | runtime checks of §5a flags with CLAUDE_CODE_OAUTH_TOKEN |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
