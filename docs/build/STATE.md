@@ -4,7 +4,7 @@ Updated: 2026-10-27 by sup (first session)
 
 ## Now
 - Milestone: **M0 — Spikes** (in progress)
-- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). Brendan will do BA-2/BA-5 later. **sup loop PAUSED** (watch + 20-min fallback stopped, 2026-10-27, Brendan's request) until a BA lands; Brendan tells sup to resume. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-3←BA-2, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
+- Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 running. Brendan will do BA-5 later. Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -14,6 +14,7 @@ Updated: 2026-10-27 by sup (first session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p0 | control (w1:t7) | reviewer | — | 2026-10-27 | fresh; review counter 1 (M0-1b) |
+| b-m0-3 | w1:p11 | build | builder | M0-3 | 2026-10-28 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -23,7 +24,7 @@ Updated: 2026-10-27 by sup (first session)
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |
 | M0-2a | todo (needs BA-5) | | | | |
 | M0-2b | todo (needs M0-2a, BA-3, BA-4) | | | | |
-| M0-3 | todo (needs BA-2) | | | | |
+| M0-3 | active | w1:p11 (b-m0-3) | t/M0-3 (../YNAB_AutoCategorizer.wt/M0-3) | | started 2026-10-28; needs Brendan to click a button + thread reply when builder signals QUESTION |
 | M0-4 | todo (needs BA-6) | | | | |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
@@ -31,7 +32,7 @@ Updated: 2026-10-27 by sup (first session)
 | ID | Action | Needed by | Status |
 |---|---|---|---|
 | BA-1 | Jev: API key + docs link / account details → put key in main checkout `.env` as `JEV_API_KEY` | M0-1 | done 2026-10-27 (key = Brendan's TYPESAFE_API_KEY, copied to .env by sup; docs via installed `typesafe-ai` skill) |
-| BA-2 | Slack: create workspace channel `#finances`; create Slack app (Socket Mode on, bot scopes per M0-3 brief) → `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` in `.env`; invite your wife | M0-3 | open |
+| BA-2 | Slack: create workspace channel `#finances`; create Slack app (Socket Mode on, bot scopes per M0-3 brief) → `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` in `.env`; invite your wife | M0-3 | done 2026-10-28: app finbot (Ashton Clan, 16 humans), private `#finbot-finances`, tokens verified by sup |
 | BA-3 | Tell sup the domain served by nginx-proxy-manager; add DNS for `finance.<domain>` | M0-2b | open |
 | BA-4 | nginx-proxy-manager: add proxy host `finance.<domain>` → finbot port with Let's Encrypt (or give sup a way to do it) | M0-2b | open |
 | BA-5 | Google Cloud: OAuth client (web) with redirect URI from M0-2 brief → `GOOGLE_OAUTH_CLIENT_ID/SECRET`; then add claude.ai custom connector when asked | M0-2a | open |
