@@ -4,7 +4,7 @@ Updated: 2026-10-29 by sup (second session)
 
 ## Now
 - Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29)
-- Next actions: M1-1..M1-3 merged. M1-4a merged. **M1-4b** active (serve skeleton + config + old-path removal + CLAUDE.md; depends on M1-4a's scan API). M1-5a needs BA-7, M1-5b needs BA-8 (ask Brendan when next). Reviewer is Claude `rev` until agy quota resets (~2026-11-02).
+- Next actions: M1-1..M1-3 merged. M1-4a merged. **M1-4b** in review (serve skeleton + config + old-path removal + CLAUDE.md; depends on M1-4a's scan API). M1-5a needs BA-7, M1-5b needs BA-8 (ask Brendan when next). Reviewer is Claude `rev` until agy quota resets (~2026-11-02).
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
@@ -14,7 +14,7 @@ Updated: 2026-10-29 by sup (second session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| rev | w1:p1P | control (w1:t7) | reviewer (Claude Opus, substitutes for agy) | — | 2026-10-29 | fresh pane, review counter 0; same replace-after-2 rule; prompt it as in SUPERVISOR.md but name it `rev` |
+| rev | w1:p1P | control (w1:t7) | reviewer (Claude Opus, substitutes for agy) | — | 2026-10-29 | fresh pane, review counter 1 (M1-4b); same replace-after-2 rule; prompt it as in SUPERVISOR.md but name it `rev` |
 | b-m1-4b | w1:p1N | build (w1:tK) | builder | M1-4b | 2026-10-29 | worktree ../YNAB_AutoCategorizer.wt/M1-4b |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
@@ -33,7 +33,7 @@ Updated: 2026-10-29 by sup (second session)
 | M1-2 | merged | — | — | agy PASS r2 (r1 FIX; 1 low) | merged 2026-10-29; store/ with modernc sqlite, WAL + pragmas verified, embedded migrations, mirror schema 0001 (debt maps, no categories→groups FK, split sentinel), panic-safe writeTx. Low: formatTime RFC3339Nano is not fixed-width (string compares invert at sub-second); fix when next touching store/ |
 | M1-3 | merged | — | — | rev PASS (4 low) | merged 2026-10-29; sync/: export-then-delta, cursor+rows in one tx (crash-safe), tombstones (incl. split children), stitching, link-error transition events (baseline on initial load), freshness §3.1-4, ErrBudgetExhausted/429 → skipped tick, TriggerImport (write reserve; tests only), DiscretionaryPlans one-shot (1+N GETs; live run scanned 8/14). Follow-ups for M1-4: DiscretionaryPlans one-shot only + persist result/full scan; ctx on GetCategories; pass syncedAt to first_seen_at; surface Orphans>0 as event |
 | M1-4a | merged | — | — | rev PASS (4 low) | merged 2026-10-29 (b2414be) (ctx 13%; live scan 15/15 plans, 2 with Discretionary; governor refactored to library Limiter, write intent on ctx); ynab/store/sync follow-ups (persisted full archived scan, first_seen_at=syncedAt, orphans log, ctx on GetCategories, M1-1/M1-2 lows). Open lows (docs/build/../_reviews/M1-4a.md): client test for read *retry* refused at reserve; transport could refuse unmarked non-GET; **scan that hits ErrBudgetExhausted overwrites a prior good plan_scan and ScanError has no Unwrap** (fix when next touching sync/); pre-M1-4a DBs have variable-width timestamps (no prod DB yet) |
-| M1-4b | active | w1:p1N | t/M1-4b | — | dispatched 2026-10-29; serve + sync subcommands, config rewrite, IMPORT_ENABLED off by default, /healthz, delete old categorizer/Turso path, CLAUDE.md |
+| M1-4b | review | w1:p1N | t/M1-4b | rev (in progress) | dispatched + DONE 2026-10-29 (ctx 12%; live sync/archived/serve OK, docker build OK; Dockerfile golang 1.26 bump; old-categorizer SHA b2414be for M3 guardrail port; **YNAB_BUDGET_ID = archived 'May 2025' plan → BA-12**); serve + sync subcommands, config rewrite, IMPORT_ENABLED off by default, /healthz, delete old categorizer/Turso path, CLAUDE.md |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
@@ -49,6 +49,7 @@ Updated: 2026-10-29 by sup (second session)
 | BA-8 | Off-site backup target (Backblaze B2 bucket or Google Drive) + credentials; generate age key, keep a copy offline | M1-5 | open |
 | BA-10 | YNAB: relink 3 credit-card connections in `direct_import_in_error` (found by M0-5) | M1 sync freshness | open |
 | BA-11 | Tell sup whether the old 6h categorizer is running live anywhere (confounds §3.1 payee-memory finding) | M1 | done 2026-10-27: Brendan believes it is not running → M0-5's 9/75 unapproved+categorized imports are likely YNAB payee memory (§3.1 assumption leans VERIFIED; still confirm by observation in M1) |
+| BA-12 | Confirm the active plan: `.env` `YNAB_BUDGET_ID` points to "May 2025 (Archived on 2026-03-14)". Give sup the plan finbot should sync live (name is enough; sup fixes `.env`) | M1-5a deploy | open |
 | BA-9 | YNAB: create an empty "finbot-sandbox" plan in the YNAB UI for write tests (API can't create plans) | M3 | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
