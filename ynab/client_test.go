@@ -212,3 +212,24 @@ func TestClient_ExhaustedBudgetFailsFast(t *testing.T) {
 		t.Errorf("calls=%d after %v; want an immediate refusal", calls, time.Since(start))
 	}
 }
+
+func TestClient_ImportUsesWriteReserve(t *testing.T) {
+	var method, path string
+	gov := NewGovernor(1, 1, (&fakeClock{t: time.Unix(0, 0)}).Now) // reads refused, one write left
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusCreated)
+		io.WriteString(w, `{"data":{"transaction_ids":["a","b"]}}`)
+	}, gov)
+
+	ids, err := c.ImportTransactions(context.Background())
+	if err != nil {
+		t.Fatalf("ImportTransactions: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("got %d ids, want 2", len(ids))
+	}
+	if want := "/v1/plans/" + testPlanID + "/transactions/import"; method != http.MethodPost || path != want {
+		t.Errorf("sent %s %s, want POST %s", method, path, want)
+	}
+}
