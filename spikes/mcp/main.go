@@ -22,7 +22,9 @@ const mcpPath = "/mcp"
 
 func main() {
 	// .env lives at the repo root; the spike runs from spikes/mcp.
-	_ = godotenv.Load(".env", "../../.env")
+	for _, f := range []string{".env", "../../.env"} {
+		_ = godotenv.Load(f) // first file wins; missing files are fine
+	}
 	gens := NewGenerations(envOr("MCP_DATA_DIR", ".data") + "/generations.json")
 
 	if len(os.Args) > 1 && os.Args[1] == "revoke" {
@@ -75,7 +77,7 @@ func serve(gens *Generations) error {
 	as.Register(mux, mcpPath)
 	mux.Handle(mcpPath, mcpHandler(as))
 	log.Printf("serving MCP at %s%s (%d allowlisted)", issuer, mcpPath, len(allow))
-	return http.ListenAndServe(addr, logRequests(mux))
+	return http.ListenAndServe(addr, logRequests(cors(mux)))
 }
 
 // logRequests logs method, path and status; never query strings (codes) or headers (tokens).
@@ -84,6 +86,24 @@ func logRequests(h http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: 200}
 		h.ServeHTTP(rec, r)
 		log.Printf("%s %s -> %d", r.Method, r.URL.Path, rec.status)
+	})
+}
+
+// cors lets browser-based clients (MCP Inspector) run discovery, DCR and the
+// token exchange. Any origin is fine: nothing here uses cookies or other
+// ambient credentials; every call carries its own bearer token or PKCE proof.
+func cors(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hd := w.Header()
+		hd.Set("Access-Control-Allow-Origin", "*")
+		hd.Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		hd.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID")
+		hd.Set("Access-Control-Expose-Headers", "WWW-Authenticate, Mcp-Session-Id")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.ServeHTTP(w, r)
 	})
 }
 

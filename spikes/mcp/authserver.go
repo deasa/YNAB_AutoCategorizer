@@ -111,18 +111,20 @@ func (s *AuthServer) ResourceMetadataURL() string {
 }
 
 func (s *AuthServer) handleASMetadata(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, &oauthex.AuthServerMeta{
-		Issuer:                                 s.issuer,
-		AuthorizationEndpoint:                  s.issuer + "/oauth/authorize",
-		TokenEndpoint:                          s.issuer + "/oauth/token",
-		RegistrationEndpoint:                   s.issuer + "/oauth/register",
-		RevocationEndpoint:                     s.issuer + "/oauth/revoke",
-		ScopesSupported:                        []string{scopeMCP, scopeOffline},
-		ResponseTypesSupported:                 []string{"code"},
-		GrantTypesSupported:                    []string{"authorization_code", "refresh_token"},
-		TokenEndpointAuthMethodsSupported:      []string{"none"},
-		RevocationEndpointAuthMethodsSupported: []string{"none"},
-		CodeChallengeMethodsSupported:          []string{"S256"},
+	// RFC 8414. A map rather than oauthex.AuthServerMeta, which would emit an
+	// empty jwks_uri (we sign nothing, so there is no JWKS).
+	writeJSON(w, http.StatusOK, map[string]any{
+		"issuer":                                     s.issuer,
+		"authorization_endpoint":                     s.issuer + "/oauth/authorize",
+		"token_endpoint":                             s.issuer + "/oauth/token",
+		"registration_endpoint":                      s.issuer + "/oauth/register",
+		"revocation_endpoint":                        s.issuer + "/oauth/revoke",
+		"scopes_supported":                           []string{scopeMCP, scopeOffline},
+		"response_types_supported":                   []string{"code"},
+		"grant_types_supported":                      []string{"authorization_code", "refresh_token"},
+		"token_endpoint_auth_methods_supported":      []string{"none"},
+		"revocation_endpoint_auth_methods_supported": []string{"none"},
+		"code_challenge_methods_supported":           []string{"S256"},
 	})
 }
 
