@@ -13,7 +13,7 @@ Updated: 2026-10-29 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p15 | control (w1:t7) | reviewer | M0-2a | 2026-10-29 | review counter 2 (M0-2a r1, r2): replace before next review |
+| agy | w1:p17 | control (w1:t7) | reviewer | — | 2026-10-29 | review counter 0 (replaced after M0-2a r1, r2) |
 | b-m0-2a | w1:p16 | build | builder | M0-2a | 2026-10-29 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
