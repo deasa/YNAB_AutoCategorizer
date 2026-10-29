@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -151,6 +152,18 @@ func (e *testEnv) submitConsent(t *testing.T, page *http.Response, body string, 
 	return resp
 }
 
+// assertLocalError checks an error answered on finbot's origin, never a
+// redirect to the (unconsented) client redirect_uri.
+func assertLocalError(t *testing.T, resp *http.Response, status int, body, want string) {
+	t.Helper()
+	if resp.StatusCode != status || resp.Header.Get("Location") != "" {
+		t.Fatalf("got %d Location=%q, want local %d", resp.StatusCode, resp.Header.Get("Location"), status)
+	}
+	if !strings.Contains(body, want) {
+		t.Errorf("body %q lacks %q", body, want)
+	}
+}
+
 // authorize runs DCR, authorize, (fake) Google and an approved consent, and
 // returns the final redirect back to the client.
 func (e *testEnv) authorize(t *testing.T) (*url.URL, string, string) {
@@ -270,6 +283,11 @@ func TestRegisterRedirectURIValidation(t *testing.T) {
 		"/relative/cb":                                http.StatusBadRequest,
 		e.srv.URL + "/oauth/token":                    http.StatusBadRequest,
 		strings.ToUpper(e.srv.URL) + "/oauth/consent": http.StatusBadRequest,
+		e.srv.URL + "//oauth/google/callback":         http.StatusBadRequest,
+		e.srv.URL + "/./oauth/google/callback":        http.StatusBadRequest,
+		e.srv.URL + "/x/../oauth/token":               http.StatusBadRequest,
+		e.srv.URL + "/%6Fauth/token":                  http.StatusBadRequest,
+		e.srv.URL + "/oauthx/cb":                      http.StatusCreated,
 	}
 	for uri, want := range tests {
 		if got, _ := e.register(t, "x", uri); got != want {
@@ -282,14 +300,8 @@ func TestNonAllowlistedAccountRejected(t *testing.T) {
 	for name, allowed := range map[string]string{"other account": "bob@example.com", "empty allowlist": ""} {
 		t.Run(name, func(t *testing.T) {
 			e := newTestEnv(t, allowed)
-			u, _, _ := e.authorize(t)
-			q := u.Query()
-			if q.Get("code") != "" || q.Get("error") != "access_denied" {
-				t.Fatalf("want access_denied and no code, got code=%q error=%q", q.Get("code"), q.Get("error"))
-			}
-			if !strings.Contains(q.Get("error_description"), "not allowed") {
-				t.Errorf("error_description %q should explain the rejection", q.Get("error_description"))
-			}
+			resp, body, _, _ := e.consentPage(t)
+			assertLocalError(t, resp, http.StatusForbidden, body, "not allowed")
 		})
 	}
 }
@@ -297,10 +309,8 @@ func TestNonAllowlistedAccountRejected(t *testing.T) {
 func TestUnverifiedEmailRejected(t *testing.T) {
 	e := newTestEnv(t, "alice@example.com")
 	e.idp.id.EmailVerified = false
-	u, _, _ := e.authorize(t)
-	if u.Query().Get("error") != "access_denied" {
-		t.Fatalf("want access_denied, got %q", u.Query().Get("error"))
-	}
+	resp, body, _, _ := e.consentPage(t)
+	assertLocalError(t, resp, http.StatusForbidden, body, "not verified")
 }
 
 type bearer struct{ token string }
@@ -425,10 +435,7 @@ func TestAuthorizeRequiresS256PKCE(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp, _, _ := e.startAuthorize(t, mutate)
-			u, _ := url.Parse(resp.Header.Get("Location"))
-			if !strings.HasPrefix(u.String(), testRedirect) || u.Query().Get("error") != "invalid_request" {
-				t.Fatalf("want redirect to client with invalid_request, got %d %s", resp.StatusCode, u.Redacted())
-			}
+			assertLocalError(t, resp, http.StatusBadRequest, "PKCE", "PKCE")
 		})
 	}
 	e.as.mu.Lock()
@@ -485,6 +492,9 @@ func TestConsentPage(t *testing.T) {
 	if strings.Contains(body, "<App>") || strings.Contains(body, "alice@example.com") {
 		t.Error("consent page has unescaped client name or the raw email")
 	}
+	if csp := page.Header.Get("Content-Security-Policy"); !cspAllowsFormTarget(csp, "http://127.0.0.1:9999") {
+		t.Errorf("CSP %q blocks the post-consent redirect to the client", csp)
+	}
 	if page.Header.Get("X-Frame-Options") != "DENY" {
 		t.Error("consent page can be framed")
 	}
@@ -506,26 +516,18 @@ func TestConsentCSRFAndDecision(t *testing.T) {
 		fields map[string]string
 		cookie bool
 		status int
-		errStr string
 	}{
-		{"no cookie", map[string]string{"decision": "approve"}, false, http.StatusForbidden, ""},
-		{"wrong csrf", map[string]string{"decision": "approve", "csrf": "forged"}, true, http.StatusForbidden, ""},
-		{"unknown consent id", map[string]string{"decision": "approve", "consent_id": "nope"}, true, http.StatusForbidden, ""},
-		{"deny", map[string]string{"decision": "deny"}, true, http.StatusSeeOther, "access_denied"},
+		{"no cookie", map[string]string{"decision": "approve"}, false, http.StatusForbidden},
+		{"wrong csrf", map[string]string{"decision": "approve", "csrf": "forged"}, true, http.StatusForbidden},
+		{"unknown consent id", map[string]string{"decision": "approve", "consent_id": "nope"}, true, http.StatusForbidden},
+		{"deny", map[string]string{"decision": "deny"}, true, http.StatusForbidden},
+		{"no decision", map[string]string{"decision": ""}, true, http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			page, body, _, _ := e.consentPage(t)
 			resp := e.submitConsent(t, page, body, tc.fields, tc.cookie)
-			if resp.StatusCode != tc.status && !(tc.errStr != "" && resp.StatusCode == http.StatusFound) {
-				t.Fatalf("status %d, want %d", resp.StatusCode, tc.status)
-			}
-			if tc.errStr != "" {
-				u, _ := url.Parse(resp.Header.Get("Location"))
-				if u.Query().Get("error") != tc.errStr || u.Query().Get("code") != "" {
-					t.Fatalf("redirect %s, want error=%s and no code", u.Redacted(), tc.errStr)
-				}
-			}
+			assertLocalError(t, resp, tc.status, "", "")
 		})
 	}
 	t.Run("replay", func(t *testing.T) {
@@ -556,5 +558,27 @@ func TestCheckGenerationFailsClosed(t *testing.T) {
 		if err := e.as.checkGeneration(tc.sess); (err == nil) != tc.ok {
 			t.Errorf("%s: err=%v, want ok=%v", name, err, tc.ok)
 		}
+	}
+}
+
+// cspAllowsFormTarget reports whether a CSP's form-action (if any) permits
+// origin. Browsers apply form-action to the redirect after the POST.
+func cspAllowsFormTarget(csp, origin string) bool {
+	for _, d := range strings.Split(csp, ";") {
+		f := strings.Fields(d)
+		if len(f) > 0 && f[0] == "form-action" {
+			return slices.Contains(f[1:], origin) || slices.Contains(f[1:], "*")
+		}
+	}
+	return true
+}
+
+func TestConsentApproveRedirectsToClient(t *testing.T) {
+	e := newTestEnv(t, "alice@example.com")
+	page, body, _, _ := e.consentPage(t)
+	resp := e.submitConsent(t, page, body, map[string]string{"decision": "approve"}, true)
+	u, _ := url.Parse(resp.Header.Get("Location"))
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(u.String(), testRedirect) || u.Query().Get("code") == "" {
+		t.Fatalf("approve: %d %s, want 303 to client with code", resp.StatusCode, u.Redacted())
 	}
 }

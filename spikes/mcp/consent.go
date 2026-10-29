@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"html/template"
 	"log"
 	"net"
@@ -55,7 +56,10 @@ func (s *AuthServer) renderConsent(w http.ResponseWriter, ar fosite.AuthorizeReq
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+	// form-action also governs the redirect after the POST, so it must allow
+	// the (validated, just-shown) redirect origin or browsers block the code.
+	h.Set("Content-Security-Policy", fmt.Sprintf(
+		"default-src 'none'; style-src 'unsafe-inline'; form-action 'self' %s://%s; frame-ancestors 'none'", ru.Scheme, ru.Host))
 	err := consentPage.Execute(w, map[string]any{
 		"User": user, "ClientName": name, "Host": ru.Host, "ConsentID": consentID, "CSRF": csrf,
 		"Loopback": host == "localhost" || (ip != nil && ip.IsLoopback()),

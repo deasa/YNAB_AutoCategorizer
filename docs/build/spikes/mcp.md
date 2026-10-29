@@ -75,15 +75,15 @@ fetched 2026-10-29. Each item is VERIFIED against that doc:
 | `POST /mcp` (+ GET/DELETE) | Streamable HTTP MCP endpoint, behind the bearer middleware |
 | `GET /.well-known/oauth-protected-resource[/mcp]` | RFC 9728 metadata (`resource`, `authorization_servers`, `scopes_supported: [mcp]`) |
 | `GET /.well-known/oauth-authorization-server` | RFC 8414 metadata |
-| `POST /oauth/register` | RFC 7591 DCR. Public clients only. Each redirect URI must be https, or http on loopback, and must have a host. It must have no userinfo, no fragment, must not be opaque, and must not point at our own `/oauth/*`. Capped at 500 clients |
-| `GET /oauth/authorize` | fosite validates the request (client, redirect, scope, state). We require an S256 `code_challenge` **before** parking anything (otherwise `invalid_request` goes back to the client), add the `mcp` scope, park the request (cap: 100 pending logins plus consents, else 503), and redirect to Google |
+| `POST /oauth/register` | RFC 7591 DCR. Public clients only. Each redirect URI must be https, or http on loopback, and must have a host. It must have no userinfo, no fragment, must not be opaque, and must not point at our own `/oauth/*` (parsed host plus `path.Clean`ed path). Capped at 500 clients |
+| `GET /oauth/authorize` | fosite validates the request (client, redirect, scope, state). We require an S256 `code_challenge` **before** parking anything (otherwise a local 400 page), add the `mcp` scope, park the request (cap: 100 pending logins plus consents, else 503), and redirect to Google |
 | `GET /oauth/google/callback` | Google redirect URI (registered in GCP). It checks the allowlist, then renders the consent page |
-| `POST /oauth/consent` | Consent form (CSRF token in the form and in a `SameSite=Strict` HttpOnly cookie). Allow issues the code; Deny returns `access_denied` |
+| `POST /oauth/consent` | Consent form (CSRF token in the form and in a `SameSite=Strict` HttpOnly cookie). Allow issues the code and redirects to the client; Deny shows a local 403 page |
 | `POST /oauth/token` | `authorization_code` and `refresh_token` grants |
 | `POST /oauth/revoke` | RFC 7009 single-token revocation |
 
 Sequence:
-1. The client calls `POST /mcp` with no token and gets 401 with `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource"`.
+1. The client calls `POST /mcp` with no token and gets 401 with `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource", scope="mcp"`.
 2. The client GETs the protected-resource metadata, then the AS metadata at `<issuer>/.well-known/oauth-authorization-server`.
 3. The client calls `POST /oauth/register` with its `redirect_uris` and gets back a `client_id`. The client is public, with
    `token_endpoint_auth_method: none`.
@@ -93,11 +93,17 @@ Sequence:
 6. The user signs in at Google. Google redirects to `/oauth/google/callback?code&state`.
 7. finbot exchanges the code with Google and verifies the ID token and nonce. It requires `email_verified=true` and the email
    to be in `MCP_ALLOWED_EMAILS`.
-   - If either check fails, the client gets `error=access_denied&error_description=… google account is not allowed to use this server`.
-     No code is issued.
+   - If either check fails, the browser gets a local 403 page ("google account is not allowed to use this server"). No code
+     is issued.
    - If both pass, finbot shows its **consent page**: the signed-in user's name, the client's `client_name`, and the
      `redirect_uri` host. Loopback hosts get an extra warning. The page sets `X-Frame-Options: DENY` and a CSP with
-     `frame-ancestors 'none'`. The user's Allow/Deny goes as a CSRF-checked, single-use `POST /oauth/consent`.
+     `frame-ancestors 'none'` and `form-action 'self' <redirect origin>`. The redirect origin has to be listed because
+     browsers apply `form-action` to the redirect that follows the POST. The user's Allow/Deny goes as a CSRF-checked,
+     single-use `POST /oauth/consent`.
+   - **Error rule:** until the user clicks Allow, the DCR-registered `redirect_uri` is untrusted. Every error before
+     approval, and Deny, is answered on finbot's own origin with a local 400/403/503 page and never redirected to the
+     client. That avoids an open redirect to attacker-registered URIs. The trade-off is that a client waiting on its
+     callback sees no error and the user closes the window. Only Allow redirects (303 with `code` and `state`).
    - On Allow, a session is created with `subject=u_<sha256(email)[:12 hex]>`, the display name, and the user's current
      revocation generation. fosite then redirects to the client's `redirect_uri` with `code` and `state`.
 8. The client calls `POST /oauth/token` with `grant_type=authorization_code`, the `code_verifier` and its `client_id`, and
@@ -176,15 +182,17 @@ running MCP Inspector via `npx` was blocked as external code in this environment
   - 401 now reads `Bearer resource_metadata="…", scope="mcp"`.
   - DCR now returns 400 for `https:///cb`, `https:opaque`, `https://claude.ai@evil.example/cb` and `http://localhost:8080/oauth/token`.
     `https://claude.ai/api/mcp/auth_callback` still returns 201.
-  - `/oauth/authorize` without PKCE returns 303 to the client with `error=invalid_request`, not to Google. With S256 it
-    returns 302 to Google.
+  - `/oauth/authorize` without PKCE returns a local 400 page (no `Location`), never the client or Google. With S256 it
+    returns 302 to Google. (Round 2 changed this. Round 1 redirected `invalid_request` to the client.)
   - Unit tests: refresh token as bearer → 401; token without `mcp` → 403; the `mcp` scope is always granted; missing,
-    plain or method-less PKCE → `invalid_request` with nothing parked; wrong `code_verifier` → `invalid_grant`; pending cap
+    plain or method-less PKCE → local 400 with nothing parked; wrong `code_verifier` → `invalid_grant`; pending cap
     → 503; consent page escaping, cookie flags and no-framing; consent with no cookie, wrong CSRF, unknown id or a replay
-    → 403; Deny → `access_denied`; generation check fails closed.
+    → 403; Deny → local 403, no redirect; Allow → 303 to the client with a code; the CSP `form-action` allows the redirect
+    origin; DCR rejects `//oauth/…`, `/./oauth/…`, `/x/../oauth/…` and `/%6Fauth/…` on our host; generation check fails
+    closed.
 - Non-allowlisted, unverified-email and empty-allowlist cases: these are covered by unit tests through the full DCR,
-  authorize, callback and redirect path, using a fake IdP (`TestNonAllowlistedAccountRejected`, `TestUnverifiedEmailRejected`).
-  Each test expects `error=access_denied`, `error_description` containing "not allowed", and no code. A real second Google
+  authorize and callback path, using a fake IdP (`TestNonAllowlistedAccountRejected`, `TestUnverifiedEmailRejected`).
+  Each test expects a local 403 page ("not allowed" / "not verified"), with no redirect and no code. A real second Google
   account was not tried. VERIFIED (tests)
 - Unit tests for the same-token-after-revoke path: `TestHelloThenRevoke` (hello via the go-sdk client, then 401, then
   `invalid_grant`, then a fresh login that works), `TestRefreshRotates` and `TestOtherUserRevokeDoesNotAffect`.

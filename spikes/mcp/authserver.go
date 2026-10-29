@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -196,7 +197,7 @@ func (s *AuthServer) validRedirectURI(raw string) error {
 	if err != nil || !u.IsAbs() || u.Fragment != "" || u.Opaque != "" || u.User != nil || u.Hostname() == "" {
 		return fmt.Errorf("redirect_uri %q must be an absolute URI with a host and no userinfo or fragment", raw)
 	}
-	if strings.HasPrefix(strings.ToLower(raw), strings.ToLower(s.issuer)+"/oauth/") {
+	if s.isOwnOAuthEndpoint(u) {
 		return fmt.Errorf("redirect_uri %q points at this server's OAuth endpoints", raw)
 	}
 	switch u.Scheme {
@@ -211,20 +212,40 @@ func (s *AuthServer) validRedirectURI(raw string) error {
 	return fmt.Errorf("redirect_uri %q must be https or http on loopback", raw)
 }
 
+// isOwnOAuthEndpoint reports whether u targets this server's /oauth/ tree,
+// comparing the parsed host and the cleaned path (so //oauth and /./oauth
+// are caught too).
+func (s *AuthServer) isOwnOAuthEndpoint(u *url.URL) bool {
+	iss, err := url.Parse(s.issuer)
+	if err != nil || !strings.EqualFold(u.Hostname(), iss.Hostname()) {
+		return false
+	}
+	return strings.HasPrefix(path.Clean("/"+u.Path)+"/", "/oauth/")
+}
+
+// authorizeError answers on finbot's own origin. Until the user approves on
+// the consent page, a DCR-registered redirect_uri is untrusted, so errors
+// (and Deny) never redirect there.
+func authorizeError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Cache-Control", "no-store")
+	http.Error(w, msg+"\nClose this window and start again from your MCP client.", status)
+}
+
 // handleAuthorize validates the client's request with fosite, parks it, and
 // sends the browser to Google.
 func (s *AuthServer) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ar, err := s.provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
-		s.provider.WriteAuthorizeError(ctx, w, ar, err)
+		e := fosite.ErrorToRFC6749Error(err)
+		authorizeError(w, http.StatusBadRequest, "Invalid authorization request: "+e.ErrorField+": "+e.GetDescription())
 		return
 	}
 	// fosite checks PKCE only when issuing the code; check it before parking
 	// anything or sending the user to Google.
 	form := ar.GetRequestForm()
 	if form.Get("code_challenge") == "" || form.Get("code_challenge_method") != "S256" {
-		s.provider.WriteAuthorizeError(ctx, w, ar, fosite.ErrInvalidRequest.WithHint("PKCE with code_challenge_method=S256 is required."))
+		authorizeError(w, http.StatusBadRequest, "Invalid authorization request: PKCE with code_challenge_method=S256 is required.")
 		return
 	}
 	// Every token is for /mcp, so always grant the mcp scope.
@@ -255,19 +276,19 @@ func (s *AuthServer) handleGoogleCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if e := q.Get("error"); e != "" {
-		s.provider.WriteAuthorizeError(ctx, w, p.ar, fosite.ErrAccessDenied.WithHintf("Google sign-in failed: %s", e))
+		authorizeError(w, http.StatusForbidden, "Google sign-in failed: "+e)
 		return
 	}
 	id, err := s.idp.Exchange(ctx, q.Get("code"), p.pkceVerifier, p.nonce)
 	if err != nil {
 		log.Printf("google exchange failed: %v", err)
-		s.provider.WriteAuthorizeError(ctx, w, p.ar, fosite.ErrAccessDenied.WithHint("Google sign-in could not be verified."))
+		authorizeError(w, http.StatusForbidden, "Google sign-in could not be verified.")
 		return
 	}
 	uid := UserID(id.Email)
 	if err := s.allow.Check(id.Email, id.EmailVerified); err != nil {
 		log.Printf("login rejected for %s: %v", uid, err)
-		s.provider.WriteAuthorizeError(ctx, w, p.ar, fosite.ErrAccessDenied.WithHint(err.Error()))
+		authorizeError(w, http.StatusForbidden, "Access denied: "+err.Error()+".")
 		return
 	}
 	consentID, csrf := rand.Text(), rand.Text()
@@ -318,12 +339,13 @@ func (s *AuthServer) handleConsent(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: consentCookie, Path: "/oauth/consent", MaxAge: -1})
 	if r.PostFormValue("decision") != "approve" {
-		s.provider.WriteAuthorizeError(ctx, w, c.ar, fosite.ErrAccessDenied.WithHint("You declined access."))
+		authorizeError(w, http.StatusForbidden, "You declined access. Nothing was sent to the app.")
 		return
 	}
 	resp, err := s.issueCode(ctx, c.ar, c.id)
 	if err != nil {
-		s.provider.WriteAuthorizeError(ctx, w, c.ar, err)
+		log.Printf("issue code: %v", err)
+		authorizeError(w, http.StatusInternalServerError, "Could not complete sign-in.")
 		return
 	}
 	s.provider.WriteAuthorizeResponse(ctx, w, c.ar, resp)
