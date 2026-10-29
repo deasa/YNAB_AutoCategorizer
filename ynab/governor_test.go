@@ -2,6 +2,7 @@ package ynab
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -109,5 +110,22 @@ func TestGovernor_ExhaustedErrorSaysWhen(t *testing.T) {
 	err := g.Take(false)
 	if err == nil || err.Error() != "ynab: local request budget exhausted: next read in 18s" {
 		t.Errorf("got %v", err)
+	}
+}
+
+// The wait rounds up: 17.4s short of a token says 18s, never 17s or 0s.
+func TestGovernor_ExhaustedWaitRoundsUp(t *testing.T) {
+	clock := &fakeClock{t: time.Unix(0, 0)}
+	g := NewGovernor(200, 0, clock.Now) // one token per 18s
+	for range 200 {
+		_ = g.Take(false)
+	}
+	clock.t = clock.t.Add(600 * time.Millisecond)
+	if err := g.Take(false); err == nil || !strings.HasSuffix(err.Error(), "next read in 18s") {
+		t.Errorf("got %v, want next read in 18s", err)
+	}
+	clock.t = clock.t.Add(17*time.Second + 300*time.Millisecond) // 0.1s short
+	if err := g.Take(false); err == nil || !strings.HasSuffix(err.Error(), "next read in 1s") {
+		t.Errorf("got %v, want next read in 1s", err)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestNormalizeTimestamps(t *testing.T) {
@@ -61,19 +60,15 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestGovernedTransport_NormalizesAndCounts(t *testing.T) {
-	sent := 0
+func TestNormalizingTransport(t *testing.T) {
 	base := roundTripFunc(func(*http.Request) (*http.Response, error) {
-		sent++
 		return &http.Response{
 			StatusCode: 200,
 			Header:     http.Header{},
 			Body:       io.NopCloser(strings.NewReader(`{"t":"2025-08-28T13:55:15.492"}`)),
 		}, nil
 	})
-	clock := &fakeClock{t: time.Unix(0, 0)}
-	gov := NewGovernor(2, 1, clock.Now)
-	tr := &governedTransport{base: base, gov: gov}
+	tr := &normalizingTransport{base: base}
 
 	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid/x", nil)
 	resp, err := tr.RoundTrip(req)
@@ -84,13 +79,40 @@ func TestGovernedTransport_NormalizesAndCounts(t *testing.T) {
 	if string(b) != `{"t":"2025-08-28T13:55:15.492Z"}` || resp.ContentLength != int64(len(b)) {
 		t.Errorf("body %s, content length %d", b, resp.ContentLength)
 	}
+}
 
-	// The one remaining token is the write reserve: a second GET is refused
-	// before it reaches the network.
-	if _, err := tr.RoundTrip(req); err == nil {
-		t.Fatal("second read should be refused")
+// A body over maxResponseBytes is refused, and the transport reads no more
+// than one byte past the cap.
+func TestNormalizingTransport_CapsBody(t *testing.T) {
+	defer func(old int64) { maxResponseBytes = old }(maxResponseBytes)
+	maxResponseBytes = 16
+
+	for _, tc := range []struct {
+		size    int
+		wantErr bool
+	}{{16, false}, {17, true}, {1 << 20, true}} {
+		body := &countingReader{r: strings.NewReader(strings.Repeat("x", tc.size))}
+		tr := &normalizingTransport{base: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(body)}, nil
+		})}
+		req, _ := http.NewRequest(http.MethodGet, "http://example.invalid/x", nil)
+		_, err := tr.RoundTrip(req)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("size %d: err = %v, want error %v", tc.size, err, tc.wantErr)
+		}
+		if body.n > 17 {
+			t.Errorf("size %d: read %d bytes, want at most cap+1", tc.size, body.n)
+		}
 	}
-	if sent != 1 {
-		t.Errorf("sent %d requests, want 1", sent)
-	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
 }

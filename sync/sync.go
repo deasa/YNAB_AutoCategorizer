@@ -24,7 +24,7 @@ type PlanAPI interface {
 	Export(ctx context.Context) (*ynab.PlanDetail, ynab.ServerKnowledge, error)
 	Delta(ctx context.Context, st *ynab.SyncState) (*ynab.PlanDetail, error)
 	ImportTransactions(ctx context.Context) ([]string, error)
-	GetCategories() ([]*ynab.CategoryGroup, error)
+	GetCategories(ctx context.Context) ([]*ynab.CategoryGroup, error)
 }
 
 // PlanLister lists the plans a token can reach (*ynab.Client).

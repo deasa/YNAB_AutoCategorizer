@@ -67,7 +67,7 @@ func (f *fakeAPI) ImportTransactions(context.Context) ([]string, error) {
 	return f.imported, f.err
 }
 
-func (f *fakeAPI) GetCategories() ([]*ynab.CategoryGroup, error) {
+func (f *fakeAPI) GetCategories(context.Context) ([]*ynab.CategoryGroup, error) {
 	f.calls = append(f.calls, "categories")
 	return f.groups, f.err
 }

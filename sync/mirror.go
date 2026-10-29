@@ -223,7 +223,7 @@ func DiscretionaryPlans(ctx context.Context, lister PlanLister, client ClientFun
 	}
 	var out []ynab.PlanSummary
 	for _, p := range plans {
-		groups, err := client(p.ID).GetCategories()
+		groups, err := client(p.ID).GetCategories(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("sync: plan categories: %w", err)
 		}
