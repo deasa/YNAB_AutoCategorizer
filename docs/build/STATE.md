@@ -3,7 +3,7 @@
 Updated: 2026-10-29 by sup (first session)
 
 ## Now
-- Milestone: **M0 — Spikes** (in progress)
+- Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29, gate docs task M0-docs running)
 - Next actions: M0-5 merged (architecture impact to bring to Brendan at M0 gate). M0-1 merged. M0-1b merged. Brendan plans to dramatically simplify YNAB categories (input: spikes/jev.md per-category section). BA-2 done; M0-3 merged. M0-4 split: M0-4a and M0-4b merged. BA-5 done 2026-10-29; M0-2a merged 2026-10-29. **All M0 tasks merged (2026-10-29). M0 gate in progress**: agy independent testing, docs task for follow-ups, milestone summary, then architecture impact to Brendan and wait for his "continue". Other M0 tasks wait on BA items: M0-2a←BA-5, M0-4←BA-6 (after install), M0-2b←M0-2a+BA-3+BA-4. Brendan notified 2026-10-27.
 
 ## Deployed
@@ -55,6 +55,9 @@ Updated: 2026-10-29 by sup (first session)
 
 - 2026-10-29: Public exposure = **Cloudflare Tunnel** (Brendan, on sup's recommendation), replacing Q16's nginx-proxy-manager assumption. Found: domain is `hoidlabs.site` (Squarespace Domains, exp. 2028), served by hoid's *system* nginx with certbot; NPM installed but unused; router does not forward 80/443 (ECONNREFUSED from outside); home IP fixedness unknown. Tunnel needs no port forwarding, no sudo, works with a dynamic IP/CGNAT, hides the home IP. cloudflared runs in the finbot compose project and reaches `finbot:8080` over the compose network. Plan docs (§4 exposure, rate-limit/fail2ban → Cloudflare rules) updated at the M0 gate.
 
+- 2026-10-29 (M0 gate, Brendan): (1) keep the `finbot-spike` MCP server running on hoid. (2) The approval gap since 2026-04 is a lapse, not a change of strategy. Older/archived plans that contain a "Discretionary" category reflect his current categorizing strategy and are valid labelled data (calibration, Jev re-measure, payee history). (3) Category list: Brendan finalizes later. Until then, builders/sup may work from a **proposed** simplified set derived from his transaction history + Ramit Sethi's Conscious Spending Plan (fixed costs / investments / savings goals / guilt-free spending) + stated wants: per-spouse fun money, travel, generosity, auto, event set-asides (savings only, see the 2026-10-27 decision). Label it PROPOSED wherever it appears; nothing renames or creates live YNAB categories without Brendan.
+- 2026-10-29 (M0 gate, sup technical calls, presented to Brendan, no objection): M1-1 fixes the `goal_snoozed_at` decode with the zone-normalizing transport; Go 1.26 for the root module; Debian-based glibc runtime image; persistent fosite storage moves into M2 (not M3). Brendan's reply taken as "continue" → M1 started 2026-10-29.
+
 ## Milestone log
 - **M0 Spikes: complete 2026-10-29** (all tasks merged; agy independent testing PASS, report docs/build/spikes/M0-acceptance.md). Outcomes:
   - YNAB (ynab.md): `pkg.venceslau.dev/ynab` v1.6.1 + `Plan.Delta` as the only sync read. F1 `goal_snoozed_at` decode fix needed before M1-1; zone-normalizing transport proven in spike.
@@ -63,4 +66,4 @@ Updated: 2026-10-29 by sup (first session)
   - claude CLI (claude-cli.md): 2.1.312 on hoid, Haiku, `--permission-mode dontAsk` required on the Slack site, plus the §5a flag set.
   - MCP (mcp.md): go-sdk v1.8.0 + fosite v0.49.0 + Google sign-in; exposed via Cloudflare Tunnel at finance.hoidlabs.site; claude.ai web + mobile verified.
   - Cross-cutting: Go 1.26, glibc runtime image (claude needs it), split 0600 env files, Cloudflare rate limits replace fail2ban.
-  - Gate status: architecture impact presented to Brendan 2026-10-29; waiting for his "continue". Then: docs task applying all follow-ups (map in M0-acceptance.md), expand the M1 backlog.
+  - Gate: architecture impact presented 2026-10-29; Brendan answered → continue. Docs task M0-docs applies all follow-ups (map in M0-acceptance.md).
