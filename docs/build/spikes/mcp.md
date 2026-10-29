@@ -138,7 +138,36 @@ so neither claude.ai's nor ChatGPT's callback needs to be pre-registered.
 
 ## 7. Local end-to-end results
 
-<!-- filled in below after the sign-in -->
+All on 2026-10-29 against `go run .` on `localhost:8080`. The client was Claude Code (scratch-dir `--scope local`), because
+running MCP Inspector via `npx` was blocked as external code in this environment.
+
+- `curl -i localhost:8080/mcp` → `401 Unauthorized`,
+  `Www-Authenticate: Bearer resource_metadata="http://localhost:8080/.well-known/oauth-protected-resource"`. VERIFIED
+- Protected-resource metadata → `{"resource":"http://localhost:8080/mcp","authorization_servers":["http://localhost:8080"],"scopes_supported":["mcp"],"bearer_methods_supported":["header"],"resource_name":"finbot (spike)"}`.
+  AS metadata → issuer plus authorize, token, register and revoke endpoints, `code_challenge_methods_supported:["S256"]`,
+  `token_endpoint_auth_methods_supported:["none"]`. VERIFIED
+- `claude mcp add --transport http --scope local finbot-spike http://localhost:8080/mcp` showed "Needs authentication",
+  which means discovery worked. Brendan then ran `/mcp` → Authenticate → Google. Server log:
+  ```
+  POST /oauth/register -> 201   (client "Claude Code (finbot-spike)")
+  GET /oauth/authorize -> 302
+  login ok for u_9f51ae389a5c (gen 0)
+  GET /oauth/google/callback -> 303
+  POST /oauth/token -> 200
+  POST /mcp -> 200 …
+  ```
+  VERIFIED
+- `claude -p "Call the hello tool…" --allowedTools mcp__finbot-spike__hello` → `{"display_name":"Brendan Ashton","user_id":"u_9f51ae389a5c"}`.
+  The raw email is never returned. VERIFIED
+- Revocation: `./mcp-spike revoke <email>` → `revoked tokens for u_9f51ae389a5c (generation now 1)`. On Claude Code's next
+  call with the same token, the log shows `POST /mcp -> 401`. Its refresh attempt then shows `POST /oauth/token -> 400`
+  (`invalid_grant`), and Claude Code drops the tools until the user re-authenticates. VERIFIED
+- Non-allowlisted, unverified-email and empty-allowlist cases: these are covered by unit tests through the full DCR,
+  authorize, callback and redirect path, using a fake IdP (`TestNonAllowlistedAccountRejected`, `TestUnverifiedEmailRejected`).
+  Each test expects `error=access_denied`, `error_description` containing "not allowed", and no code. A real second Google
+  account was not tried. VERIFIED (tests)
+- Unit tests for the same-token-after-revoke path: `TestHelloThenRevoke` (hello via the go-sdk client, then 401, then
+  `invalid_grant`, then a fresh login that works), `TestRefreshRotates` and `TestOtherUserRevokeDoesNotAffect`.
 
 ## 8. What M0-2b must verify on hoid
 
