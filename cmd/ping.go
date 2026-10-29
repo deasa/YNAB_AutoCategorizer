@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -30,7 +31,13 @@ func (p *Pinger) After(ctx context.Context, syncErr error) {
 	}
 	target, outcome := p.URL, "ok"
 	if syncErr != nil {
-		target, outcome = strings.TrimRight(p.URL, "/")+"/fail", "fail"
+		outcome = "fail"
+		u, err := url.Parse(p.URL)
+		if err != nil {
+			p.Log.Warn("healthcheck ping failed", "outcome", outcome, "err", p.scrub(err.Error()))
+			return
+		}
+		target = u.JoinPath("fail").String() // keeps any query after the path
 	}
 	if err := p.get(ctx, target); err != nil {
 		p.Log.Warn("healthcheck ping failed", "outcome", outcome, "err", p.scrub(err.Error()))

@@ -1,9 +1,15 @@
 .git
+.claude/
 .env
+.env.*
 *.env
 **/.env
+**/.env.*
 **/*.env
 finbot
 **/*.db*
+*.out
+coverage.*
+*.test
 spikes/
 docs/

@@ -65,6 +65,19 @@ func TestPinger_Outcomes(t *testing.T) {
 	}
 }
 
+func TestPinger_FailKeepsQuery(t *testing.T) {
+	var got string
+	ps := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r.URL.RequestURI() }))
+	t.Cleanup(ps.Close)
+	for _, u := range []string{ps.URL + "/ping/key?rid=x", ps.URL + "/ping/key/?rid=x"} {
+		p := &Pinger{URL: u, Log: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))}
+		p.After(context.Background(), errors.New("boom"))
+		if got != "/ping/key/fail?rid=x" {
+			t.Errorf("%s: fail ping went to %q", u, got)
+		}
+	}
+}
+
 func TestPinger_DisabledSendsNothing(t *testing.T) {
 	var p *Pinger
 	p.After(context.Background(), nil) // nil pinger is a no-op
