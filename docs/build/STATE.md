@@ -14,8 +14,7 @@ Updated: 2026-10-29 by sup (first session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| rev | w1:p1J | control (w1:t7) | reviewer (Claude Opus, substitutes for agy) | M1-3 | 2026-10-29 | review counter 1 (M1-3); same replace-after-2 rule; prompt it as in SUPERVISOR.md but name it `rev` |
-| b-m1-3 | w1:p1H | build | builder | M1-3 | 2026-10-29 | |
+| rev | w1:p1J | control (w1:t7) | reviewer (Claude Opus, substitutes for agy) | — | 2026-10-29 | review counter 1 (M1-3); same replace-after-2 rule; prompt it as in SUPERVISOR.md but name it `rev` |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -31,7 +30,7 @@ Updated: 2026-10-29 by sup (first session)
 | M0-docs | merged | — | — | agy PASS r2 (r1 FIX) | merged 2026-10-29; architecture.md §0–§9, requirements U1, BACKLOG M1/M2 notes, spike doc cleanups. r1 fixes: existing splits skipped by routine categorizer, Inflow: Ready to Assign skip, Slack scopes, --resume stdio-only caveat |
 | M1-1 | merged | — | — | agy PASS (4 low) | merged 2026-10-29; Go 1.26, pkg.venceslau.dev/ynab v1.6.1, zone shim, governor 200/h with 20 write reserve (fast-fail), redacted errors (no Unwrap). Low follow-ups: LimitReader on body; retry after ErrBudgetExhausted sleeps one backoff; ceil the wait seconds; drop txn.ID from op strings in M3. Docs follow-up for CLAUDE.md (M1-4) |
 | M1-2 | merged | — | — | agy PASS r2 (r1 FIX; 1 low) | merged 2026-10-29; store/ with modernc sqlite, WAL + pragmas verified, embedded migrations, mirror schema 0001 (debt maps, no categories→groups FK, split sentinel), panic-safe writeTx. Low: formatTime RFC3339Nano is not fixed-width (string compares invert at sub-second); fix when next touching store/ |
-| M1-3 | review (rev) | w1:p1H | t/M1-3 | | started 2026-10-29; ≤15 live GETs, import POST never live |
+| M1-3 | merged | — | — | rev PASS (4 low) | merged 2026-10-29; sync/: export-then-delta, cursor+rows in one tx (crash-safe), tombstones (incl. split children), stitching, link-error transition events (baseline on initial load), freshness §3.1-4, ErrBudgetExhausted/429 → skipped tick, TriggerImport (write reserve; tests only), DiscretionaryPlans one-shot (1+N GETs; live run scanned 8/14). Follow-ups for M1-4: DiscretionaryPlans one-shot only + persist result/full scan; ctx on GetCategories; pass syncedAt to first_seen_at; surface Orphans>0 as event |
 | M0-5 | merged | — | — | agy PASS | merged 2026-10-27; findings docs/build/spikes/ynab.md. M1-1 BLOCKER: ynab v1.6.1 can't decode live plan (`goal_snoozed_at` zone-less). Docs follow-ups in tasks/M0-5.md Result (apply at M0 gate) |
 
 ## Brendan actions (BA)
