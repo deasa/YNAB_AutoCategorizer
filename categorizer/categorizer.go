@@ -7,10 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/brunomvsouza/ynab.go/api/category"
-	"github.com/brunomvsouza/ynab.go/api/transaction"
 	"github.com/deasa/YNAB_AutoCategorizer/AI"
 	"github.com/deasa/YNAB_AutoCategorizer/search"
+	"github.com/deasa/YNAB_AutoCategorizer/ynab"
 )
 
 // noneSuggestion is the sentinel the AI returns when a transaction should not
@@ -20,9 +19,9 @@ const noneSuggestion = "NONE"
 // YNABClient defines the YNAB operations needed by the categorizer.
 // This interface is satisfied by *ynab.Client.
 type YNABClient interface {
-	GetUncategorizedTransactions() ([]*transaction.Transaction, error)
-	GetCategories() ([]*category.GroupWithCategories, error)
-	UpdateTransactionCategory(txn *transaction.Transaction, categoryID string, flagColor *transaction.FlagColor) error
+	GetUncategorizedTransactions() ([]*ynab.Transaction, error)
+	GetCategories() ([]*ynab.CategoryGroup, error)
+	UpdateTransactionCategory(txn *ynab.Transaction, categoryID string, flagColor *ynab.FlagColor) error
 }
 
 const defaultMaxVectorDistance = 0.8
@@ -34,7 +33,7 @@ type Categorizer struct {
 	search              search.Search
 	logger              *log.Logger
 	confidenceThreshold float64
-	maxVectorDistance    float64
+	maxVectorDistance   float64
 	dryRun              bool
 	maxTransactions     int      // 0 = unlimited
 	excludedKeywords    []string // category names containing any of these (case-insensitive) are never applied
@@ -50,7 +49,7 @@ func New(ynab YNABClient, ai AI.AI, search search.Search, logger *log.Logger, co
 		search:              search,
 		logger:              logger,
 		confidenceThreshold: confidenceThreshold,
-		maxVectorDistance:    defaultMaxVectorDistance,
+		maxVectorDistance:   defaultMaxVectorDistance,
 		dryRun:              dryRun,
 		categoryMap:         make(map[string]string),
 	}
@@ -159,7 +158,7 @@ func (c *Categorizer) refreshCategoryMap() error {
 // categorizeTransaction asks the AI to pick a category for the transaction,
 // then resolves the AI's suggestion to a stored category via vector search.
 // Returns true if the transaction was categorized, false if skipped.
-func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool, error) {
+func (c *Categorizer) categorizeTransaction(txn *ynab.Transaction) (bool, error) {
 	// Skip account transfers — they should not be AI-categorized.
 	if txn.TransferAccountID != nil && *txn.TransferAccountID != "" {
 		c.logger.Printf("skipping transfer transaction %s (payee: %s)", txn.ID, payeeNameOrMemo(txn))
@@ -267,7 +266,7 @@ func (c *Categorizer) categorizeTransaction(txn *transaction.Transaction) (bool,
 }
 
 // payeeNameOrMemo returns the payee name if present, otherwise falls back to memo.
-func payeeNameOrMemo(txn *transaction.Transaction) string {
+func payeeNameOrMemo(txn *ynab.Transaction) string {
 	if txn.PayeeName != nil && *txn.PayeeName != "" {
 		return *txn.PayeeName
 	}
