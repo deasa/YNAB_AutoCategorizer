@@ -190,6 +190,11 @@ running MCP Inspector via `npx` was blocked as external code in this environment
     → 403; Deny → local 403, no redirect; Allow → 303 to the client with a code; the CSP `form-action` allows the redirect
     origin; DCR rejects `//oauth/…`, `/./oauth/…`, `/x/../oauth/…` and `/%6Fauth/…` on our host; generation check fails
     closed.
+- Round 2, real browser (live check of agy r2 finding 1). Brendan signed in again via Claude Code. Server log:
+  `GET /oauth/google/callback -> 200` (consent page), `login ok for u_9f51ae389a5c (gen 1)`,
+  `POST /oauth/consent -> 303` (the CSP `form-action` let the cross-origin redirect to Claude Code's loopback callback
+  through), `POST /oauth/token -> 200`, `POST /mcp -> 200`. `hello` → `{"display_name":"Brendan Ashton","user_id":"u_9f51ae389a5c"}`.
+  `gen 1` is from the earlier live revoke, which shows a fresh sign-in after a revoke works. VERIFIED
 - Non-allowlisted, unverified-email and empty-allowlist cases: these are covered by unit tests through the full DCR,
   authorize and callback path, using a fake IdP (`TestNonAllowlistedAccountRejected`, `TestUnverifiedEmailRejected`).
   Each test expects a local 403 page ("not allowed" / "not verified"), with no redirect and no code. A real second Google
