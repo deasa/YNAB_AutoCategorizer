@@ -4,7 +4,7 @@ Updated: 2026-10-29 by sup (second session)
 
 ## Now
 - Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29)
-- Next actions: M1-5a merged + pushed; **deploy to hoid pending Brendan** (auto-mode classifier denied sup running deploy/deploy.sh). Then smoke check per tasks/M1-5a.md. M1-5b (Turso encrypted-blob backup) waits on Brendan's `turso auth login`. M1-5c (Slack status heartbeat) waits on channel choice. Then the M1 gate. Reviewer is Claude `rev` until agy quota resets (~2026-11-02). No builders running.
+- Next actions: (sup paused 2026-10-30 at Brendan's request; watcher + fallback cron stopped.) M1-5a merged + pushed; **deploy to hoid pending Brendan** (auto-mode classifier denied sup running deploy/deploy.sh). Then smoke check per tasks/M1-5a.md. M1-5b (Turso encrypted-blob backup) waits on Brendan's `turso auth login`. M1-5c (Slack status heartbeat) waits on channel choice. Then the M1 gate. Reviewer is Claude `rev` until agy quota resets (~2026-11-02). No builders running.
 
 ## Deployed
 - hoid finbot: nothing deployed yet (record SHA + date after each deploy)
