@@ -44,6 +44,7 @@ Milestone acceptance:
 | M1-4 (→ M1-4a, M1-4b) | finbot serve skeleton + config | M1-3 | main.go, cmd/, config/ | Subcommands (§1), in-process scheduler, structured logs, `/healthz`. Remove the 6-hour ticker path. |
 | M1-5a | Deploy on hoid + healthcheck | M1-4 | deploy/, Dockerfile | A compose project in `~/finbot` on hoid, a data volume, `.env` handling, a healthchecks.io ping (BA-7). Deploy: yes. M0 notes: glibc Debian-slim runtime image (not Alpine/distroless static); split 0600 env files, `finbot.env` + `tunnel.env` (arch §6); deploy script fails loudly (`pipefail`, no `\| tail`), asserts env files non-empty + 0600, rsync excludes `*.env`. |
 | M1-5b | Encrypted off-site backup + restore test | M1-5a | deploy/backup | Nightly SQLite `.backup`, then age, then an off-site push (BA-8), and a documented restore test. Deploy: yes. |
+| M1-5c | Slack status message (heartbeat) | M1-5b | status/, cmd/ | One message in #finbot-finances edited after each sync/backup; replaces healthchecks.io (BA-7, Brendan 2026-11-01). |
 
 ## M2: MCP read tools + OAuth + public exposure (current plan) [expand at gate]
 
