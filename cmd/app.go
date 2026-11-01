@@ -1,5 +1,6 @@
 // Package cmd implements the finbot subcommands: `serve` (the daemon),
-// `sync` (one-shot) and `health` (the container healthcheck). Nothing it logs or prints carries a plan, account or
+// `sync` (one-shot), `health` (the container healthcheck), and `backup` and
+// `restore` (off-site copies of the database). Nothing it logs or prints carries a plan, account or
 // transaction id, or the token.
 package cmd
 
@@ -32,6 +33,10 @@ commands:
   sync              run one delta sync of the active plan and exit
   sync --archived   scan every plan for Discretionary (persisted), then sync each plan that has it
   health            GET /healthz on the local server (HTTP_ADDR); exit 0 on 200, else 1
+  backup            store one encrypted backup off-site now
+  backup --list     list stored backups (id, time, size)
+  restore --key <path> [--id <id>] --out <path>
+                    download and decrypt a backup (newest by default) to a new file, then verify it
 `
 
 // Main runs finbot with args (without the program name) and returns the
@@ -62,6 +67,10 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return probe(os.Getenv("HTTP_ADDR"), stderr)
+	case "backup":
+		return backupCmd(args[1:], stdout, stderr)
+	case "restore":
+		return restoreCmd(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "finbot: unknown command %q\n\n%s", args[0], usage)
 		return 2
@@ -105,7 +114,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 
 	db, err := store.Open(ctx, cfg.DBPath)
 	if err != nil {
-		logger.Error("open store", "err", scrub(err.Error(), cfg.YNABAccessToken, cfg.HealthcheckPingURL))
+		logger.Error("open store", "err", scrub(err.Error(), secrets(cfg)...))
 		return 1
 	}
 	defer db.Close()
@@ -125,7 +134,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 		syncer:  finsync.New(db, clients, ynabLog),
 	}
 	if err := run(ctx, a, fs); err != nil {
-		logger.Error("finbot "+name+" failed", "err", scrub(err.Error(), cfg.YNABAccessToken, cfg.HealthcheckPingURL))
+		logger.Error("finbot "+name+" failed", "err", scrub(err.Error(), secrets(cfg)...))
 		return 1
 	}
 	return 0
@@ -261,6 +270,7 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 	} else {
 		a.log.Info("import disabled")
 	}
+	a.addBackup(sched)
 	return sched, health
 }
 
@@ -304,8 +314,17 @@ func (a *app) serve(ctx context.Context) error {
 	return nil
 }
 
-// redact scrubs ids, the token and the ping URL from s before it is logged
+// redact scrubs ids, the tokens and the secret URLs from s before it is logged
 // or printed.
 func (a *app) redact(s string) string {
-	return scrub(s, a.cfg.YNABAccessToken, a.cfg.HealthcheckPingURL, strings.TrimRight(a.cfg.HealthcheckPingURL, "/"))
+	return scrub(s, secrets(a.cfg)...)
+}
+
+// secrets lists every configured value that must not reach a log.
+func secrets(cfg *config.Config) []string {
+	return []string{
+		cfg.YNABAccessToken,
+		cfg.HealthcheckPingURL, strings.TrimRight(cfg.HealthcheckPingURL, "/"),
+		cfg.Backup.TursoToken, cfg.Backup.TursoURL,
+	}
 }

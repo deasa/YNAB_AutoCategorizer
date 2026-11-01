@@ -35,6 +35,7 @@ func TestLoadFrom_Defaults(t *testing.T) {
 		ImportEnabled:   false,
 		HTTPAddr:        ":8080",
 		LogLevel:        slog.LevelInfo,
+		Backup:          Backup{AtHour: 3, AtMinute: 17, Keep: 14, DBPath: "/data/finbot.db"},
 	}
 	if *cfg != want {
 		t.Errorf("got %+v\nwant %+v", *cfg, want)
@@ -122,5 +123,57 @@ func TestLoadFrom_Errors(t *testing.T) {
 				t.Errorf("error echoes the value: %q", err)
 			}
 		})
+	}
+}
+
+func TestBackupFrom(t *testing.T) {
+	const recipient = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+	full := map[string]string{
+		"BACKUP_AGE_RECIPIENT": recipient,
+		"BACKUP_TURSO_URL":     "libsql://finbot-backup.example",
+		"BACKUP_TURSO_TOKEN":   secret,
+	}
+	with := func(extra map[string]string) func(string) string {
+		m := map[string]string{}
+		for k, v := range full {
+			m[k] = v
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return func(k string) string { return m[k] }
+	}
+
+	b, err := BackupFrom(with(map[string]string{"BACKUP_AT": "23:05", "BACKUP_KEEP": "3"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Missing()) != 0 || b.AtHour != 23 || b.AtMinute != 5 || b.Keep != 3 || b.At() != "23:05" {
+		t.Errorf("got %+v", b)
+	}
+
+	for key := range full {
+		b, err := BackupFrom(with(map[string]string{key: ""}))
+		if err != nil {
+			t.Errorf("%s empty: %v", key, err)
+			continue
+		}
+		if m := b.Missing(); len(m) != 1 || m[0] != key {
+			t.Errorf("%s empty: Missing = %v", key, m)
+		}
+	}
+
+	for key, bad := range map[string]string{
+		"BACKUP_AT":            "25:00",
+		"BACKUP_KEEP":          "0",
+		"BACKUP_AGE_RECIPIENT": "not-a-key-" + secret,
+		"BACKUP_TURSO_URL":     "ftp://host/" + secret,
+	} {
+		_, err := BackupFrom(with(map[string]string{key: bad}))
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s=%q: err = %v, want it named", key, bad, err)
+		} else if strings.Contains(err.Error(), secret) {
+			t.Errorf("%s: error echoes the value: %v", key, err)
+		}
 	}
 }
