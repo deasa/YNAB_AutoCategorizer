@@ -172,3 +172,14 @@ func writeTx(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) error {
 	committed = true
 	return nil
 }
+
+// Snapshot writes a consistent copy of the database to the new file at path,
+// using VACUUM INTO. It runs on the writer pool because query_only connections
+// refuse VACUUM, so writes in this process wait for it. Under WAL it reads one
+// snapshot, and other processes' writers aren't blocked.
+func (d *DB) Snapshot(ctx context.Context, path string) error {
+	if _, err := d.w.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
+		return fmt.Errorf("store: snapshot: %w", err)
+	}
+	return nil
+}

@@ -21,7 +21,7 @@ git archive --format=tar HEAD -- . ':!spikes' ':!docs' ':!.env*' ':!*.env' ':!**
 	ssh "$host" "rm -rf $dir/src.new && mkdir $dir/src.new && tar -x -C $dir/src.new && rm -rf $dir/src && mv $dir/src.new $dir/src"
 
 # finbot.env: only the keys finbot needs, from the local .env.
-grep -E '^(YNAB_ACCESS_TOKEN|YNAB_BUDGET_ID|HEALTHCHECK_PING_URL)=' .env |
+grep -E '^(YNAB_ACCESS_TOKEN|YNAB_BUDGET_ID|HEALTHCHECK_PING_URL|BACKUP_AGE_RECIPIENT|BACKUP_TURSO_URL|BACKUP_TURSO_TOKEN|BACKUP_AT|BACKUP_KEEP)=' .env |
 	ssh "$host" "umask 077 && cat > $dir/finbot.env.new && chmod 600 $dir/finbot.env.new && mv $dir/finbot.env.new $dir/finbot.env"
 ssh "$host" "test -s $dir/finbot.env && test \"\$(stat -c %a $dir/finbot.env)\" = 600" ||
 	{ echo "deploy: ~/$dir/finbot.env is empty or not 0600" >&2; exit 1; }

@@ -239,3 +239,39 @@ func TestOpenEscapesURIPath(t *testing.T) {
 		t.Errorf("database not created at the literal path: %v", err)
 	}
 }
+
+func TestSnapshot_ConsistentCopy(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := Open(ctx, filepath.Join(dir, "src.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := writeTx(ctx, db.w, func(c *sql.Conn) error {
+		_, err := c.ExecContext(ctx, "CREATE TABLE snap_test (v TEXT); INSERT INTO snap_test VALUES ('a'), ('b')")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(dir, "snap.db")
+	if err := db.Snapshot(ctx, out); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if err := db.Snapshot(ctx, out); err == nil {
+		t.Error("Snapshot over an existing file succeeded, want an error")
+	}
+	copyDB, err := sql.Open("sqlite", "file:"+out+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer copyDB.Close()
+	var n int
+	if err := copyDB.QueryRow("SELECT COUNT(*) FROM snap_test").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("snapshot has %d rows, want 2", n)
+	}
+}

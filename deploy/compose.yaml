@@ -7,7 +7,7 @@ services:
     build: ..
     image: finbot:latest
     command: ["serve"]
-    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, optional HEALTHCHECK_PING_URL only.
+    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, optional HEALTHCHECK_PING_URL and BACKUP_* only.
     # deploy.sh points FINBOT_ENV_FILE at ~/finbot/finbot.env (0600).
     env_file: ${FINBOT_ENV_FILE:-finbot.env}
     environment:

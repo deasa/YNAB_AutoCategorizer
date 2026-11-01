@@ -330,3 +330,89 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+func TestScheduler_BackupFiresOnDelayAndRearms(t *testing.T) {
+	const firstDelay, secondDelay = 2 * time.Hour, 24 * time.Hour
+	var inflight, maxSeen atomic.Int32
+	syncJob, backupJob := newJob(&inflight, &maxSeen), newJob(&inflight, &maxSeen)
+	var delays atomic.Int32
+	tk := &tickers{}
+	stop := start(t, &Scheduler{
+		Sync: syncJob.run, SyncEvery: syncEvery,
+		Backup: backupJob.run,
+		BackupDelay: func() time.Duration {
+			if delays.Add(1) == 1 {
+				return firstDelay
+			}
+			return secondDelay
+		},
+		NewTicker: tk.new,
+	})
+	defer stop()
+	expectStart(t, syncJob, "startup sync")
+	expectNoStart(t, backupJob, "before the delay")
+
+	first := tk.get(firstDelay)
+	first.tick()
+	expectStart(t, backupJob, "first backup")
+	deadline := time.Now().Add(wait)
+	for tk.get(secondDelay) == nil && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	second := tk.get(secondDelay)
+	if second == nil {
+		t.Fatal("no ticker re-armed for the next backup")
+	}
+	if !first.stopped.Load() {
+		t.Error("first backup ticker not stopped")
+	}
+	second.tick()
+	expectStart(t, backupJob, "second backup")
+}
+
+func TestScheduler_BackupDueDuringSyncRunsAfterIt(t *testing.T) {
+	var inflight, maxSeen atomic.Int32
+	syncJob, backupJob := newJob(&inflight, &maxSeen), newJob(&inflight, &maxSeen)
+	syncJob.gate = make(chan struct{})
+	tk := &tickers{}
+	stop := start(t, &Scheduler{
+		Sync: syncJob.run, SyncEvery: syncEvery,
+		Backup: backupJob.run, BackupDelay: func() time.Duration { return time.Hour },
+		NewTicker: tk.new,
+	})
+	defer stop()
+	expectStart(t, syncJob, "startup sync")
+	tk.get(time.Hour).tick()
+	expectNoStart(t, backupJob, "while sync runs")
+	close(syncJob.gate)
+	expectStart(t, backupJob, "backup after sync")
+	if maxSeen.Load() != 1 {
+		t.Errorf("max concurrent jobs = %d, want 1", maxSeen.Load())
+	}
+}
+
+func TestNextDaily(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		now, want time.Time
+	}{
+		{"later today", time.Date(2026, 6, 1, 1, 0, 0, 0, ny), time.Date(2026, 6, 1, 3, 17, 0, 0, ny)},
+		{"exactly now rolls over", time.Date(2026, 6, 1, 3, 17, 0, 0, ny), time.Date(2026, 6, 2, 3, 17, 0, 0, ny)},
+		{"already past", time.Date(2026, 6, 1, 12, 0, 0, 0, ny), time.Date(2026, 6, 2, 3, 17, 0, 0, ny)},
+		{"month end", time.Date(2026, 6, 30, 12, 0, 0, 0, ny), time.Date(2026, 7, 1, 3, 17, 0, 0, ny)},
+		// 2026-11-01 is the fall-back day: wall-clock time stays 03:17 across a 25-hour day.
+		{"across DST", time.Date(2026, 10, 31, 12, 0, 0, 0, ny), time.Date(2026, 11, 1, 3, 17, 0, 0, ny)},
+	} {
+		got := nextDaily(tc.now, 3, 17)
+		if !got.Equal(tc.want) {
+			t.Errorf("%s: nextDaily(%v) = %v, want %v", tc.name, tc.now, got, tc.want)
+		}
+		if !got.After(tc.now) {
+			t.Errorf("%s: %v not after now", tc.name, got)
+		}
+	}
+}

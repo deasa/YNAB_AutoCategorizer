@@ -21,12 +21,16 @@ func newRealTicker(d time.Duration) Ticker { return realTicker{time.NewTicker(d)
 // Scheduler runs the sync job immediately and then every SyncEvery, and the
 // import job every ImportEvery when Import is set. All jobs run on the
 // scheduler's one goroutine, so no two ticks ever overlap; a tick that comes
-// due while a job runs is dropped, not queued.
+// due while a job runs is dropped, not queued. The backup job, when set, runs
+// once per BackupDelay; if it comes due during another job it runs right after,
+// since dropping it would lose a night.
 type Scheduler struct {
 	Sync        func(ctx context.Context) error
 	SyncEvery   time.Duration
 	Import      func(ctx context.Context) error // nil: import disabled
 	ImportEvery time.Duration
+	Backup      func(ctx context.Context) error // nil: backups disabled
+	BackupDelay func() time.Duration            // time until the next backup; must be positive
 
 	// Health, if set, records each sync's outcome.
 	Health *Health
@@ -51,6 +55,19 @@ func (s *Scheduler) Run(ctx context.Context) {
 		defer importT.Stop()
 		importC = importT.C()
 	}
+	var backupT Ticker
+	var backupC <-chan time.Time // nil (never fires) when backups are disabled
+	armBackup := func() {
+		if backupT != nil {
+			backupT.Stop()
+		}
+		backupT = newTicker(s.BackupDelay())
+		backupC = backupT.C()
+	}
+	if s.Backup != nil {
+		armBackup()
+		defer func() { backupT.Stop() }()
+	}
 
 	s.runSync(ctx)
 	drain(syncT.C())
@@ -64,6 +81,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 		case <-importC:
 			_ = s.Import(ctx) // the job logs its own outcome
 			drain(importC)
+		case <-backupC:
+			_ = s.Backup(ctx) // the job logs its own outcome
+			armBackup()
 		}
 	}
 }
@@ -87,4 +107,13 @@ func drain(c <-chan time.Time) {
 	case <-c:
 	default:
 	}
+}
+
+// nextDaily returns the first hour:minute local time strictly after now.
+func nextDaily(now time.Time, hour, minute int) time.Time {
+	next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	if !next.After(now) {
+		next = time.Date(now.Year(), now.Month(), now.Day()+1, hour, minute, 0, 0, now.Location())
+	}
+	return next
 }
