@@ -51,3 +51,41 @@ and the build decisions Brendan made during M1 are recorded in architecture.md.
 - [ ] `go build ./... && go test ./...` still green (sanity).
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Result
+- Status: DONE
+- What changed:
+  - `CLAUDE.md`: `health`, `backup`, `backup --list`, `restore`; scheduler jobs; `backup/` and `status/` roles; migrations through `0003_status_message`; all optional config; `cmd.Version`/`GIT_SHA`; Docker and deploy facts; the 20 s + 5 s status cap.
+  - `docs/plan/architecture.md`: §1 rows for `cmd/`, `backup/`, `status/`; §2 `plan_scan`; §3.1 live mirror target, persisted scan, import off by default; §6 N2 and N4 per the 2026-11-01 decision.
+  - `README.md`: the old-categorizer narrative is replaced by a short description of finbot as built in M1, pointing to CLAUDE.md.
+- Acceptance:
+  - Every "Docs follow-ups" bullet from M1-4a, 4b, 5a, 5b, 5c applied → pass (read against each Result; none left unapplied). M1-4a's and M1-4b's CLAUDE.md items were already in place from M1-4b.
+  - Commands → pass: `go build -o /tmp/finbot-docs . && /tmp/finbot-docs` lists serve, sync, sync --archived, health, backup, backup --list, restore, matching CLAUDE.md. Binary deleted.
+  - Env vars → pass: each name in CLAUDE.md grepped in `config/config.go` and `.env.example`. The four that aren't there exist elsewhere: `GIT_SHA` (Dockerfile build arg), `YNAB_LIVE_SMOKE`, `YNAB_LIVE_SYNC`, `YNAB_LIVE_SYNC_LOG` (test gates, grepped in `*_test.go`).
+  - Diff scope → pass with a note: `git diff --stat main...HEAD` shows only the three files plus this brief's Result. Two-dot `git diff --stat main` also lists `docs/build/STATE.md`, because main's STATE.md moved after this branch was cut; this branch doesn't touch it.
+  - `go build ./... && go vet ./... && go test ./...` → pass.
+- Deviations from brief:
+  - The README rewrite goes beyond the named sections: Configuration, Running, Project Structure and YNAB API Notes are dropped too, since CLAUDE.md covers them. The Configuration, Running and Project Structure sections were accurate but incomplete; YNAB API Notes still described the categorizer's API use.
+  - CLAUDE.md Safety also names the new secrets (ping URL, Turso URL and token, Slack token), which the brief didn't list.
+- Follow-ups for backlog: none
+- Docs follow-ups (found here, outside this brief's list):
+  - Applied on request: architecture.md §6 N3 now says the deploy ships `git archive HEAD`, not rsync; §9 marks U10 resolved by the 2026-11-01 Slack status message decision.
+  - Not changed, on request: the README keeps "License: MIT", but the repo has no LICENSE file.
+
+### Fix round 1
+Review: `../_reviews/M1-docs.md`. Findings 1-8 are applied. Each was checked against the code first where it makes a code claim.
+1. architecture.md §6 N3: `finbot.env` now lists the age recipient (public) and Turso credentials, never the backup private key.
+2. architecture.md §2: `plan_scan` moved below the split-parent sub-bullet.
+3. architecture.md §7: the M1 line says "Slack status heartbeat".
+4. CLAUDE.md `cmd/`: a job's own tick is dropped while it runs; other jobs' ticks run right after (`cmd/scheduler.go`).
+5. "Scheduled sync and backup" in CLAUDE.md, README and architecture.md (§1 `status/` row and §6 N2). The same limit applies to the ping (`cmd/app.go` `newScheduler`), so CLAUDE.md's two ping mentions say "scheduled" too.
+6. CLAUDE.md `backup/`: "has no mirror rows at all" (`checkSnapshot`).
+7. CLAUDE.md Configuration: notes the `finbot health` and `deploy.sh` exceptions.
+8. CLAUDE.md Safety: warns about `serve` with the real `.env`, and says to blank `SLACK_BOT_TOKEN` and `BACKUP_*` for local runs. Code read only; not run.
+9. Not applied: the license is left for Brendan.
+
+Re-checks:
+- Commands → pass: the built binary's usage lists all 7 documented forms. Binary deleted.
+- Env vars → pass: every name in CLAUDE.md is in `config/config.go` and `.env.example`, except `GIT_SHA` (Dockerfile, compose, `deploy.sh`) and the three `YNAB_LIVE_*` test gates. The `deploy.sh` forward list matches the new Configuration note.
+- Diff scope → pass: `git diff --stat main...HEAD` shows the three files plus this brief.
+- `go build ./... && go vet ./... && go test ./...` → pass.
