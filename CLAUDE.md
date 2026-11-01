@@ -50,16 +50,17 @@ The old 6-hour LLM/vector categorizer (and its Turso, Vertex and OpenAI stack) i
 - `main.go` → `cmd.Main`: subcommand dispatch (stdlib `flag`).
 - `cmd/` — the subcommands and the scheduler. `Scheduler` runs the sync job immediately, then every `SYNC_INTERVAL`; the
   import job every `IMPORT_INTERVAL` only when `IMPORT_ENABLED`; and the backup job nightly at `BACKUP_AT` when backups
-  are configured. The Slack status update runs after each scheduled sync and backup, as part of
-  that job (`finbot sync` and `finbot backup` never touch it). All jobs run on one goroutine, so ticks never overlap; a job's own tick that comes due while it runs is dropped; other jobs' ticks run
-  right after. Each scheduled sync also sends the optional dead-man ping (`HEALTHCHECK_PING_URL`). `Health` serves `GET /healthz`: 200
-  with `{"last_sync_ok","last_error"}` while a sync succeeded within 2×`SYNC_INTERVAL`, else 503 (a rate-budget skip
-  counts as not fresh). Logs are `log/slog` JSON; `sync`/`ynab`'s `*log.Logger` is adapted with `slog.NewLogLogger`.
-  Graceful shutdown on SIGINT/SIGTERM cancels the running tick, closes the HTTP server and the DB.
+  are configured. The Slack status update runs after each scheduled sync and backup, as part of that job (`finbot sync`
+  and `finbot backup` never touch it). All jobs run on one goroutine, so ticks never overlap; a job's own tick that
+  comes due while it runs is dropped; other jobs' ticks run right after. Each scheduled sync also sends the optional
+  dead-man ping (`HEALTHCHECK_PING_URL`). `Health` serves `GET /healthz`: 200 with `{"last_sync_ok","last_error"}` while
+  a sync succeeded within 2×`SYNC_INTERVAL`, else 503 (a rate-budget skip counts as not fresh). Logs are `log/slog`
+  JSON; `sync`/`ynab`'s `*log.Logger` is adapted with `slog.NewLogLogger`. Graceful shutdown on SIGINT/SIGTERM cancels
+  the running tick, closes the HTTP server and the DB.
 - `config/` — env loading (godotenv for `.env`). `LoadFrom(getenv)` for tests. Errors name the variable, never the value.
-- `store/` — SQLite via `modernc.org/sqlite` (pure Go, CGO off), WAL, separate writer/reader pools, embedded
-  migrations in `store/migrations/` (`0001_mirror`, `0002_plan_scan`, `0003_status_message`). Mirror tables per
-  plan, `sync_state` cursor, `plan_scan` (persisted archived scan; read with `DB.PlanScans`), `status_message` (the Slack message and last
+- `store/` — SQLite via `modernc.org/sqlite` (pure Go, CGO off), WAL, separate writer/reader pools, embedded migrations
+  in `store/migrations/` (`0001_mirror`, `0002_plan_scan`, `0003_status_message`). Mirror tables per plan, `sync_state`
+  cursor, `plan_scan` (persisted archived scan; read with `DB.PlanScans`), `status_message` (the Slack message and last
   backup outcome, kept across restarts). Timestamps are fixed-width UTC strings.
 - `sync/` — `Syncer.SyncPlan`: full export the first time a plan is seen, then one delta per tick; rows and cursor
   commit in one transaction. Stitches subtransactions, emits bank-link `LinkEvent`s on transitions, counts orphans.
@@ -72,9 +73,10 @@ The old 6-hour LLM/vector categorizer (and its Turso, Vertex and OpenAI stack) i
 - `backup/` — age-encrypted `VACUUM INTO` snapshots stored as 1 MiB chunks in Turso, which only ever sees ciphertext;
   keeps `BACKUP_KEEP`. Refuses a snapshot that fails `integrity_check` or has no mirror rows at all. A run is bounded by
   10 min. `Restore` uses the private key (on the Mac only), never overwrites `--out`, and verifies before it appears.
-- `status/` — keeps one Slack message current, edited after every scheduled sync and backup; it's a heartbeat, and Brendan's own
-  Slack automation alerts when it goes stale. Slack failures are only logged and never fail the job. Each update is
-  capped at 20 s, plus a 5 s store write that outlives the run's ctx. A new message is posted at most once per 6h.
+- `status/` — keeps one Slack message current, edited after every scheduled sync and backup; it's a heartbeat, and
+  Brendan's own Slack automation alerts when it goes stale. Slack failures are only logged and never fail the job. Each
+  update is capped at 20 s, plus a 5 s store write that outlives the run's ctx. A new message is posted at most once per
+  6h.
 
 **Key data flow:** `finbot serve` → `Scheduler` tick → `Syncer.SyncPlan(activePlan)` → `ynab.Client.Export`/`Delta` →
 `store` upsert + cursor in one tx → slog line (initial/delta, skipped, row counts, orphans, link events by account name)
