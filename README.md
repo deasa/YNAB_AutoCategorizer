@@ -11,8 +11,8 @@ The old AI categorizer is gone. Categorization returns in a later milestone.
 - **Archived scan:** `finbot sync --archived` finds every plan with a `Discretionary` category and syncs it.
 - **Bank import:** a trigger is built, but it's off by default (`IMPORT_ENABLED=false`). It's a YNAB write, and the only
   one finbot makes.
-- **Status:** one Slack message is edited after every sync and backup, so a stale message means finbot has gone quiet.
-  `GET /healthz` reports sync freshness.
+- **Status:** one Slack message is edited after every scheduled sync and backup, so a stale message means finbot has
+  gone quiet. `GET /healthz` reports sync freshness.
 - **Backup:** nightly age-encrypted snapshots are stored off-site in Turso, which only ever sees ciphertext. Restore
   runs on a machine holding the private key.
 

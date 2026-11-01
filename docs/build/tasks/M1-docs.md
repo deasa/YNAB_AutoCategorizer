@@ -71,3 +71,21 @@ and the build decisions Brendan made during M1 are recorded in architecture.md.
 - Docs follow-ups (found here, outside this brief's list):
   - Applied on request: architecture.md §6 N3 now says the deploy ships `git archive HEAD`, not rsync; §9 marks U10 resolved by the 2026-11-01 Slack status message decision.
   - Not changed, on request: the README keeps "License: MIT", but the repo has no LICENSE file.
+
+### Fix round 1
+Review: `../_reviews/M1-docs.md`. Findings 1-8 are applied. Each was checked against the code first where it makes a code claim.
+1. architecture.md §6 N3: `finbot.env` now lists the age recipient (public) and Turso credentials, never the backup private key.
+2. architecture.md §2: `plan_scan` moved below the split-parent sub-bullet.
+3. architecture.md §7: the M1 line says "Slack status heartbeat".
+4. CLAUDE.md `cmd/`: a job's own tick is dropped while it runs; other jobs' ticks run right after (`cmd/scheduler.go`).
+5. "Scheduled sync and backup" in CLAUDE.md, README and architecture.md (§1 `status/` row and §6 N2). The same limit applies to the ping (`cmd/app.go` `newScheduler`), so CLAUDE.md's two ping mentions say "scheduled" too.
+6. CLAUDE.md `backup/`: "has no mirror rows at all" (`checkSnapshot`).
+7. CLAUDE.md Configuration: notes the `finbot health` and `deploy.sh` exceptions.
+8. CLAUDE.md Safety: warns about `serve` with the real `.env`, and says to blank `SLACK_BOT_TOKEN` and `BACKUP_*` for local runs. Code read only; not run.
+9. Not applied: the license is left for Brendan.
+
+Re-checks:
+- Commands → pass: the built binary's usage lists all 7 documented forms. Binary deleted.
+- Env vars → pass: every name in CLAUDE.md is in `config/config.go` and `.env.example`, except `GIT_SHA` (Dockerfile, compose, `deploy.sh`) and the three `YNAB_LIVE_*` test gates. The `deploy.sh` forward list matches the new Configuration note.
+- Diff scope → pass: `git diff --stat main...HEAD` shows the three files plus this brief.
+- `go build ./... && go vet ./... && go test ./...` → pass.

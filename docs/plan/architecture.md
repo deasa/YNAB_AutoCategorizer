@@ -30,7 +30,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 | `store/` | new (absorbs `migrate/`) | SQLite via `modernc.org/sqlite` (pure Go, keeps CGO off). Embedded migrations. Opened with `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON` (sync, MCP and Slack goroutines share it). |
 | `sync/` | new | Delta sync of the active plan via `GET /plans/{id}?last_knowledge_of_server=N` (one call returns all changed entities; transactions arrive as `TransactionSummaryBase` with `subtransactions` as a separate top-level array — stitch by transaction_id, join names locally). Archived plan synced once / on demand. Triggers bank import. Detects human edits (R6b). |
 | `backup/` | new | Age-encrypted `VACUUM INTO` snapshots stored off-site in Turso, and restore with the private key (§6 N4). |
-| `status/` | new | The Slack status message, edited after every sync and backup (§6 N2). |
+| `status/` | new | The Slack status message, edited after every scheduled sync and backup (§6 N2). |
 | `classify/` | replaces `AI/`, `search/`, `datastore/`, absorbs `categorizer/` | Pipeline: guardrails (`classify/guardrails.go`, existing tests ported) → deterministic rules → model. Calibrated thresholds. Decision log. |
 | `budget/` | new | CSP structure, fresh-start seeding, paycheck assignment rule (R7b), goals (R8b), tithing math (R12). |
 | `intents/` | new | Store conversational intents; deterministic matcher run after each sync (R8a). |
@@ -44,8 +44,8 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 
 ## 2. Data model (SQLite)
 - Mirror tables per plan_id: accounts (+ local `tax_bucket` tag), category_groups, categories (+targets), payees, transactions, subtransactions (keyed by `id`, FK `transaction_id`), month_categories, scheduled_transactions; `sync_state(plan_id, server_knowledge, synced_at)`.
-- `plan_scan`: plan_id, name, has_discretionary, scan_error, scanned_at. The latest archived-plan scan, one row per plan; a scan replaces the whole table. Read with `store.PlanScans`.
   - A split parent's `category_id` is a sentinel that is not in `categories`: no FK from transactions to categories (or map the sentinel to NULL + `is_split`). Category reads and aggregations use `subtransactions`, never the split parent's sentinel `category_id`.
+- `plan_scan`: plan_id, name, has_discretionary, scan_error, scanned_at. The latest archived-plan scan, one row per plan; a scan replaces the whole table. Read with `store.PlanScans`.
 - `decisions`: txn_id, chosen category, confidence, runner-up, method (rule/model), model+version, input features, created_at, superseded_by.
 - `write_log`: id, actor (system / brendan / wife), via (scheduler / mcp / slack), tier, endpoint, txn/category ids, before_json, after_json, request_id, reverted_by.
 - `human_locks`: (txn_id, field) diverged from our last write → never overwrite (R6b). Also emitted as labeled training examples.
@@ -155,9 +155,9 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 - Subscription: capacity is sufficient and this personal use is within the terms (U11, U12 closed by Brendan).
 
 ## 6. Reliability, security, ops
-- N2 60-day test (decision 2026-11-01): a Slack status message in `#finbot-finances`, edited after every sync and backup, replaces the healthchecks.io dead-man ping. Brendan's own Slack automation alerts when it goes stale, because the system can't report its own death. The optional ping code remains (`HEALTHCHECK_PING_URL`).
+- N2 60-day test (decision 2026-11-01): a Slack status message in `#finbot-finances`, edited after every scheduled sync and backup in `serve`, replaces the healthchecks.io dead-man ping. Brendan's own Slack automation alerts when it goes stale, because the system can't report its own death. The optional ping code remains (`HEALTHCHECK_PING_URL`).
 - N4 backup (decision 2026-11-01): the off-site target is Turso DB `finbot-backup`, holding only `age`-encrypted `VACUUM INTO` snapshots in 1 MiB chunks. It keeps 14, and runs nightly at 03:17 America/Denver. The private key stays off hoid, and restore runs on the Mac. §1's "no Turso" (as a primary store) still holds. Optionally fix kids-ledger's local-only backup the same way.
-- N3 secrets: split 0600 env files on hoid, not in git, each service seeing only its own keys: `finbot.env` (YNAB PAT, Jev key, Slack tokens, Google OAuth client, `CLAUDE_CODE_OAUTH_TOKEN`, backup key; never `ANTHROPIC_API_KEY` or the tunnel token) and `tunnel.env` (`TUNNEL_TOKEN` only, for cloudflared). The deploy script fails on any error (no output-truncating pipes without `pipefail`), asserts each generated env file is non-empty and 0600, and ships `git archive HEAD`, which leaves out `*.env`/`.env` and anything untracked.
+- N3 secrets: split 0600 env files on hoid, not in git, each service seeing only its own keys: `finbot.env` (YNAB PAT, Jev key, Slack tokens, Google OAuth client, `CLAUDE_CODE_OAUTH_TOKEN`, backup age recipient (public) and Turso credentials; never the backup private key, `ANTHROPIC_API_KEY` or the tunnel token) and `tunnel.env` (`TUNNEL_TOKEN` only, for cloudflared). The deploy script fails on any error (no output-truncating pipes without `pipefail`), asserts each generated env file is non-empty and 0600, and ships `git archive HEAD`, which leaves out `*.env`/`.env` and anything untracked.
 - Container hardening (both services): non-root, no host ports, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only: true` (writable `/data` volume only), bounded `logging` (`max-size`/`max-file`), base images pinned by digest or patch version.
 - Setup checklist: Slack app has Socket Mode on and the `message.groups` bot event subscribed; Google OAuth client has `https://finance.hoidlabs.site/oauth/google/callback`; Cloudflare rate-limit rules (§4) in place.
 - Concurrency with human edits: YNAB has no optimistic concurrency, so writer re-syncs immediately before each write batch and PATCHes only the fields it changes, minimizing the clobber window.
@@ -166,7 +166,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 ## 7. Build plan (milestones, each ends deployed + verified on hoid)
 Order principle (agy): get read-only value and visibility BEFORE the irreversible Fresh Start and before autonomous writes.
 - M0 Spikes: done 2026-10-29 (Jev, MCP + OAuth + Cloudflare Tunnel, Slack, headless `claude`, YNAB probe). Results are folded into this doc; details in `docs/build/spikes/`.
-- M1 Read-only mirror: library upgrade (Go 1.26, zone-normalizing transport), SQLite store, delta sync + import trigger, compose deploy on hoid (glibc image, split env files), dead-man healthcheck, encrypted off-site backup. Old 6h categorizer disabled.
+- M1 Read-only mirror: library upgrade (Go 1.26, zone-normalizing transport), SQLite store, delta sync + import trigger, compose deploy on hoid (glibc image, split env files), Slack status heartbeat, encrypted off-site backup. Old 6h categorizer disabled.
 - M2 MCP read tools + OAuth (`mcp/` + `auth/`, persistent fosite SQLite storage + persisted HMAC secret) + public exposure via the Cloudflare Tunnel with rate-limit rules, over the CURRENT plan. Both spouses can ask questions from their AI apps.
 - M3 Classifier + Slack: calibrate on history, rules + model, decision log, writer + write_log + human locks; Slack questions/answers; alerts + freshness. Runs in dry-run (Slack shows what it WOULD do) for ~1 week, then auto at τ.
 - M4 Budget ownership: Brendan clicks Fresh Start; seed-plan (dry-run → approved once); CSP structure; paycheck assignment job; tithing.
