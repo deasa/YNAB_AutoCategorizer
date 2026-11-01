@@ -51,3 +51,24 @@ and the build decisions Brendan made during M1 are recorded in architecture.md.
 - [ ] `go build ./... && go test ./...` still green (sanity).
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Result
+- Status: DONE
+- What changed:
+  - `CLAUDE.md`: `health`, `backup`, `backup --list`, `restore`; scheduler jobs; `backup/` and `status/` roles; migrations through `0003_status_message`; all optional config; `cmd.Version`/`GIT_SHA`; Docker and deploy facts; the 20 s + 5 s status cap.
+  - `docs/plan/architecture.md`: §1 rows for `cmd/`, `backup/`, `status/`; §2 `plan_scan`; §3.1 live mirror target, persisted scan, import off by default; §6 N2 and N4 per the 2026-11-01 decision.
+  - `README.md`: the old-categorizer narrative is replaced by a short description of finbot as built in M1, pointing to CLAUDE.md.
+- Acceptance:
+  - Every "Docs follow-ups" bullet from M1-4a, 4b, 5a, 5b, 5c applied → pass (read against each Result; none left unapplied). M1-4a's and M1-4b's CLAUDE.md items were already in place from M1-4b.
+  - Commands → pass: `go build -o /tmp/finbot-docs . && /tmp/finbot-docs` lists serve, sync, sync --archived, health, backup, backup --list, restore, matching CLAUDE.md. Binary deleted.
+  - Env vars → pass: each name in CLAUDE.md grepped in `config/config.go` and `.env.example`. The four that aren't there exist elsewhere: `GIT_SHA` (Dockerfile build arg), `YNAB_LIVE_SMOKE`, `YNAB_LIVE_SYNC`, `YNAB_LIVE_SYNC_LOG` (test gates, grepped in `*_test.go`).
+  - Diff scope → pass with a note: `git diff --stat main...HEAD` shows only the three files plus this brief's Result. Two-dot `git diff --stat main` also lists `docs/build/STATE.md`, because main's STATE.md moved after this branch was cut; this branch doesn't touch it.
+  - `go build ./... && go vet ./... && go test ./...` → pass.
+- Deviations from brief:
+  - The README rewrite goes beyond the named sections: Configuration, Running, Project Structure and YNAB API Notes are dropped too, since CLAUDE.md covers them. The Configuration, Running and Project Structure sections were accurate but incomplete; YNAB API Notes still described the categorizer's API use.
+  - CLAUDE.md Safety also names the new secrets (ping URL, Turso URL and token, Slack token), which the brief didn't list.
+- Follow-ups for backlog: none
+- Docs follow-ups (found here, outside this brief's list, so not changed):
+  - architecture.md §6 N3 still says the deploy script excludes env files "from rsync"; it now uses `git archive`.
+  - architecture.md §9 still lists "U10 healthchecks/Slack integration specifics" as open; the 2026-11-01 decision may close it.
+  - The README keeps "License: MIT", but the repo has no LICENSE file.
