@@ -4,15 +4,19 @@
 # No cloudflared yet: finbot-spike owns the tunnel until M2.
 services:
   finbot:
-    build: ..
+    build:
+      context: ..
+      args:
+        GIT_SHA: ${GIT_SHA:-dev} # deploy.sh sets it; finbot shows it in the Slack status message
     image: finbot:latest
     command: ["serve"]
-    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, optional HEALTHCHECK_PING_URL and BACKUP_* only.
+    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, optional HEALTHCHECK_PING_URL, BACKUP_* and SLACK_* only.
     # deploy.sh points FINBOT_ENV_FILE at ~/finbot/finbot.env (0600).
     env_file: ${FINBOT_ENV_FILE:-finbot.env}
     environment:
       FINBOT_DB_PATH: /data/finbot.db
       IMPORT_ENABLED: "false"
+      TZ: America/Denver # hoid's zone, so BACKUP_AT is local time
     volumes:
       - finbot-data:/data
     tmpfs:

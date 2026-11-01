@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"filippo.io/age"
@@ -40,6 +41,11 @@ type Config struct {
 	// HealthcheckPingURL, if set, is a dead-man URL pinged after each sync
 	// tick (HEALTHCHECK_PING_URL). It is a secret: never log it.
 	HealthcheckPingURL string
+
+	// SlackBotToken enables the Slack status message (SLACK_BOT_TOKEN). It is a
+	// secret: never log it. SlackStatusChannel is the private channel's name.
+	SlackBotToken      string
+	SlackStatusChannel string
 
 	Backup Backup
 }
@@ -152,6 +158,9 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		HTTPAddr:        get("HTTP_ADDR", ":8080"),
 
 		HealthcheckPingURL: getenv("HEALTHCHECK_PING_URL"),
+
+		SlackBotToken:      getenv("SLACK_BOT_TOKEN"),
+		SlackStatusChannel: strings.TrimPrefix(get("SLACK_STATUS_CHANNEL", "finbot-finances"), "#"),
 	}
 	for _, key := range []string{"YNAB_ACCESS_TOKEN", "YNAB_BUDGET_ID"} {
 		if getenv(key) == "" {
