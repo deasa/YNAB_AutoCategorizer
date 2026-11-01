@@ -3,8 +3,8 @@
 Updated: 2026-10-29 by sup (second session)
 
 ## Now
-- Milestone: **M1 — Read-only mirror on hoid** (in progress; M0 complete 2026-10-29)
-- Next actions: **M1 gate in progress.** All M1 tasks merged + deployed. Running: M1-docs (b-m1-docs) and M1-acceptance (rev, independent test). Then: milestone summary, PushNotification, wait for Brendan's "continue". Ask Brendan at the gate: (a) enable `IMPORT_ENABLED` live (6h import POST = YNAB write; acceptance item); (b) pin the status message + point his staleness automation at it; (c) copy the age private key offline. agy quota resets ~2026-11-02: switch reviews back after.
+- Milestone: **M1 — Read-only mirror on hoid: COMPLETE 2026-11-01** (gate: waiting for Brendan's "continue" before M2)
+- Next actions: **wait for Brendan's "continue"**, then expand M2 BACKLOG entries into tasks (see handoff docs/build/handoffs/sup-2026-11-01-1300.md). Open Brendan items at gate: (a) enable `IMPORT_ENABLED` live? (b) pin the status message + point his staleness automation at it; (c) copy the age private key offline; (d) LICENSE file or drop README's MIT line. sup watchers stopped; nothing in flight.
 
 ## Deployed
 - hoid finbot: **1de3376** deployed 2026-11-01 by sup (M1-5c status message + TZ; earlier today ec0b29c, 786656e). Status message created in #finbot-finances (Brendan to pin + point his staleness automation at it); backups 03:17 America/Denver (`./deploy/deploy.sh`; compose project `finbot` in `~/finbot`, volume `finbot_finbot-data`). Backup smoke: `finbot backup` on hoid OK (20261101T180719Z-456de3e8, 2.4 MB ciphertext), restored on the Mac with the private key: integrity ok, 2070 txns / 24 accounts; secret grep 0. Backups at 03:17 **UTC** until M1-5c sets TZ. Earlier smoke: healthy, uid 10001, finbot.env 600, log secret grep 0/0/0, import disabled, ping disabled, initial sync OK; finbot-spike untouched (/mcp 401)
@@ -14,8 +14,7 @@ Updated: 2026-10-29 by sup (second session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| rev | w1:p10 | control (w1:t7) | reviewer (Claude Opus), fresh; counter 1 (M1-docs r2) | M1-docs review | 2026-11-01 | worktree ../YNAB_AutoCategorizer.wt/M1-acceptance; replace after this |
-| b-m1-docs | w1:p1Y | build | builder | M1-docs | 2026-11-01 | worktree ../YNAB_AutoCategorizer.wt/M1-docs |
+| rev | w1:p10 | control (w1:t7) | reviewer (Claude Opus); counter 1 (M1-docs r2) | — | 2026-11-01 | worktree ../YNAB_AutoCategorizer.wt/M1-acceptance; replace after this |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 
 ## Tasks
@@ -33,7 +32,7 @@ Updated: 2026-10-29 by sup (second session)
 | M1-2 | merged | — | — | agy PASS r2 (r1 FIX; 1 low) | merged 2026-10-29; store/ with modernc sqlite, WAL + pragmas verified, embedded migrations, mirror schema 0001 (debt maps, no categories→groups FK, split sentinel), panic-safe writeTx. Low: formatTime RFC3339Nano is not fixed-width (string compares invert at sub-second); fix when next touching store/ |
 | M1-3 | merged | — | — | rev PASS (4 low) | merged 2026-10-29; sync/: export-then-delta, cursor+rows in one tx (crash-safe), tombstones (incl. split children), stitching, link-error transition events (baseline on initial load), freshness §3.1-4, ErrBudgetExhausted/429 → skipped tick, TriggerImport (write reserve; tests only), DiscretionaryPlans one-shot (1+N GETs; live run scanned 8/14). Follow-ups for M1-4: DiscretionaryPlans one-shot only + persist result/full scan; ctx on GetCategories; pass syncedAt to first_seen_at; surface Orphans>0 as event |
 | M1-4a | merged | — | — | rev PASS (4 low) | merged 2026-10-29 (b2414be) (ctx 13%; live scan 15/15 plans, 2 with Discretionary; governor refactored to library Limiter, write intent on ctx); ynab/store/sync follow-ups (persisted full archived scan, first_seen_at=syncedAt, orphans log, ctx on GetCategories, M1-1/M1-2 lows). Open lows (docs/build/../_reviews/M1-4a.md): client test for read *retry* refused at reserve; transport could refuse unmarked non-GET; **scan that hits ErrBudgetExhausted overwrites a prior good plan_scan and ScanError has no Unwrap** (fix when next touching sync/); pre-M1-4a DBs have variable-width timestamps (no prod DB yet) |
-| M1-docs | review | w1:p1Y | t/M1-docs | rev FIX r1 (1 med, 7 low; all applied) → r2 in progress; DONE incl. §6 N3 + §9 U10 (d14361c) | gate docs task: CLAUDE.md, architecture.md (§1/§2/§3.1/§6 N2/N4), README |
+| M1-docs | merged | — | — | rev PASS r2 (r1 FIX 1 med + 7 low applied; r2 2 low: CLAUDE.md Safety omits HEALTHCHECK_PING_URL; stale comment in cmd/scheduler.go:22-26) | merged 2026-11-01 (3636b6f); DONE incl. §6 N3 + §9 U10 (d14361c) | gate docs task: CLAUDE.md, architecture.md (§1/§2/§3.1/§6 N2/N4), README |
 | M1-acceptance | merged | — | — | rev **PASS** (5 low) | 2026-11-01; report ../YNAB_AutoCategorizer.wt/_reviews/M1-acceptance.md; scripts in tests/acceptance/M1/. Lows: no nightly backup fired yet (check after 03:17 MST); status 'Last backup: none yet' until first nightly (manual CLI backups predate M1-5c); live deltas were all empty; DB file 0644 (dir 0700 on hoid); status message not pinned |
 | M1-5b | merged + deployed | — | — | rev PASS r2 (r1 FIX: 2 med + 4 low fixed; r2 4 low accepted: SIGKILL may leave a 0600 temp beside --out, no-hardlink FS fails restore, 10-min deadline vs short SYNC_INTERVAL, partly wiped mirror still backed up) | merged + deployed 2026-11-01 (ctx 13%; live round-trip OK, blobs are age ciphertext, 1 MiB chunks; one live-test backup left in finbot-backup, ages out; backup time is UTC unless TZ set → M1-5c sets TZ=America/Denver (hoid's zone)); age-encrypted VACUUM INTO snapshots → Turso `finbot-backup` (chunked blobs, keep 14), `finbot backup`/`restore`, nightly in serve |
 | M1-5c | merged + deployed | — | — | rev PASS r2 (r1 FIX: uncapped re-post + 5 low fixed; r2 6 low accepted: backward clock step can skip cap, amount scrub is defence-in-depth, run cap is 20s+5s, an edit window costs ≤4 posts/day each needing a re-pin, render under parse:none unchecked visually, ambiguous transport failure holds cap ≤6h) | merged + deployed 2026-11-01 (ctx 12%; live edit across restart OK, test messages deleted; edit_window_closed unhandled → follow-up); status message in #finbot-finances edited after every sync/backup (chat:write only; Brendan pins by hand) |
@@ -77,6 +76,13 @@ Updated: 2026-10-29 by sup (second session)
 - 2026-11-01 (Brendan): BA-7 replaced by a Slack status message in `#finbot-finances`, edited after every sync; his own Slack automation alerts on staleness. BA-8: Turso holds only age-encrypted snapshot blobs (sup's recommendation; never plaintext or a live replica). The arch §1 "no Turso" (as the primary store) still holds.
 
 ## Milestone log
+- **M1 Read-only mirror on hoid: complete 2026-11-01** (all tasks merged + deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M1-acceptance.md`, scripts `tests/acceptance/M1/`). main = 3636b6f; hoid runs 91df942 (code identical; later commits are docs).
+  - One `finbot` binary (`serve`, `sync`, `sync --archived`, `health`, `backup`, `restore`); old 6h categorizer + Turso/AI stack deleted (last at b2414be for the M3 guardrail port).
+  - Delta sync every 15 min of the "May 2025" plan (BA-12) into SQLite on hoid; import trigger built but **off** pending Brendan.
+  - Hardened compose deploy (`./deploy/deploy.sh`, git archive HEAD, non-root, read-only, no ports), `TZ=America/Denver`.
+  - Nightly 03:17 age-encrypted backups to Turso `finbot-backup` (keep 14), restore verified on the Mac.
+  - Slack status message in `#finbot-finances` edited after each scheduled sync/backup (replaces healthchecks.io; capped re-post).
+  - Open lows carried: first nightly backup not yet observed; live deltas so far empty; DB file 0644 (dir 0700); scan that hits ErrBudgetExhausted overwrites prior plan_scan; unbounded shutdown wait (M3 LLM job); stale scheduler comment.
 - **M0 Spikes: complete 2026-10-29** (all tasks merged; agy independent testing PASS, report docs/build/spikes/M0-acceptance.md). Outcomes:
   - YNAB (ynab.md): `pkg.venceslau.dev/ynab` v1.6.1 + `Plan.Delta` as the only sync read. F1 `goal_snoozed_at` decode fix needed before M1-1; zone-normalizing transport proven in spike.
   - Jev (jev.md): primary classifier behind rules, payee history + Discretionary policy in state, start τ=0.8 (~90% precision / ~73% coverage, n=200). Category simplification decided (Decisions); re-measure afterwards.
