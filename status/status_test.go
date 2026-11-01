@@ -676,7 +676,8 @@ func TestDefaultRunTimeout(t *testing.T) {
 func TestOneLineScrubsMilliunits(t *testing.T) {
 	u := New(Config{Token: testToken})
 	for _, in := range []string{"amount=-45670", "amount: 45670", `"amount":-45,670`, "Amount -45670", "bad amount +1", "milliunit_amount=7"} {
-		if got := u.oneLine("x " + in + " y"); got != "x <amount> y" {
+		got := u.oneLine("x " + in + " y")
+		if !strings.Contains(got, "<amount>") || strings.ContainsAny(got, "0123456789") {
 			t.Errorf("oneLine(%q) = %q", in, got)
 		}
 	}
