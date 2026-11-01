@@ -58,7 +58,8 @@ func (a *app) addBackup(sched *Scheduler) {
 		a.log.Info("backup ok", "id", res.ID, "size", res.Size, "chunks", res.Chunks)
 		return nil
 	}
-	a.log.Info("backups enabled", "at", cfg.At(), "keep", cfg.Keep)
+	zone, _ := time.Now().Zone()
+	a.log.Info("backups enabled", "at", cfg.At(), "zone", zone, "keep", cfg.Keep)
 }
 
 // backupCmd is `finbot backup [--list]`.
@@ -73,7 +74,7 @@ func backupCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "finbot backup: unexpected arguments\n\n%s", usage)
 		return 2
 	}
-	return runBackupCommand("backup", stderr, func(ctx context.Context, cfg config.Backup) error {
+	return runBackupCommand(stderr, func(ctx context.Context, cfg config.Backup) error {
 		if *list {
 			return listBackups(ctx, cfg, stdout)
 		}
@@ -96,7 +97,7 @@ func restoreCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "finbot restore: --key and --out are required\n\n%s", usage)
 		return 2
 	}
-	return runBackupCommand("restore", stderr, func(ctx context.Context, cfg config.Backup) error {
+	return runBackupCommand(stderr, func(ctx context.Context, cfg config.Backup) error {
 		remote, err := remoteFrom(cfg)
 		if err != nil {
 			return err
@@ -115,16 +116,16 @@ func restoreCmd(args []string, stdout, stderr io.Writer) int {
 
 // runBackupCommand loads the backup settings and runs fn with a signal-aware
 // ctx. Failures print scrubbed to stderr and exit 1.
-func runBackupCommand(name string, stderr io.Writer, fn func(context.Context, config.Backup) error) int {
+func runBackupCommand(stderr io.Writer, fn func(context.Context, config.Backup) error) int {
 	cfg, err := config.LoadBackup()
 	if err != nil {
-		fmt.Fprintf(stderr, "finbot %s: %v\n", name, err)
+		fmt.Fprintf(stderr, "finbot: %v\n", err)
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := fn(ctx, cfg); err != nil {
-		fmt.Fprintf(stderr, "finbot %s: %s\n", name, scrub(err.Error(), cfg.TursoToken, cfg.TursoURL))
+		fmt.Fprintf(stderr, "finbot: %s\n", scrub(err.Error(), cfg.TursoToken, cfg.TursoURL))
 		return 1
 	}
 	return 0
