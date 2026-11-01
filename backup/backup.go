@@ -27,7 +27,19 @@ import (
 // 9s and 12s: small chunks keep every request in a transaction short.
 const DefaultChunkSize = 1 << 20
 
+// DefaultTimeout bounds one whole backup run. Jobs share the scheduler's one
+// goroutine, so this must stay well under /healthz's staleness window.
+const DefaultTimeout = 10 * time.Minute
+
 const timeLayout = "2006-01-02T15:04:05.000Z"
+
+// mirrorTables are the tables a real snapshot has rows in. plan_scan and
+// sync_state stay out: neither means the plan's data is there.
+var mirrorTables = map[string]bool{
+	"accounts": true, "category_groups": true, "categories": true, "payees": true,
+	"transactions": true, "subtransactions": true, "months": true, "month_categories": true,
+	"scheduled_transactions": true, "scheduled_subtransactions": true,
+}
 
 // Snapshotter writes a consistent copy of the database to a new file.
 type Snapshotter interface {
@@ -41,6 +53,7 @@ type Runner struct {
 	Remote    *Turso
 	Keep      int
 	ChunkSize int              // defaults to DefaultChunkSize
+	Timeout   time.Duration    // defaults to DefaultTimeout
 	Now       func() time.Time // defaults to time.Now
 }
 
@@ -51,10 +64,19 @@ type Result struct {
 	Chunks int
 }
 
-// Run snapshots, encrypts and stores one backup, then prunes to the newest
-// Keep. A prune failure returns the stored backup's Result along with the
-// error. Temp files live in the system temp dir and are removed either way.
+// Run snapshots, checks, encrypts and stores one backup, then prunes to the
+// newest Keep. It refuses a snapshot that fails integrity_check or has an empty
+// mirror: storing those would rotate good backups out, night after night. A
+// prune failure returns the stored backup's Result along with the error. Temp
+// files live in the system temp dir and are removed either way.
 func (r *Runner) Run(ctx context.Context) (Result, error) {
+	timeout := r.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	dir, err := os.MkdirTemp("", "finbot-backup-*")
 	if err != nil {
 		return Result{}, fmt.Errorf("backup: temp dir: %w", err)
@@ -64,6 +86,9 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 	plain := filepath.Join(dir, "snapshot.db")
 	if err := r.DB.Snapshot(ctx, plain); err != nil {
 		return Result{}, fmt.Errorf("backup: %w", err)
+	}
+	if err := checkSnapshot(ctx, plain); err != nil {
+		return Result{}, fmt.Errorf("backup: refused: %w", err)
 	}
 	cipher := filepath.Join(dir, "snapshot.age")
 	size, sum, err := encryptFile(plain, cipher, r.Recipient)
@@ -102,6 +127,20 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 		return res, fmt.Errorf("backup: stored, but prune failed: %w", err)
 	}
 	return res, nil
+}
+
+// checkSnapshot passes only a sound database with mirror rows in it.
+func checkSnapshot(ctx context.Context, path string) error {
+	tables, err := Verify(ctx, path)
+	if err != nil {
+		return err
+	}
+	for _, tc := range tables {
+		if mirrorTables[tc.Table] && tc.Rows > 0 {
+			return nil
+		}
+	}
+	return errors.New("mirror tables are empty")
 }
 
 // newID makes a sortable id that is safe to print.
@@ -175,9 +214,11 @@ type RestoreResult struct {
 	Tables []TableCount
 }
 
-// Restore downloads a backup, checks its sha256, decrypts it to the new file
-// Out (0600; an existing file is refused) and verifies the result. On any
-// failure Out is removed, so a file at Out is always a verified database.
+// Restore downloads a backup, checks its sha256, decrypts it to a temp file
+// beside Out and verifies that. Only then does it link the temp file to Out
+// (0600), which fails rather than replaces if Out has appeared meanwhile. So a
+// file at Out is always a verified database, and Restore never removes or
+// overwrites a file it didn't create.
 func Restore(ctx context.Context, remote *Turso, opts RestoreOptions) (RestoreResult, error) {
 	identities, err := readIdentities(opts.KeyPath)
 	if err != nil {
@@ -225,7 +266,6 @@ func Restore(ctx context.Context, remote *Turso, opts RestoreOptions) (RestoreRe
 
 	tables, err := decryptAndVerify(ctx, cipher, identities, opts.Out)
 	if err != nil {
-		os.Remove(opts.Out)
 		return RestoreResult{}, fmt.Errorf("restore: backup %s: %w", info.ID, err)
 	}
 	return RestoreResult{Info: info, Tables: tables}, nil
@@ -266,10 +306,11 @@ func decryptAndVerify(ctx context.Context, cipher io.Reader, identities []age.Id
 	if err != nil {
 		return nil, fmt.Errorf("decrypt: %w", err)
 	}
-	f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.CreateTemp(filepath.Dir(out), ".finbot-restore-*") // 0600
 	if err != nil {
 		return nil, err
 	}
+	defer os.Remove(f.Name())
 	defer f.Close()
 	if _, err := io.Copy(f, plain); err != nil {
 		return nil, fmt.Errorf("decrypt: %w", err)
@@ -277,7 +318,14 @@ func decryptAndVerify(ctx context.Context, cipher io.Reader, identities []age.Id
 	if err := f.Close(); err != nil {
 		return nil, err
 	}
-	return Verify(ctx, out)
+	tables, err := Verify(ctx, f.Name())
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Link(f.Name(), out); err != nil {
+		return nil, fmt.Errorf("write output file: %w", err)
+	}
+	return tables, nil
 }
 
 // Verify runs PRAGMA integrity_check on the SQLite file at path and returns

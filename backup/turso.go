@@ -22,6 +22,9 @@ const (
 	maxResponse = 16 << 20
 	// errBodyLimit caps how much of a server error reaches an error message.
 	errBodyLimit = 200
+	// errBodyRead caps how much of an error body is read. It is far above
+	// errBodyLimit so that a secret is scrubbed whole before the text is cut.
+	errBodyRead = 64 << 10
 )
 
 const createTable = `CREATE TABLE IF NOT EXISTS backups (
@@ -91,6 +94,16 @@ func (t *Turso) scrub(s string) string {
 		if secret != "" {
 			s = strings.ReplaceAll(s, secret, "<secret>")
 		}
+	}
+	return s
+}
+
+// errText scrubs server-supplied text, then cuts it to errBodyLimit. The order
+// matters: a secret cut in two would no longer match and its prefix would leak.
+func (t *Turso) errText(s string) string {
+	s = t.scrub(s)
+	if len(s) > errBodyLimit {
+		s = s[:errBodyLimit]
 	}
 	return s
 }
@@ -183,6 +196,10 @@ type pipelineResponse struct {
 // the stream ends after stmts. The server runs every request in a pipeline
 // even after one fails, so a statement that must not follow a failure has to
 // go in a later call.
+//
+// The returned baton is always the latest known, errors included: the server's
+// new one when it answered, otherwise the one passed in. A nil baton means the
+// server closed the stream, and passing it back would open a new stream.
 func (t *Turso) pipeline(ctx context.Context, baton *string, closeStream bool, stmts ...stmt) ([][][]value, *string, error) {
 	reqs := make([]streamRequest, 0, len(stmts)+1)
 	for i := range stmts {
@@ -193,48 +210,45 @@ func (t *Turso) pipeline(ctx context.Context, baton *string, closeStream bool, s
 	}
 	body, err := json.Marshal(map[string]any{"baton": baton, "requests": reqs})
 	if err != nil {
-		return nil, nil, t.clean(err)
+		return nil, baton, t.clean(err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, t.clean(err)
+		return nil, baton, t.clean(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+t.token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return nil, nil, t.clean(err)
+		return nil, baton, t.clean(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyLimit))
-		return nil, nil, t.clean(fmt.Errorf("status %d: %s", resp.StatusCode, msg))
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyRead))
+		return nil, baton, t.clean(fmt.Errorf("status %d: %s", resp.StatusCode, t.errText(string(msg))))
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
 	if err != nil {
-		return nil, nil, t.clean(err)
+		return nil, baton, t.clean(err)
 	}
 	if len(raw) > maxResponse {
-		return nil, nil, t.clean(errors.New("response is too large"))
+		return nil, baton, t.clean(errors.New("response is too large"))
 	}
 	var out pipelineResponse
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, nil, t.clean(errors.New("response is not valid JSON"))
+		return nil, baton, t.clean(errors.New("response is not valid JSON"))
 	}
 	if len(out.Results) != len(reqs) {
-		return nil, nil, t.clean(fmt.Errorf("got %d results for %d requests", len(out.Results), len(reqs)))
+		return nil, out.Baton, t.clean(fmt.Errorf("got %d results for %d requests", len(out.Results), len(reqs)))
 	}
 	rows := make([][][]value, len(stmts))
 	for i, r := range out.Results {
 		if r.Type != "ok" {
 			msg := "request failed"
 			if r.Error != nil {
-				msg = r.Error.Message
+				msg = t.errText(r.Error.Message)
 			}
-			if len(msg) > errBodyLimit {
-				msg = msg[:errBodyLimit]
-			}
-			return nil, nil, t.clean(errors.New(msg))
+			return nil, out.Baton, t.clean(errors.New(msg))
 		}
 		if i < len(stmts) {
 			rows[i] = r.Response.Result.Rows
@@ -257,12 +271,9 @@ func (t *Turso) Put(ctx context.Context, info Info, r io.Reader, chunkSize int) 
 		return 0, err
 	}
 	_, baton, err := t.pipeline(ctx, nil, false, newStmt("BEGIN IMMEDIATE"))
-	if err != nil {
-		return 0, err
-	}
 	committed := false
 	defer func() {
-		if committed {
+		if committed || baton == nil {
 			return
 		}
 		// Closing the stream rolls back. A background context so a cancelled
@@ -271,25 +282,41 @@ func (t *Turso) Put(ctx context.Context, info Info, r io.Reader, chunkSize int) 
 		defer cancel()
 		_, _, _ = t.pipeline(closeCtx, baton, true)
 	}()
+	if err != nil {
+		return 0, err
+	}
+	if err := t.requireStream(baton); err != nil {
+		return 0, err
+	}
 
 	n, err := eachChunk(r, chunkSize, func(i int, chunk []byte) error {
-		_, next, err := t.pipeline(ctx, baton, false, newStmt(
+		var err error
+		_, baton, err = t.pipeline(ctx, baton, false, newStmt(
 			"INSERT INTO backups (id, created_at, size, sha256, chunk, data) VALUES (?, ?, ?, ?, ?, ?)",
 			textArg(info.ID), textArg(info.CreatedAt), intArg(info.Size), textArg(info.SHA256), intArg(int64(i)), blobArg(chunk)))
 		if err != nil {
 			return err
 		}
-		baton = next
-		return nil
+		return t.requireStream(baton)
 	})
 	if err != nil {
 		return 0, err
 	}
-	if _, _, err := t.pipeline(ctx, baton, true, newStmt("COMMIT")); err != nil {
+	if _, baton, err = t.pipeline(ctx, baton, true, newStmt("COMMIT")); err != nil {
 		return 0, err
 	}
 	committed = true
 	return n, nil
+}
+
+// requireStream fails if the server closed the stream mid-transaction, which
+// rolled the transaction back. Carrying on would open a new stream, where the
+// remaining chunks would each autocommit and leave a partial backup.
+func (t *Turso) requireStream(baton *string) error {
+	if baton == nil || *baton == "" {
+		return t.clean(errors.New("stream closed during the transaction"))
+	}
+	return nil
 }
 
 // eachChunk calls fn with each size-byte piece of r (the last may be shorter)

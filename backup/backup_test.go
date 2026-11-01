@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -74,6 +75,63 @@ func TestPut_FailedChunkStoresNothing(t *testing.T) {
 	if n := f.rowCount(t); n != 0 {
 		t.Errorf("%d chunk rows survived a failed Put, want 0", n)
 	}
+	// The rollback must use the baton from the failed statement's response.
+	if f.streamOpen() {
+		t.Error("stream still open after a failed Put: rollback used a stale baton")
+	}
+}
+
+func TestPut_StreamLostStopsAtOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		loseOn  func(*int) func(string) bool
+		wantRun []string // statement prefixes, in order
+	}{
+		{
+			name:    "after BEGIN",
+			loseOn:  func(*int) func(string) bool { return func(q string) bool { return strings.HasPrefix(q, "BEGIN") } },
+			wantRun: []string{"CREATE", "BEGIN"},
+		},
+		{
+			name: "after the second chunk",
+			loseOn: func(n *int) func(string) bool {
+				return func(q string) bool {
+					if strings.HasPrefix(q, "INSERT") {
+						*n++
+					}
+					return *n == 2
+				}
+			},
+			wantRun: []string{"CREATE", "BEGIN", "INSERT", "INSERT"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeTurso(t)
+			var inserts int
+			f.loseStreamOn = tc.loseOn(&inserts)
+			remote := f.client(t)
+			_, err := remote.Put(context.Background(), Info{ID: "b1", CreatedAt: "t", SHA256: "s"}, bytes.NewReader(make([]byte, 50)), 10)
+			if err == nil || !strings.Contains(err.Error(), "stream closed") {
+				t.Fatalf("Put = %v, want a lost-stream error", err)
+			}
+			got := f.statements()
+			if len(got) != len(tc.wantRun) {
+				t.Fatalf("ran %d statements, want %d: %q", len(got), len(tc.wantRun), got)
+			}
+			for i, prefix := range tc.wantRun {
+				if !strings.HasPrefix(strings.TrimSpace(got[i]), prefix) {
+					t.Errorf("statement %d = %q, want %s", i, got[i], prefix)
+				}
+			}
+			f.loseStreamOn = nil
+			if n := f.rowCount(t); n != 0 {
+				t.Errorf("%d chunk rows autocommitted after the stream was lost, want 0", n)
+			}
+			if infos, err := remote.List(context.Background()); err != nil || len(infos) != 0 {
+				t.Errorf("List = %+v, %v; want no backups", infos, err)
+			}
+		})
+	}
 }
 
 func TestPrune_KeepsNewestK(t *testing.T) {
@@ -124,6 +182,35 @@ func TestScrub_RemovesTokenAndURL(t *testing.T) {
 		t.Errorf("transport error leaks the URL: %q", msg)
 	}
 
+	// A long token echoed by the server is scrubbed before the text is cut, so
+	// no prefix of it survives, whether in a status error or a statement error.
+	longToken := strings.Repeat("longtoken-", 40)
+	for _, tc := range []struct {
+		name string
+		arm  func(*fakeTurso)
+	}{
+		{"status error", func(f *fakeTurso) { f.failHTTP = true }},
+		{"statement error", func(f *fakeTurso) {
+			f.token = longToken
+			f.failInsert = 1
+			f.failMessage = "bad token " + longToken
+		}},
+	} {
+		lf := newFakeTurso(t)
+		tc.arm(lf)
+		lc, err := NewTurso(lf.srv.URL, longToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = lc.Put(context.Background(), Info{ID: "b1", CreatedAt: "t", SHA256: "s"}, bytes.NewReader(make([]byte, 5)), 10)
+		if err == nil {
+			t.Fatalf("%s: Put succeeded", tc.name)
+		}
+		if strings.Contains(err.Error(), "longtoken-") {
+			t.Errorf("%s: error leaks a token prefix: %q", tc.name, err)
+		}
+	}
+
 	c, err := NewTurso("libsql://db.example?authToken=querysecret", "tok")
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +248,11 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() { db.Close() })
 	scan := store.PlanScan{PlanID: "p1", Name: "plan one", HasDiscretionary: true, ScannedAt: time.Now()}
 	if err := db.ReplacePlanScans(ctx, []store.PlanScan{scan}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Update(ctx, func(tx *store.Tx) error {
+		return tx.UpsertAccounts("p1", []store.Account{{ID: "a1", Name: "Checking", Type: "checking", OnBudget: true, Balance: 1}})
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -324,6 +416,89 @@ func TestRun_SnapshotFailureCleansUp(t *testing.T) {
 	h.assertNoTempFiles(t)
 }
 
+func TestRun_RefusesBadSnapshotAndKeepsBackups(t *testing.T) {
+	ctx := context.Background()
+	empty, err := store.Open(ctx, filepath.Join(t.TempDir(), "empty.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer empty.Close()
+	scanOnly, err := store.Open(ctx, filepath.Join(t.TempDir(), "scan.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanOnly.Close()
+	scan := store.PlanScan{PlanID: "p1", Name: "plan", HasDiscretionary: true, ScannedAt: time.Now()}
+	if err := scanOnly.ReplacePlanScans(ctx, []store.PlanScan{scan}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		db   Snapshotter
+		want string
+	}{
+		{"empty mirror", empty, "mirror tables are empty"},
+		{"only a plan scan", scanOnly, "mirror tables are empty"},
+		{"not a database", garbageSnapshot{}, "verify"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.runner.Keep = 1
+			good, err := h.runner.Run(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.runner.DB = tc.db
+			_, err = h.runner.Run(ctx)
+			if err == nil || !strings.Contains(err.Error(), "refused") || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Run = %v, want refused: %s", err, tc.want)
+			}
+			h.assertNoTempFiles(t)
+			infos, err := h.remote.List(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(infos) != 1 || infos[0].ID != good.ID {
+				t.Errorf("after a refusal: %+v, want only %s", infos, good.ID)
+			}
+		})
+	}
+}
+
+func TestRun_Deadline(t *testing.T) {
+	h := newHarness(t)
+	h.runner.DB = blockingSnapshot{}
+	h.runner.Timeout = 20 * time.Millisecond
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.runner.Run(context.Background())
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("Run = %v, want the deadline", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not stop at its deadline")
+	}
+	h.assertNoTempFiles(t)
+}
+
+type blockingSnapshot struct{}
+
+func (blockingSnapshot) Snapshot(ctx context.Context, _ string) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type garbageSnapshot struct{}
+
+func (garbageSnapshot) Snapshot(_ context.Context, path string) error {
+	return os.WriteFile(path, bytes.Repeat([]byte("not a database "), 1000), 0o600)
+}
+
 type failingSnapshot struct{}
 
 func (failingSnapshot) Snapshot(_ context.Context, path string) error {
@@ -353,6 +528,73 @@ func TestRestore_ShaMismatchFails(t *testing.T) {
 		t.Errorf("output file exists after a failed restore: %v", statErr)
 	}
 	h.assertNoTempFiles(t)
+}
+
+func TestRestore_FileAppearingAtOutIsLeftAlone(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	if _, err := h.runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	out := filepath.Join(dir, "restored.db")
+	var once sync.Once
+	h.fake.corrupt = func(b []byte) []byte { // a blob going out means the download has begun
+		once.Do(func() {
+			if err := os.WriteFile(out, []byte("someone else's"), 0o600); err != nil {
+				t.Error(err)
+			}
+		})
+		return b
+	}
+	if _, err := Restore(ctx, h.remote, RestoreOptions{KeyPath: h.keyPath, Out: out}); err == nil {
+		t.Fatal("Restore succeeded over a file that appeared during the download")
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("the other file is gone: %v", err)
+	}
+	if string(got) != "someone else's" {
+		t.Errorf("the other file was overwritten: %q", got)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("restore left temp files beside the output: %v", entries)
+	}
+	h.assertNoTempFiles(t)
+}
+
+func TestRestore_UnverifiedOutputNeverAppears(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	// A snapshot that isn't a database encrypts and decrypts fine, then fails
+	// verification, so it has to be stored around Run's own check.
+	dir := t.TempDir()
+	cipher := filepath.Join(dir, "c.age")
+	src := filepath.Join(dir, "plain")
+	if err := os.WriteFile(src, bytes.Repeat([]byte("not a database "), 1000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	size, sum, err := encryptFile(src, cipher, h.runner.Recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(cipher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	info := Info{ID: "bad", CreatedAt: "2026-11-01T00:00:00.000Z", Size: size, SHA256: sum}
+	if _, err := h.remote.Put(ctx, info, f, 1024); err != nil {
+		t.Fatal(err)
+	}
+
+	outDir := t.TempDir()
+	if _, err := Restore(ctx, h.remote, RestoreOptions{KeyPath: h.keyPath, Out: filepath.Join(outDir, "r.db")}); err == nil {
+		t.Fatal("Restore of a non-database succeeded")
+	}
+	if entries, _ := os.ReadDir(outDir); len(entries) != 0 {
+		t.Errorf("a failed verification left files: %v", entries)
+	}
 }
 
 func TestRestore_WrongKeyLeavesNoFile(t *testing.T) {

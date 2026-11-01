@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,18 +22,26 @@ const fakeToken = "fake-turso-token-s3cr3t"
 // the bearer token and baton rules, and closing a stream rolls back an open
 // transaction.
 type fakeTurso struct {
-	t   *testing.T
-	srv *httptest.Server
-	db  *sql.DB
+	t     *testing.T
+	srv   *httptest.Server
+	db    *sql.DB
+	token string
 
 	mu     sync.Mutex
 	conn   *sql.Conn // the open stream's connection
 	baton  string
 	nextID int
 
-	// failInsert, if positive, fails the nth INSERT with a statement error.
-	failInsert int
-	inserts    int
+	// failInsert, if positive, fails the nth INSERT with a statement error,
+	// whose message is failMessage if set.
+	failInsert  int
+	failMessage string
+	inserts     int
+	// loseStreamOn, if set, closes the stream (rolling back) after a statement
+	// it matches and answers with a null baton.
+	loseStreamOn func(query string) bool
+	// executed records every statement run, in order.
+	executed []string
 	// failHTTP, if set, answers every request with a 500 quoting the auth header.
 	failHTTP bool
 	// corrupt, if set, rewrites blobs on their way out.
@@ -45,7 +54,7 @@ func newFakeTurso(t *testing.T) *fakeTurso {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeTurso{t: t, db: db}
+	f := &fakeTurso{t: t, db: db, token: fakeToken}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(func() {
 		f.srv.Close()
@@ -73,7 +82,7 @@ func (f *fakeTurso) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom at "+f.srv.URL+" with "+r.Header.Get("Authorization"), http.StatusInternalServerError)
 		return
 	}
-	if r.URL.Path != "/v2/pipeline" || r.Header.Get("Authorization") != "Bearer "+fakeToken {
+	if r.URL.Path != "/v2/pipeline" || r.Header.Get("Authorization") != "Bearer "+f.token {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -114,7 +123,12 @@ func (f *fakeTurso) handle(w http.ResponseWriter, r *http.Request) {
 			closed = true
 			results = append(results, map[string]any{"type": "ok", "response": map[string]any{"type": "close"}})
 		case "execute":
+			f.executed = append(f.executed, sr.Stmt.SQL)
 			rows, err := f.execute(ctx, sr.Stmt.SQL, sr.Stmt.Args)
+			if f.loseStreamOn != nil && f.loseStreamOn(sr.Stmt.SQL) {
+				f.closeStream()
+				closed = true
+			}
 			if err != nil {
 				results = append(results, map[string]any{"type": "error", "error": map[string]any{"message": err.Error()}})
 				continue
@@ -148,7 +162,10 @@ func (f *fakeTurso) execute(ctx context.Context, query string, args []value) ([]
 	if strings.HasPrefix(query, "INSERT") {
 		f.inserts++
 		if f.inserts == f.failInsert {
-			return nil, fmt.Errorf("disk I/O error")
+			if f.failMessage != "" {
+				return nil, errors.New(f.failMessage)
+			}
+			return nil, errors.New("disk I/O error")
 		}
 	}
 	bound := make([]any, len(args))
@@ -225,4 +242,16 @@ func (f *fakeTurso) rowCount(t *testing.T) int {
 		t.Fatal(err)
 	}
 	return n
+}
+
+func (f *fakeTurso) streamOpen() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.conn != nil
+}
+
+func (f *fakeTurso) statements() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.executed...)
 }
