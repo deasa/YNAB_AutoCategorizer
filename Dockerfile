@@ -6,7 +6,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /finbot .
+ARG GIT_SHA=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+	-ldflags "-X github.com/deasa/YNAB_AutoCategorizer/cmd.Version=${GIT_SHA}" -o /finbot .
 
 # Runtime stage: glibc (Debian slim), because the claude CLI (M3) needs it.
 FROM debian:12.15-slim

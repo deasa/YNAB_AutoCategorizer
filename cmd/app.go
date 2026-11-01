@@ -86,6 +86,8 @@ type app struct {
 	clients finsync.ClientFunc
 	gov     *ynab.Governor
 	ynabLog *log.Logger
+
+	slackURL string // overrides the Slack API base URL (tests)
 }
 
 func withApp(args []string, name string, stderr io.Writer, run func(context.Context, *app, *flag.FlagSet) error, flags ...func(*flag.FlagSet)) int {
@@ -271,6 +273,7 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 		a.log.Info("import disabled")
 	}
 	a.addBackup(sched)
+	a.addStatus(sched)
 	return sched, health
 }
 
@@ -325,6 +328,7 @@ func secrets(cfg *config.Config) []string {
 	return []string{
 		cfg.YNABAccessToken,
 		cfg.HealthcheckPingURL, strings.TrimRight(cfg.HealthcheckPingURL, "/"),
+		cfg.SlackBotToken,
 		cfg.Backup.TursoToken, cfg.Backup.TursoURL,
 	}
 }

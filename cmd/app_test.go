@@ -113,6 +113,15 @@ func TestBackupCommands_Config(t *testing.T) {
 	}
 }
 
+func TestAddStatus_DisabledWithoutToken(t *testing.T) {
+	var logs bytes.Buffer
+	a := &app{cfg: &config.Config{SyncInterval: time.Minute}, log: slog.New(slog.NewJSONHandler(&logs, nil))}
+	sched, _ := a.newScheduler()
+	if sched.Sync == nil || !strings.Contains(logs.String(), `"msg":"slack status disabled"`) {
+		t.Errorf("no disabled log: %s", logs.String())
+	}
+}
+
 func TestScrub_TokenAndIDs(t *testing.T) {
 	const tok = "abcDEF123-secret_token"
 	got := scrub("GET failed for "+tok+" on plan 0f8fad5b-d9cb-469f-a165-70867728950e", tok)

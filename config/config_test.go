@@ -27,15 +27,16 @@ func TestLoadFrom_Defaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{
-		YNABAccessToken: secret,
-		YNABBudgetID:    "plan-1",
-		DBPath:          "/data/finbot.db",
-		SyncInterval:    15 * time.Minute,
-		ImportInterval:  6 * time.Hour,
-		ImportEnabled:   false,
-		HTTPAddr:        ":8080",
-		LogLevel:        slog.LevelInfo,
-		Backup:          Backup{AtHour: 3, AtMinute: 17, Keep: 14, DBPath: "/data/finbot.db"},
+		YNABAccessToken:    secret,
+		YNABBudgetID:       "plan-1",
+		DBPath:             "/data/finbot.db",
+		SyncInterval:       15 * time.Minute,
+		ImportInterval:     6 * time.Hour,
+		ImportEnabled:      false,
+		HTTPAddr:           ":8080",
+		LogLevel:           slog.LevelInfo,
+		SlackStatusChannel: "finbot-finances",
+		Backup:             Backup{AtHour: 3, AtMinute: 17, Keep: 14, DBPath: "/data/finbot.db"},
 	}
 	if *cfg != want {
 		t.Errorf("got %+v\nwant %+v", *cfg, want)
@@ -175,5 +176,20 @@ func TestBackupFrom(t *testing.T) {
 		} else if strings.Contains(err.Error(), secret) {
 			t.Errorf("%s: error echoes the value: %v", key, err)
 		}
+	}
+}
+
+func TestSlackSettings(t *testing.T) {
+	env := func(m map[string]string) func(string) string {
+		m["YNAB_ACCESS_TOKEN"], m["YNAB_BUDGET_ID"] = "t", "p"
+		return func(k string) string { return m[k] }
+	}
+	cfg, err := LoadFrom(env(map[string]string{}))
+	if err != nil || cfg.SlackBotToken != "" || cfg.SlackStatusChannel != "finbot-finances" {
+		t.Errorf("defaults: %+v, %v", cfg, err)
+	}
+	cfg, err = LoadFrom(env(map[string]string{"SLACK_BOT_TOKEN": "x", "SLACK_STATUS_CHANNEL": "#other"}))
+	if err != nil || cfg.SlackBotToken != "x" || cfg.SlackStatusChannel != "other" {
+		t.Errorf("set: %+v, %v", cfg, err)
 	}
 }

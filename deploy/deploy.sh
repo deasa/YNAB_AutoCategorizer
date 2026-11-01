@@ -16,19 +16,20 @@ done
 # Ship only committed, git-tracked files (never untracked or ignored ones such
 # as .claude/ or .env.*), so the deploy is exactly HEAD.
 git diff --quiet HEAD -- || { echo "deploy: tracked files have uncommitted changes; commit first" >&2; exit 1; }
+sha=$(git rev-parse --short HEAD) # git archive ships no .git, so the build can't work this out itself
 ssh "$host" "mkdir -p $dir && chmod 700 $dir"
 git archive --format=tar HEAD -- . ':!spikes' ':!docs' ':!.env*' ':!*.env' ':!**/*.env' |
 	ssh "$host" "rm -rf $dir/src.new && mkdir $dir/src.new && tar -x -C $dir/src.new && rm -rf $dir/src && mv $dir/src.new $dir/src"
 
 # finbot.env: only the keys finbot needs, from the local .env.
-grep -E '^(YNAB_ACCESS_TOKEN|YNAB_BUDGET_ID|HEALTHCHECK_PING_URL|BACKUP_AGE_RECIPIENT|BACKUP_TURSO_URL|BACKUP_TURSO_TOKEN|BACKUP_AT|BACKUP_KEEP)=' .env |
+grep -E '^(YNAB_ACCESS_TOKEN|YNAB_BUDGET_ID|HEALTHCHECK_PING_URL|BACKUP_AGE_RECIPIENT|BACKUP_TURSO_URL|BACKUP_TURSO_TOKEN|BACKUP_AT|BACKUP_KEEP|SLACK_BOT_TOKEN|SLACK_STATUS_CHANNEL)=' .env |
 	ssh "$host" "umask 077 && cat > $dir/finbot.env.new && chmod 600 $dir/finbot.env.new && mv $dir/finbot.env.new $dir/finbot.env"
 ssh "$host" "test -s $dir/finbot.env && test \"\$(stat -c %a $dir/finbot.env)\" = 600" ||
 	{ echo "deploy: ~/$dir/finbot.env is empty or not 0600" >&2; exit 1; }
 
 # cd into the compose file's directory so compose's project dir (and its
 # default .env lookup) is src/deploy, never ~/finbot.
-ssh "$host" "cd $dir/src/deploy && FINBOT_ENV_FILE=\$HOME/$dir/finbot.env docker compose -p finbot up -d --build --remove-orphans"
+ssh "$host" "cd $dir/src/deploy && GIT_SHA=$sha FINBOT_ENV_FILE=\$HOME/$dir/finbot.env docker compose -p finbot up -d --build --remove-orphans"
 
 # Wait for the healthcheck (finbot health: /healthz 200 after a successful sync).
 ssh "$host" bash -s -- "$timeout" <<'REMOTE'
