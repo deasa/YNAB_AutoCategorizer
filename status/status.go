@@ -18,8 +18,13 @@ import (
 
 const (
 	defaultBaseURL = "https://slack.com/api"
-	// runTimeout bounds one update, so Slack can't stall the scheduler for long.
-	runTimeout = 20 * time.Second
+	// defaultRunTimeout bounds one update, so Slack can't stall the scheduler for long.
+	defaultRunTimeout = 20 * time.Second
+	// repostEvery is the least time between attempts to post a new message, so
+	// a repeating failure can't fill the channel.
+	repostEvery = 6 * time.Hour
+	// storeTimeout bounds a store write that must outlive the run's context.
+	storeTimeout = 5 * time.Second
 	// maxErrorLen caps the last-error line, in runes.
 	maxErrorLen = 300
 )
@@ -29,6 +34,7 @@ type Store interface {
 	GetStatusState(ctx context.Context) (store.StatusState, error)
 	SetStatusMessage(ctx context.Context, channelID, ts string) error
 	SetStatusBackup(ctx context.Context, at time.Time, ok bool) error
+	SetStatusPostAttempt(ctx context.Context, at time.Time) error
 	GetSyncState(ctx context.Context, planID string) (store.SyncState, bool, error)
 	AccountImports(ctx context.Context, planID string) ([]store.AccountImport, error)
 }
@@ -49,6 +55,8 @@ type Config struct {
 	// StaleAfter is how old the last successful sync may get before the state
 	// is failing.
 	StaleAfter time.Duration
+
+	RunTimeout time.Duration // defaults to 20s (tests)
 
 	BaseURL string           // defaults to the Slack API (tests)
 	Client  *http.Client     // defaults to a plain client (tests)
@@ -81,6 +89,9 @@ func New(cfg Config) *Updater {
 	if cfg.Client == nil {
 		cfg.Client = &http.Client{}
 	}
+	if cfg.RunTimeout == 0 {
+		cfg.RunTimeout = defaultRunTimeout
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -101,7 +112,7 @@ func (u *Updater) SyncDone(ctx context.Context, err error) {
 	if u == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	ctx, cancel := context.WithTimeout(ctx, u.cfg.RunTimeout)
 	defer cancel()
 	u.load(ctx)
 	if err != nil {
@@ -118,7 +129,7 @@ func (u *Updater) BackupDone(ctx context.Context, err error) {
 	if u == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	ctx, cancel := context.WithTimeout(ctx, u.cfg.RunTimeout)
 	defer cancel()
 	u.load(ctx)
 	u.lastBackupErr = ""
@@ -177,10 +188,10 @@ func (u *Updater) send(ctx context.Context, text string) error {
 		if err == nil {
 			return nil
 		}
-		if !isCode(err, "message_not_found", "channel_not_found") {
+		if !isCode(err, "message_not_found", "channel_not_found", "edit_window_closed", "cant_update_message") {
 			return err
 		}
-		u.cfg.Log.Warn("status: message gone, posting a new one", "reason", u.redact(err.Error()))
+		u.cfg.Log.Warn("status: message can't be edited, a new one is needed", "reason", u.redact(err.Error()))
 		if isCode(err, "channel_not_found") {
 			u.channel = ""
 			id, err := u.slack.findPrivateChannel(ctx, u.cfg.Channel)
@@ -190,17 +201,57 @@ func (u *Updater) send(ctx context.Context, text string) error {
 			u.channel = id
 		}
 	}
+	return u.post(ctx, text)
+}
+
+// post posts a new message, at most once per repostEvery. The attempt is stored
+// first, so neither a lost response nor a restart can lift the cap, and nothing
+// is posted if it can't be stored. Only a post that provably failed gives the
+// attempt back. While capped, a message left in another channel (the setting
+// changed) keeps being edited; otherwise the next run tries its update again.
+func (u *Updater) post(ctx context.Context, text string) error {
+	now := u.cfg.Now()
+	last := u.stored.PostAttemptAt
+	if since := now.Sub(last); !last.IsZero() && since >= 0 && since < repostEvery {
+		u.cfg.Log.Warn("status: new message capped", "retry_in", (repostEvery - since).Round(time.Minute).String())
+		if u.stored.TS != "" && u.stored.ChannelID != u.channel {
+			_, err := u.slack.send(ctx, u.stored.ChannelID, u.stored.TS, text)
+			return err
+		}
+		return nil
+	}
+	if err := u.cfg.Store.SetStatusPostAttempt(ctx, now); err != nil {
+		return err
+	}
+	u.stored.PostAttemptAt = now
+
 	ts, err := u.slack.send(ctx, u.channel, "", text)
 	if err != nil {
+		if notPosted(err) {
+			u.stored.PostAttemptAt = last
+			detached, cancel := detach(ctx)
+			defer cancel()
+			if e := u.cfg.Store.SetStatusPostAttempt(detached, last); e != nil {
+				u.warn("status: clear post attempt failed", e)
+			}
+		}
 		return err
 	}
 	u.stored.ChannelID, u.stored.TS = u.channel, ts
 	u.cfg.Log.Info("status message created; pin it in Slack", "channel", u.cfg.Channel)
-	// The in-memory copy still stops a repost in this process if this fails.
-	if err := u.cfg.Store.SetStatusMessage(ctx, u.channel, ts); err != nil {
+	// Shutdown or the run's deadline must not lose the ts now that the message
+	// exists. The in-memory copy still covers this process if the write fails.
+	detached, cancel := detach(ctx)
+	defer cancel()
+	if err := u.cfg.Store.SetStatusMessage(detached, u.channel, ts); err != nil {
 		u.warn("status: store message id failed", err)
 	}
 	return nil
+}
+
+// detach returns a context for a store write that must survive ctx ending.
+func detach(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
 }
 
 // render builds the message. Everything from outside finbot goes through
@@ -298,8 +349,10 @@ func (u *Updater) warn(msg string, err error) {
 }
 
 var (
-	tokenRE  = regexp.MustCompile(`xox[a-zA-Z]-[A-Za-z0-9-]+`)
-	amountRE = regexp.MustCompile(`[$€£]\s?[\d,]+(\.\d+)?|\b\d[\d,]*\.\d{2}\b`)
+	tokenRE = regexp.MustCompile(`xox[a-zA-Z]-[A-Za-z0-9-]+`)
+	// amountRE matches currency, decimals, and integers after "amount" (YNAB's
+	// milliunits, such as amount=-45670).
+	amountRE = regexp.MustCompile(`(?i)[$€£]\s?[\d,]+(\.\d+)?|\b\d[\d,]*\.\d{2}\b|\b\w*amount\w*["']?\s*[=:]?\s*[-+]?\d[\d,]*`)
 )
 
 // redact removes the bot token, and anything Config.Redact knows about.
@@ -322,7 +375,8 @@ func (u *Updater) oneLine(s string) string {
 	return s
 }
 
-// escape neutralizes Slack's control characters.
+// escape neutralizes Slack's control characters, and breaks up a bare @ with a
+// zero-width space so text such as @channel can't become a mention.
 func escape(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "@", "@\u200b").Replace(s)
 }

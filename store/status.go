@@ -15,14 +15,16 @@ type StatusState struct {
 	// BackupAt is zero until a backup has been recorded.
 	BackupAt time.Time
 	BackupOK bool
+	// PostAttemptAt is when a new message was last attempted; zero if never.
+	PostAttemptAt time.Time
 }
 
 // GetStatusState returns the stored state, or the zero value if there is none.
 func (d *DB) GetStatusState(ctx context.Context) (StatusState, error) {
-	var channel, ts, backupAt sql.NullString
+	var channel, ts, backupAt, postAttemptAt sql.NullString
 	var backupOK sql.NullBool
-	err := d.r.QueryRowContext(ctx, `SELECT channel_id, ts, backup_at, backup_ok FROM status_message WHERE id = 1`).
-		Scan(&channel, &ts, &backupAt, &backupOK)
+	err := d.r.QueryRowContext(ctx, `SELECT channel_id, ts, backup_at, backup_ok, post_attempt_at FROM status_message WHERE id = 1`).
+		Scan(&channel, &ts, &backupAt, &backupOK, &postAttemptAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StatusState{}, nil
 	}
@@ -35,7 +37,29 @@ func (d *DB) GetStatusState(ctx context.Context) (StatusState, error) {
 			return StatusState{}, fmt.Errorf("store: parse status_message.backup_at: %w", err)
 		}
 	}
+	if postAttemptAt.Valid {
+		if s.PostAttemptAt, err = time.Parse(time.RFC3339Nano, postAttemptAt.String); err != nil {
+			return StatusState{}, fmt.Errorf("store: parse status_message.post_attempt_at: %w", err)
+		}
+	}
 	return s, nil
+}
+
+// SetStatusPostAttempt records when a new message was last attempted. A zero
+// time clears it.
+func (d *DB) SetStatusPostAttempt(ctx context.Context, at time.Time) error {
+	var v any
+	if !at.IsZero() {
+		v = formatTime(at)
+	}
+	return d.Update(ctx, func(t *Tx) error {
+		_, err := t.c.ExecContext(t.ctx, `INSERT INTO status_message (id, post_attempt_at) VALUES (1,?)
+			ON CONFLICT (id) DO UPDATE SET post_attempt_at = excluded.post_attempt_at`, v)
+		if err != nil {
+			return fmt.Errorf("store: set status_message post attempt: %w", err)
+		}
+		return nil
+	})
 }
 
 // SetStatusMessage records where the status message lives.

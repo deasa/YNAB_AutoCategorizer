@@ -30,6 +30,10 @@ func TestStatusState(t *testing.T) {
 	if err := db.SetStatusBackup(ctx, at.Add(time.Hour), true); err != nil {
 		t.Fatal(err)
 	}
+	attempt := at.Add(2 * time.Hour)
+	if err := db.SetStatusPostAttempt(ctx, attempt); err != nil {
+		t.Fatal(err)
+	}
 	// It survives a reopen.
 	db.Close()
 	db, err = Open(ctx, path)
@@ -38,8 +42,14 @@ func TestStatusState(t *testing.T) {
 	}
 	defer db.Close()
 	s, err = db.GetStatusState(ctx)
-	if err != nil || s.TS != "2.2" || !s.BackupOK || !s.BackupAt.Equal(at.Add(time.Hour)) {
+	if err != nil || s.TS != "2.2" || !s.BackupOK || !s.BackupAt.Equal(at.Add(time.Hour)) || !s.PostAttemptAt.Equal(attempt) {
 		t.Fatalf("after reopen: %+v, %v", s, err)
+	}
+	if err := db.SetStatusPostAttempt(ctx, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if s, err = db.GetStatusState(ctx); err != nil || !s.PostAttemptAt.IsZero() || s.TS != "2.2" {
+		t.Fatalf("after clearing the attempt: %+v, %v", s, err)
 	}
 }
 

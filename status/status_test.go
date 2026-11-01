@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +38,8 @@ type fakeSlack struct {
 	mu       sync.Mutex
 	calls    []call
 	fail     map[string]string
+	hangPost bool // chat.postMessage never answers
+	noTS     bool // chat.postMessage answers ok:true with no ts
 	status   int
 	nextTS   int
 	channels []map[string]string
@@ -82,9 +85,25 @@ func (f *fakeSlack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "channels": channels,
 			"response_metadata": map[string]string{"next_cursor": next}})
 	case "chat.postMessage":
+		if c.body["parse"] != "none" {
+			f.t.Errorf("chat.postMessage parse = %q", c.body["parse"])
+		}
+		if f.hangPost {
+			f.mu.Unlock()
+			<-r.Context().Done()
+			f.mu.Lock()
+			return
+		}
+		if f.noTS {
+			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
 		f.nextTS++
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "ts": fmt.Sprintf("%d.000", f.nextTS)})
 	case "chat.update":
+		if c.body["parse"] != "none" {
+			f.t.Errorf("chat.update parse = %q", c.body["parse"])
+		}
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "ts": c.body["ts"]})
 	default:
 		f.t.Errorf("unexpected method %q", method)
@@ -198,7 +217,7 @@ func TestFirstRunPostsThenUpdatesSameMessage(t *testing.T) {
 }
 
 func TestMessageNotFoundReposts(t *testing.T) {
-	for _, code := range []string{"message_not_found", "channel_not_found"} {
+	for _, code := range []string{"message_not_found", "channel_not_found", "edit_window_closed", "cant_update_message"} {
 		t.Run(code, func(t *testing.T) {
 			h := newHarness(t)
 			ctx := context.Background()
@@ -207,6 +226,7 @@ func TestMessageNotFoundReposts(t *testing.T) {
 			h.fake.take()
 
 			h.fake.set(func() { h.fake.fail = map[string]string{"chat.update": code} })
+			h.now = h.now.Add(repostEvery)
 			u.SyncDone(ctx, nil)
 			got := methods(h.fake.take())
 			want := "chat.update,chat.postMessage"
@@ -446,4 +466,229 @@ func TestLastSyncSurvivesRestart(t *testing.T) {
 	}
 	New(h.cfg).SyncDone(ctx, errors.New("boom"))
 	wantAll(t, lastText(t, h.fake), "finbot: degraded", "*Last successful sync:* Sun Nov 1, 8:55 AM MST")
+}
+
+func count(calls []call, method string) int {
+	n := 0
+	for _, c := range calls {
+		if c.method == method {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRepostCap_PersistentNotFound(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	u := New(h.cfg)
+	u.SyncDone(ctx, nil)
+	h.fake.take()
+	h.fake.set(func() { h.fake.fail = map[string]string{"chat.update": "message_not_found"} })
+
+	// Only updates inside the window, and it keeps trying them.
+	for i := 0; i < 5; i++ {
+		h.now = h.now.Add(15 * time.Minute)
+		u.SyncDone(ctx, nil)
+	}
+	calls := h.fake.take()
+	if count(calls, "chat.postMessage") != 0 || count(calls, "chat.update") != 5 {
+		t.Fatalf("inside the window: %s", methods(calls))
+	}
+	if !strings.Contains(h.logs.String(), "status: new message capped") {
+		t.Errorf("cap not logged: %s", h.logs)
+	}
+
+	// A restart can't reset the cap.
+	u = New(h.cfg)
+	u.SyncDone(ctx, nil)
+	if calls := h.fake.take(); count(calls, "chat.postMessage") != 0 || count(calls, "chat.update") != 1 {
+		t.Fatalf("after restart: %s", methods(calls))
+	}
+
+	// One new message once the window has passed, then capped again.
+	h.now = h.now.Add(repostEvery)
+	for i := 0; i < 3; i++ {
+		u.SyncDone(ctx, nil)
+		h.now = h.now.Add(time.Minute)
+	}
+	if calls := h.fake.take(); count(calls, "chat.postMessage") != 1 {
+		t.Fatalf("after the window: %s", methods(calls))
+	}
+}
+
+// When the update starts working again while capped, nothing is lost.
+func TestRepostCap_UpdateRecovers(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	u := New(h.cfg)
+	u.SyncDone(ctx, nil)
+	h.fake.set(func() { h.fake.fail = map[string]string{"chat.update": "edit_window_closed"} })
+	u.SyncDone(ctx, nil)
+	h.fake.set(func() { h.fake.fail = nil })
+	h.fake.take()
+	u.SyncDone(ctx, nil)
+	if calls := h.fake.take(); methods(calls) != "chat.update" || calls[0].body["ts"] != "1.000" {
+		t.Errorf("calls: %+v", calls)
+	}
+}
+
+// A post whose outcome is unknown holds the cap: the message may exist.
+func TestRepostCap_UnknownOutcome(t *testing.T) {
+	cases := map[string]func(*harness){
+		"no ts":         func(h *harness) { h.fake.noTS = true },
+		"response lost": func(h *harness) { h.fake.hangPost = true },
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.cfg.RunTimeout = 200 * time.Millisecond
+			h.fake.set(func() { setup(h) })
+			u := New(h.cfg)
+			for i := 0; i < 3; i++ {
+				u.SyncDone(context.Background(), nil)
+				h.now = h.now.Add(15 * time.Minute)
+			}
+			if got := count(h.fake.take(), "chat.postMessage"); got != 1 {
+				t.Errorf("posts = %d, want 1", got)
+			}
+			// The cap holds across a restart too.
+			New(h.cfg).SyncDone(context.Background(), nil)
+			if got := count(h.fake.take(), "chat.postMessage"); got != 0 {
+				t.Errorf("posts after restart = %d, want 0", got)
+			}
+		})
+	}
+}
+
+// A post Slack provably refused doesn't use up the window.
+func TestRepostCap_RejectedPostRetries(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.fake.set(func() { h.fake.fail = map[string]string{"chat.postMessage": "not_in_channel"} })
+	u := New(h.cfg)
+	u.SyncDone(ctx, nil)
+	if s, _ := h.db.GetStatusState(ctx); !s.PostAttemptAt.IsZero() {
+		t.Errorf("attempt kept after a rejection: %v", s.PostAttemptAt)
+	}
+	h.fake.set(func() { h.fake.fail = nil })
+	h.fake.take()
+	u.SyncDone(ctx, nil)
+	if got := count(h.fake.take(), "chat.postMessage"); got != 1 {
+		t.Errorf("posts = %d, want 1", got)
+	}
+}
+
+func TestRepostCap_ChannelChangeKeepsEditingOldMessage(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if err := h.db.SetStatusMessage(ctx, "COLD", "9.000"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.SetStatusPostAttempt(ctx, h.now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	New(h.cfg).SyncDone(ctx, nil)
+	calls := h.fake.take()
+	if methods(calls) != "users.conversations,chat.update" || calls[1].body["channel"] != "COLD" || calls[1].body["ts"] != "9.000" {
+		t.Errorf("calls: %+v", calls)
+	}
+}
+
+type failingAttempts struct{ Store }
+
+func (failingAttempts) SetStatusPostAttempt(context.Context, time.Time) error {
+	return errors.New("disk full")
+}
+
+// With no way to record the attempt the cap can't be enforced, so no post.
+func TestRepostCap_FailsClosed(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.Store = failingAttempts{h.db}
+	New(h.cfg).SyncDone(context.Background(), nil)
+	if got := count(h.fake.take(), "chat.postMessage"); got != 0 {
+		t.Errorf("posts = %d, want 0", got)
+	}
+	if !strings.Contains(h.logs.String(), "disk full") {
+		t.Errorf("not logged: %s", h.logs)
+	}
+}
+
+// cancelAfter ends the run's context once a response has arrived, as SIGTERM
+// could between the post and storing its ts.
+type cancelAfter struct {
+	cancel context.CancelFunc
+}
+
+func (c cancelAfter) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil || !strings.HasSuffix(r.URL.Path, "/chat.postMessage") {
+		return resp, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	c.cancel()
+	return resp, nil
+}
+
+func TestStoresTSAfterCancel(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h.cfg.Client = &http.Client{Transport: cancelAfter{cancel}}
+	New(h.cfg).SyncDone(ctx, nil)
+	s, err := h.db.GetStatusState(context.Background())
+	if err != nil || s.TS != "1.000" {
+		t.Errorf("stored: %+v, %v (ctx err %v)", s, err, ctx.Err())
+	}
+}
+
+func TestRunTimeoutCapsARun(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.RunTimeout = 100 * time.Millisecond
+	h.fake.set(func() { h.fake.hangPost = true })
+	u := New(h.cfg)
+	for name, run := range map[string]func(){
+		"sync":   func() { u.SyncDone(context.Background(), nil) },
+		"backup": func() { h.now = h.now.Add(repostEvery); u.BackupDone(context.Background(), nil) },
+	} {
+		start := time.Now()
+		run()
+		if d := time.Since(start); d > 3*time.Second {
+			t.Errorf("%s: took %v against a hung Slack", name, d)
+		}
+	}
+	if !strings.Contains(h.logs.String(), "deadline exceeded") {
+		t.Errorf("timeout not logged: %s", h.logs)
+	}
+}
+
+func TestDefaultRunTimeout(t *testing.T) {
+	if got := New(Config{Token: "t"}).cfg.RunTimeout; got != 20*time.Second {
+		t.Errorf("RunTimeout = %v", got)
+	}
+}
+
+func TestOneLineScrubsMilliunits(t *testing.T) {
+	u := New(Config{Token: testToken})
+	for _, in := range []string{"amount=-45670", "amount: 45670", `"amount":-45,670`, "Amount -45670", "bad amount +1", "milliunit_amount=7"} {
+		if got := u.oneLine("x " + in + " y"); got != "x <amount> y" {
+			t.Errorf("oneLine(%q) = %q", in, got)
+		}
+	}
+	// Other numbers stay: they carry the meaning of an error.
+	if got := u.oneLine("status 502 after 3 tries"); got != "status 502 after 3 tries" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestEscapeBreaksMentions(t *testing.T) {
+	got := escape("Card @channel <!here> & @here")
+	if strings.Contains(got, "@channel") || strings.Contains(got, "@here") || strings.Contains(got, "<!") {
+		t.Errorf("escape = %q", got)
+	}
 }

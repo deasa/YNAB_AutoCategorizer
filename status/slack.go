@@ -19,6 +19,23 @@ type apiError struct{ code string }
 
 func (e *apiError) Error() string { return "slack: " + e.code }
 
+// statusError is a non-200 HTTP response.
+type statusError struct {
+	method string
+	code   int
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("slack: %s: status %d", e.method, e.code) }
+
+// notPosted reports whether err proves Slack did not create the message: it
+// answered ok:false or a 4xx. After a 5xx, a timeout or an unreadable response
+// the message may exist.
+func notPosted(err error) bool {
+	var ae *apiError
+	var se *statusError
+	return errors.As(err, &ae) || (errors.As(err, &se) && se.code >= 400 && se.code < 500)
+}
+
 // isCode reports whether err is a Slack API error with one of codes.
 func isCode(err error, codes ...string) bool {
 	var ae *apiError
@@ -55,7 +72,7 @@ func (s *slack) do(req *http.Request, method string, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("slack: %s: status %d", method, resp.StatusCode)
+		return &statusError{method: method, code: resp.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 	if err != nil {
@@ -117,10 +134,11 @@ func (s *slack) findPrivateChannel(ctx context.Context, name string) (string, er
 }
 
 // send calls chat.postMessage (or chat.update when ts is set) and returns the
-// message's ts.
+// message's ts. parse is explicit because the two methods have different
+// defaults: chat.update's is client, and omitting it there overwrites the value.
 func (s *slack) send(ctx context.Context, channel, ts, text string) (string, error) {
 	method := "chat.postMessage"
-	payload := map[string]string{"channel": channel, "text": text}
+	payload := map[string]string{"channel": channel, "text": text, "parse": "none"}
 	if ts != "" {
 		method = "chat.update"
 		payload["ts"] = ts
