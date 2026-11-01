@@ -68,7 +68,6 @@ and the build decisions Brendan made during M1 are recorded in architecture.md.
   - The README rewrite goes beyond the named sections: Configuration, Running, Project Structure and YNAB API Notes are dropped too, since CLAUDE.md covers them. The Configuration, Running and Project Structure sections were accurate but incomplete; YNAB API Notes still described the categorizer's API use.
   - CLAUDE.md Safety also names the new secrets (ping URL, Turso URL and token, Slack token), which the brief didn't list.
 - Follow-ups for backlog: none
-- Docs follow-ups (found here, outside this brief's list, so not changed):
-  - architecture.md §6 N3 still says the deploy script excludes env files "from rsync"; it now uses `git archive`.
-  - architecture.md §9 still lists "U10 healthchecks/Slack integration specifics" as open; the 2026-11-01 decision may close it.
-  - The README keeps "License: MIT", but the repo has no LICENSE file.
+- Docs follow-ups (found here, outside this brief's list):
+  - Applied on request: architecture.md §6 N3 now says the deploy ships `git archive HEAD`, not rsync; §9 marks U10 resolved by the 2026-11-01 Slack status message decision.
+  - Not changed, on request: the README keeps "License: MIT", but the repo has no LICENSE file.
