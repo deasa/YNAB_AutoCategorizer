@@ -15,7 +15,7 @@ Updated: 2026-11-04 by sup (third session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p21 | control (w1:t7) | reviewer (Antigravity, quota confirmed 2026-11-04); counter 0 | — | 2026-11-04 | |
+| agy | w1:p23 | control (w1:t7) | reviewer (Antigravity, quota confirmed 2026-11-04); counter 1 (M2-0) | — | 2026-11-04 | |
 | b-m2-0 | w1:p22 | build | builder | M2-0 | 2026-11-04 | worktree ../YNAB_AutoCategorizer.wt/M2-0 |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
