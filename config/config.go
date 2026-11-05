@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -17,6 +18,13 @@ import (
 )
 
 const defaultDBPath = "/data/finbot.db"
+
+// DefaultHTTPAddr is where /healthz listens unless HTTP_ADDR says otherwise.
+// It's on loopback because /healthz returns last_error and the tunnel forwards
+// every path on the MCP port to the public internet.
+const DefaultHTTPAddr = "127.0.0.1:8081"
+
+const defaultMCPListenAddr = ":8080"
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
@@ -34,7 +42,7 @@ type Config struct {
 	ImportInterval time.Duration
 	ImportEnabled  bool
 
-	// HTTPAddr is where `finbot serve` listens (/healthz).
+	// HTTPAddr is where `finbot serve` serves /healthz. MCP has its own listener.
 	HTTPAddr string
 	LogLevel slog.Level
 
@@ -48,6 +56,87 @@ type Config struct {
 	SlackStatusChannel string
 
 	Backup Backup
+	MCP    MCP
+}
+
+// MCP configures the MCP server in `finbot serve`. The client secret is a
+// secret and the emails are personal data: never log either.
+type MCP struct {
+	ListenAddr         string // MCP_LISTEN_ADDR
+	PublicURL          string // MCP_PUBLIC_URL, without a trailing slash
+	GoogleClientID     string // GOOGLE_OAUTH_CLIENT_ID
+	GoogleClientSecret string // GOOGLE_OAUTH_CLIENT_SECRET
+	AllowedEmails      string // MCP_ALLOWED_EMAILS, comma-separated
+}
+
+// Missing names the required variables that are empty. MCP runs only when
+// there are none.
+func (m MCP) Missing() []string {
+	var missing []string
+	for _, v := range []struct{ key, val string }{
+		{"MCP_PUBLIC_URL", m.PublicURL},
+		{"GOOGLE_OAUTH_CLIENT_ID", m.GoogleClientID},
+		{"GOOGLE_OAUTH_CLIENT_SECRET", m.GoogleClientSecret},
+		{"MCP_ALLOWED_EMAILS", strings.Trim(m.AllowedEmails, ", ")},
+	} {
+		if v.val == "" {
+			missing = append(missing, v.key)
+		}
+	}
+	return missing
+}
+
+// Emails returns the allowlisted addresses as configured, so they can be
+// scrubbed from logs.
+func (m MCP) Emails() []string {
+	var emails []string
+	for _, e := range strings.Split(m.AllowedEmails, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			emails = append(emails, e)
+		}
+	}
+	return emails
+}
+
+// mcpFrom reads the MCP settings. Empty required values are not an error here
+// (see Missing); a malformed public URL is.
+func mcpFrom(getenv func(string) string) (MCP, error) {
+	m := MCP{
+		ListenAddr:         getenv("MCP_LISTEN_ADDR"),
+		PublicURL:          strings.TrimRight(getenv("MCP_PUBLIC_URL"), "/"),
+		GoogleClientID:     getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleClientSecret: getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		AllowedEmails:      getenv("MCP_ALLOWED_EMAILS"),
+	}
+	if m.ListenAddr == "" {
+		m.ListenAddr = defaultMCPListenAddr
+	}
+	if m.PublicURL != "" {
+		u, err := url.Parse(m.PublicURL)
+		if err != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil ||
+			(u.Scheme != "https" && !(u.Scheme == "http" && isLoopback(u.Hostname()))) {
+			return MCP{}, fmt.Errorf("config: MCP_PUBLIC_URL must be a bare https:// origin (http:// only on loopback)")
+		}
+	}
+	return m, nil
+}
+
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// LoadDBPath returns FINBOT_DB_PATH alone, after loading .env if one exists.
+// `finbot revoke` uses it, so it needs no YNAB, Google or Slack settings.
+func LoadDBPath() string {
+	_ = godotenv.Load()
+	if p := os.Getenv("FINBOT_DB_PATH"); p != "" {
+		return p
+	}
+	return defaultDBPath
 }
 
 // Backup configures the nightly off-site backup. The token and URL are
@@ -155,7 +244,7 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		YNABAccessToken: getenv("YNAB_ACCESS_TOKEN"),
 		YNABBudgetID:    getenv("YNAB_BUDGET_ID"),
 		DBPath:          get("FINBOT_DB_PATH", defaultDBPath),
-		HTTPAddr:        get("HTTP_ADDR", ":8080"),
+		HTTPAddr:        get("HTTP_ADDR", DefaultHTTPAddr),
 
 		HealthcheckPingURL: getenv("HEALTHCHECK_PING_URL"),
 
@@ -170,6 +259,9 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 
 	var err error
 	if cfg.Backup, err = BackupFrom(getenv); err != nil {
+		return nil, err
+	}
+	if cfg.MCP, err = mcpFrom(getenv); err != nil {
 		return nil, err
 	}
 	if cfg.SyncInterval, err = duration(get, "SYNC_INTERVAL", "15m"); err != nil {

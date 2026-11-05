@@ -33,10 +33,11 @@ func TestLoadFrom_Defaults(t *testing.T) {
 		SyncInterval:       15 * time.Minute,
 		ImportInterval:     6 * time.Hour,
 		ImportEnabled:      false,
-		HTTPAddr:           ":8080",
+		HTTPAddr:           "127.0.0.1:8081",
 		LogLevel:           slog.LevelInfo,
 		SlackStatusChannel: "finbot-finances",
 		Backup:             Backup{AtHour: 3, AtMinute: 17, Keep: 14, DBPath: "/data/finbot.db"},
+		MCP:                MCP{ListenAddr: ":8080"},
 	}
 	if *cfg != want {
 		t.Errorf("got %+v\nwant %+v", *cfg, want)
@@ -191,5 +192,71 @@ func TestSlackSettings(t *testing.T) {
 	cfg, err = LoadFrom(env(map[string]string{"SLACK_BOT_TOKEN": "x", "SLACK_STATUS_CHANNEL": "#other"}))
 	if err != nil || cfg.SlackBotToken != "x" || cfg.SlackStatusChannel != "other" {
 		t.Errorf("set: %+v, %v", cfg, err)
+	}
+}
+
+func TestMCPSettings(t *testing.T) {
+	base := map[string]string{"YNAB_ACCESS_TOKEN": "t", "YNAB_BUDGET_ID": "p"}
+	load := func(extra map[string]string) (*Config, error) {
+		return LoadFrom(func(k string) string {
+			if v, ok := extra[k]; ok {
+				return v
+			}
+			return base[k]
+		})
+	}
+	full := map[string]string{
+		"MCP_PUBLIC_URL":             "https://finance.example.com/",
+		"GOOGLE_OAUTH_CLIENT_ID":     "id",
+		"GOOGLE_OAUTH_CLIENT_SECRET": "shh",
+		"MCP_ALLOWED_EMAILS":         "a@example.com, b@example.com",
+	}
+	cfg, err := load(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.MCP.Missing(); len(got) != 0 {
+		t.Errorf("Missing = %v", got)
+	}
+	if cfg.MCP.PublicURL != "https://finance.example.com" {
+		t.Errorf("PublicURL = %q", cfg.MCP.PublicURL)
+	}
+	if got := cfg.MCP.Emails(); len(got) != 2 || got[1] != "b@example.com" {
+		t.Errorf("Emails = %q", got)
+	}
+
+	// Each required value alone disables MCP, and a list of only separators is empty.
+	for key := range full {
+		m := map[string]string{}
+		for k, v := range full {
+			m[k] = v
+		}
+		m[key] = ""
+		cfg, err := load(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.MCP.Missing(); len(got) != 1 || got[0] != key {
+			t.Errorf("without %s: Missing = %v", key, got)
+		}
+	}
+	cfg, _ = load(map[string]string{"MCP_ALLOWED_EMAILS": " , "})
+	if got := cfg.MCP.Missing(); len(got) != 4 {
+		t.Errorf("separators only: Missing = %v", got)
+	}
+
+	const secretURL = "ftp://s3cret@example.com"
+	for _, bad := range []string{secretURL, "http://finance.example.com", "https://example.com/x", "example.com", "https://example.com?a=1"} {
+		_, err := load(map[string]string{"MCP_PUBLIC_URL": bad})
+		if err == nil || !strings.Contains(err.Error(), "MCP_PUBLIC_URL") {
+			t.Errorf("MCP_PUBLIC_URL=%q: err = %v", bad, err)
+		} else if strings.Contains(err.Error(), "s3cret") {
+			t.Errorf("error echoes the value: %v", err)
+		}
+	}
+	for _, ok := range []string{"http://127.0.0.1:8080", "http://localhost:8080", "http://[::1]:8080"} {
+		if _, err := load(map[string]string{"MCP_PUBLIC_URL": ok}); err != nil {
+			t.Errorf("MCP_PUBLIC_URL=%q: %v", ok, err)
+		}
 	}
 }

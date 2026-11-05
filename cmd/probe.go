@@ -6,17 +6,20 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/deasa/YNAB_AutoCategorizer/config"
 )
 
 // probeTimeout bounds `finbot health`.
 const probeTimeout = 5 * time.Second
 
-// probe GETs /healthz on the local server at addr (HTTP_ADDR, default :8080)
+// probe GETs /healthz on the local server at addr (HTTP_ADDR, default
+// config.DefaultHTTPAddr)
 // and returns 0 on 200, else 1. It is the container healthcheck, so the image
 // needs no curl.
 func probe(addr string, stderr io.Writer) int {
 	if addr == "" {
-		addr = ":8080"
+		addr = config.DefaultHTTPAddr
 	}
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
