@@ -16,7 +16,7 @@ Updated: 2026-11-04 by sup (third session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p21 | control (w1:t7) | reviewer (Antigravity, quota confirmed 2026-11-04); counter 0 | — | 2026-11-04 | |
-| rev | w1:p10 | control (w1:t7) | idle fallback reviewer, used only if agy runs out of quota | — | 2026-11-01 | counter 1; its old worktree is gone, so give any reuse an explicit path |
+| b-m2-0 | w1:p22 | build | builder | M2-0 | 2026-11-04 | worktree ../YNAB_AutoCategorizer.wt/M2-0 |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
@@ -84,7 +84,7 @@ Updated: 2026-11-04 by sup (third session)
 - 2026-10-29: finbot syncs the **"May 2025 (Archived on 2026-03-14)"** plan (Brendan, BA-12). He has no active categorizing plan (categorizing lapsed ~a year); that plan still receives linked-account imports (latest seen 2026-10-24), so it is the live mirror target until the M4 fresh start. `.env` `YNAB_BUDGET_ID` already points to it.
 - 2026-10-29: M1-5a deploys without the healthchecks ping while BA-7 is open (`HEALTHCHECK_PING_URL` optional; sup offered, no objection needed since it is additive). Add the URL when BA-7 lands.
 - 2026-11-01 (Brendan): BA-7 replaced by a Slack status message in `#finbot-finances`, edited after every sync; his own Slack automation alerts on staleness. BA-8: Turso holds only age-encrypted snapshot blobs (sup's recommendation; never plaintext or a live replica). The arch §1 "no Turso" (as the primary store) still holds.
-- 2026-11-04 (sup technical calls, flagged to Brendan): `/healthz` moves off the public MCP port because the tunnel exposes every path and it returns `last_error`. `get_category_decisions`, `get_tithing_status`, `get_fun_money` deferred to M3/M4 because their data doesn't exist yet. Reviews back on agy; `rev` kept as fallback.
+- 2026-11-04 (sup technical calls, flagged to Brendan): `/healthz` moves off the public MCP port because the tunnel exposes every path and it returns `last_error`. `get_category_decisions`, `get_tithing_status`, `get_fun_money` deferred to M3/M4 because their data doesn't exist yet. Reviews back on agy. The `rev` pane vanished on 2026-11-04; if agy runs out of quota, start a fresh Claude reviewer pane.
 
 ## Milestone log
 - **M1 Read-only mirror on hoid: complete 2026-11-01** (all tasks merged + deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M1-acceptance.md`, scripts `tests/acceptance/M1/`). main = 3636b6f; hoid runs 91df942 (code identical; later commits are docs).
