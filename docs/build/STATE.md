@@ -4,7 +4,7 @@ Updated: 2026-11-04 by sup (third session)
 
 ## Now
 - Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
-- Next actions: M2-0 merged + deployed; M2-1a in review; M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
+- Next actions: M2-0 merged + deployed; M2-0 and M2-1a merged; M2-1b builder running; M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -18,15 +18,16 @@ Updated: 2026-11-04 by sup (third session)
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p23 | control (w1:t7) | reviewer (Antigravity, quota confirmed 2026-11-04); counter 2 (M2-0, M2-1a); replace after this | — | 2026-11-04 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
-| b-m2-1a | w1:p24 | build | builder | M2-1a | 2026-11-04 | worktree ../YNAB_AutoCategorizer.wt/M2-1a |
+| b-m2-1b | w1:p25 | build | builder | M2-1b | 2026-11-04 | worktree ../YNAB_AutoCategorizer.wt/M2-1b |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M2-0 | merged + deployed | — | — | agy PASS (no findings) | merged + deployed 2026-11-04; migration 0004 lets a failed row keep its verdict. Follow-up: ScanDiscretionary still omits a failed plan from its returned list even when the stored verdict is true, so `sync --archived` skips it that run. Docs follow-ups in tasks/M2-0.md Result (CLAUDE.md store role, architecture.md:48) |
-| M2-1a | review | see Panes | t/M2-1a | agy pending | built 2026-11-04 |
-| M2-1b..M2-5 | todo | — | — | — | briefs committed 2026-11-04; see BACKLOG |
+| M2-1b | active | see Panes | t/M2-1b | — | started 2026-11-04 |
+| M2-1a | merged | — | — | agy PASS (no findings) | merged 2026-11-04, not deployed. fosite on SQLite. Lows: a mid-sign-in client can be evicted in a flood at the cap; a revoked user's unexpired tokens count as live for eviction. Docs follow-ups in tasks/M2-1a.md Result, including `finbot revoke --all` after a restore |
+| M2-2..M2-5 | todo | — | — | — | briefs committed 2026-11-04; see BACKLOG |
 | M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |
 | M0-2a | merged | — | — | agy PASS r3 (r1 FIX, r2 FIX; 1 low) | merged 2026-10-29; findings docs/build/spikes/mcp.md, reviews docs/build/spikes/mcp-review.md. go-sdk v1.8.0 + fosite v0.49.0 AS (DCR, PKCE S256, opaque HMAC tokens, refresh rotation, RFC 7009) + Google sign-in via go-oidc, allowlist on verified email, CSRF consent page, per-user generation revocation; spike module go 1.26. Brendan live sign-in OK twice (incl. consent page). **M0-2b MUST**: proxy to the container on the Docker network with `MCP_LISTEN_ADDR=:8080` and no host port, never via host 127.0.0.1 (go-sdk loopback DNS-rebinding guard → 403 on `finance.<domain>` Host); add `https://finance.<domain>/oauth/google/callback` to the Google client; persist the fosite HMAC secret, or accept re-login per deploy. Other follow-ups in tasks/M0-2a.md Result |
