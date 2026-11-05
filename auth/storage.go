@@ -420,6 +420,72 @@ func (s *Storage) RotateRefreshToken(ctx context.Context, requestID, signature s
 	})
 }
 
+// ActiveTokens counts the user's tokens and unredeemed codes that would work right
+// now: unexpired, not rotated or used, and from the user's current generation.
+// AllUsers counts everyone's. It only reports; revoking never depends on it.
+func (s *Storage) ActiveTokens(ctx context.Context, user string) (int, error) {
+	now := formatTime(s.now())
+	gens := map[string]int{}
+	total := 0
+	for _, from := range []string{
+		tableAccess + ` WHERE expires_at > ?`,
+		tableRefresh + ` WHERE expires_at > ? AND active = 1`,
+		tableCodes + ` WHERE expires_at > ? AND active = 1`,
+	} {
+		n, err := s.countActive(ctx, from, now, user, gens)
+		if err != nil {
+			return 0, fmt.Errorf("auth: count tokens: %w", err)
+		}
+		total += n
+	}
+	return total, nil
+}
+
+// countActive counts one table's rows for user at their current generation. gens
+// caches generations across tables.
+func (s *Storage) countActive(ctx context.Context, from, now, user string, gens map[string]int) (int, error) {
+	rows, err := s.reader(ctx).QueryContext(ctx,
+		`SELECT json_extract(request, '$.session.subject'), json_extract(request, '$.session.extra.gen') FROM `+from, now)
+	if err != nil {
+		return 0, err
+	}
+	type session struct {
+		subject string
+		gen     int
+	}
+	var sessions []session
+	for rows.Next() {
+		var subject sql.NullString
+		var gen sql.NullInt64
+		if err := rows.Scan(&subject, &gen); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if subject.String != "" && gen.Valid && (user == AllUsers || subject.String == user) {
+			sessions = append(sessions, session{subject.String, int(gen.Int64)})
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, sess := range sessions {
+		cur, seen := gens[sess.subject]
+		if !seen {
+			if cur, err = s.CurrentGeneration(ctx, sess.subject); err != nil {
+				return 0, err
+			}
+			gens[sess.subject] = cur
+		}
+		if sess.gen == cur {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // Prune deletes rows past their expiry and returns how many. A used code or a
 // rotated refresh token stays until then, for replay detection. Clients stay
 // until they're evicted at the cap (RegisterClient).

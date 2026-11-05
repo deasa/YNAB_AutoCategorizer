@@ -23,7 +23,8 @@ func newRealTicker(d time.Duration) Ticker { return realTicker{time.NewTicker(d)
 // scheduler's one goroutine, so no two ticks ever overlap. A job's own tick that
 // comes due while it runs is dropped, not queued; another job's tick that comes
 // due meanwhile runs right after. The backup job, when set, runs once per
-// BackupDelay.
+// BackupDelay. The prune job, when set, runs at startup and then every
+// PruneEvery; its outcome never touches Health.
 type Scheduler struct {
 	Sync        func(ctx context.Context) error
 	SyncEvery   time.Duration
@@ -31,6 +32,8 @@ type Scheduler struct {
 	ImportEvery time.Duration
 	Backup      func(ctx context.Context) error // nil: backups disabled
 	BackupDelay func() time.Duration            // time until the next backup; must be positive
+	Prune       func(ctx context.Context) error // nil: MCP disabled, nothing to prune
+	PruneEvery  time.Duration
 
 	// Health, if set, records each sync's outcome.
 	Health *Health
@@ -69,6 +72,15 @@ func (s *Scheduler) Run(ctx context.Context) {
 		defer func() { backupT.Stop() }()
 	}
 
+	var pruneC <-chan time.Time // nil (never fires) when there's nothing to prune
+	if s.Prune != nil {
+		pruneT := newTicker(s.PruneEvery)
+		defer pruneT.Stop()
+		pruneC = pruneT.C()
+		_ = s.Prune(ctx) // the job logs its own outcome
+		drain(pruneC)
+	}
+
 	s.runSync(ctx)
 	drain(syncT.C())
 	for {
@@ -84,6 +96,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 		case <-backupC:
 			_ = s.Backup(ctx) // the job logs its own outcome
 			armBackup()
+		case <-pruneC:
+			_ = s.Prune(ctx) // the job logs its own outcome
+			drain(pruneC)
 		}
 	}
 }

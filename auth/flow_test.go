@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ory/fosite"
 )
@@ -404,5 +405,74 @@ func TestNoSecretsInLogsErrorsOrDatabase(t *testing.T) {
 	}
 	if !bytes.Contains(dbBytes, []byte("oauth_access_tokens")) {
 		t.Error("database scan read nothing useful")
+	}
+}
+
+func TestActiveTokens(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	count := func(user string) int {
+		t.Helper()
+		n, err := e.s.ActiveTokens(ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if got := count("alice") + count(AllUsers); got != 0 {
+		t.Errorf("empty database: %d", got)
+	}
+	e.login("alice")
+	e.login("bob")
+	alice := count("alice")
+	if alice < 2 {
+		t.Errorf("alice's access and refresh tokens: %d", alice)
+	}
+	if got := count("nobody"); got != 0 {
+		t.Errorf("a user with no tokens: %d", got)
+	}
+	if got := count(AllUsers); got != alice+count("bob") {
+		t.Errorf("all users: %d", got)
+	}
+
+	// A rotated refresh token stays in its table, inactive, and doesn't count.
+	rotating := e.login("dave")
+	before := count("dave")
+	if _, _, err := e.refreshWith(rotating.clientID, rotating.refresh); err != nil {
+		t.Fatal(err)
+	}
+	if got := count("dave"); got != before {
+		t.Errorf("after rotation: %d, want %d", got, before)
+	}
+
+	// Past their expiry they don't count, though Prune hasn't removed them.
+	realNow := e.s.now
+	e.s.now = func() time.Time { return realNow().Add(365 * 24 * time.Hour) }
+	if got := count(AllUsers); got != 0 {
+		t.Errorf("expired tokens counted: %d", got)
+	}
+	e.s.now = realNow
+
+	// Revoked tokens stay in their tables but no longer count, for that user only.
+	if _, err := e.s.BumpGeneration(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if got := count("alice"); got != 0 {
+		t.Errorf("revoked tokens counted: %d", got)
+	}
+	if got := count("bob"); got == 0 {
+		t.Error("revoking alice emptied bob")
+	}
+	if _, err := e.s.BumpGeneration(ctx, AllUsers); err != nil {
+		t.Fatal(err)
+	}
+	if got := count(AllUsers); got != 0 {
+		t.Errorf("after revoke --all: %d", got)
+	}
+
+	// An unredeemed code counts: it can still become tokens.
+	e.authorize(e.register(), "carol", nil)
+	if got := count("carol"); got != 1 {
+		t.Errorf("an unredeemed code: %d", got)
 	}
 }

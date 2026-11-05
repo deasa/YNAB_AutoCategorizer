@@ -1,6 +1,6 @@
 // Package cmd implements the finbot subcommands: `serve` (the daemon),
-// `sync` (one-shot), `health` (the container healthcheck), and `backup` and
-// `restore` (off-site copies of the database). Nothing it logs or prints carries a plan, account or
+// `sync` (one-shot), `health` (the container healthcheck), `backup` and
+// `restore` (off-site copies of the database), and `revoke` (MCP sign-out). Nothing it logs or prints carries a plan, account or
 // transaction id, or the token.
 package cmd
 
@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -37,6 +38,8 @@ commands:
   backup --list     list stored backups (id, time, size)
   restore --key <path> [--id <id>] --out <path>
                     download and decrypt a backup (newest by default) to a new file, then verify it
+  revoke <email | u_hash | --all>
+                    sign a user (or everyone) out of MCP at once, with no restart
 `
 
 // Main runs finbot with args (without the program name) and returns the
@@ -71,6 +74,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return backupCmd(args[1:], stdout, stderr)
 	case "restore":
 		return restoreCmd(args[1:], stdout, stderr)
+	case "revoke":
+		return revokeCmd(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "finbot: unknown command %q\n\n%s", args[0], usage)
 		return 2
@@ -124,7 +129,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 	gov := ynab.NewGovernor(ynab.DefaultHourlyLimit, ynab.DefaultWriteReserve, nil)
 	ynabLog := slog.NewLogLogger(logger.Handler(), slog.LevelInfo)
 	clients := func(planID string) finsync.PlanAPI {
-		return ynab.NewClient(cfg.YNABAccessToken, planID, ynabLog, ynab.WithGovernor(gov))
+		return newPlanClient(cfg.YNABAccessToken, planID, ynabLog, gov)
 	}
 	a := &app{
 		cfg:     cfg,
@@ -140,6 +145,12 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 		return 1
 	}
 	return 0
+}
+
+// newPlanClient builds a plan's YNAB client (tests replace it, so a serve test
+// never reaches YNAB).
+var newPlanClient = func(token, planID string, l *log.Logger, gov *ynab.Governor) finsync.PlanAPI {
+	return ynab.NewClient(token, planID, l, ynab.WithGovernor(gov))
 }
 
 // errSkipped marks a tick the rate budget skipped: not a failure, but not a
@@ -274,6 +285,7 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 	}
 	a.addBackup(sched)
 	a.addStatus(sched)
+	a.addPrune(sched)
 	return sched, health
 }
 
@@ -288,11 +300,25 @@ func (a *app) serve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	srvErr := make(chan error, 1)
-	go func() { srvErr <- srv.Serve(ln) }()
-	a.log.Info("serving", "addr", ln.Addr().String(), "sync_interval", cfg.SyncInterval.String())
+	servers := []*http.Server{srv}
 
 	schedCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Bind MCP before any job runs, so a port conflict fails serve at once.
+	mcpSrv, mcpLn, mcpDone, err := a.startMCP(schedCtx)
+	if err != nil {
+		ln.Close()
+		return err
+	}
+	srvErr := make(chan error, 2)
+	go func() { srvErr <- srv.Serve(ln) }()
+	if mcpSrv != nil {
+		servers = append(servers, mcpSrv)
+		go func() { srvErr <- mcpSrv.Serve(mcpLn) }()
+	}
+	a.log.Info("serving", "addr", ln.Addr().String(), "sync_interval", cfg.SyncInterval.String())
+
 	done := make(chan struct{})
 	go func() { sched.Run(schedCtx); close(done) }()
 
@@ -304,17 +330,34 @@ func (a *app) serve(ctx context.Context) error {
 	}
 	cancel()
 	<-done
+	<-mcpDone
 
-	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutCancel()
-	if e := srv.Shutdown(shutCtx); e != nil && err == nil {
-		err = e
-	}
+	shutdown(servers)
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	a.log.Info("stopped")
 	return nil
+}
+
+// shutdownTimeout bounds the graceful part of stopping the listeners.
+var shutdownTimeout = 5 * time.Second
+
+// shutdown drains the servers, then closes whatever is left. An open MCP stream
+// never finishes by itself, so reaching the close is normal, not a failure.
+// Every handler's ctx has ended by the time this returns, and the DB closes after.
+func shutdown(servers []*http.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, s := range servers {
+		wg.Go(func() {
+			if s.Shutdown(ctx) != nil {
+				s.Close()
+			}
+		})
+	}
+	wg.Wait()
 }
 
 // redact scrubs ids, the tokens and the secret URLs from s before it is logged
@@ -325,10 +368,11 @@ func (a *app) redact(s string) string {
 
 // secrets lists every configured value that must not reach a log.
 func secrets(cfg *config.Config) []string {
-	return []string{
+	return append([]string{
 		cfg.YNABAccessToken,
 		cfg.HealthcheckPingURL, strings.TrimRight(cfg.HealthcheckPingURL, "/"),
 		cfg.SlackBotToken,
 		cfg.Backup.TursoToken, cfg.Backup.TursoURL,
-	}
+		cfg.MCP.GoogleClientSecret,
+	}, cfg.MCP.Emails()...)
 }
