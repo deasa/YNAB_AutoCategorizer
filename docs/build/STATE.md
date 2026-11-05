@@ -4,7 +4,7 @@ Updated: 2026-11-04 by sup (third session)
 
 ## Now
 - Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
-- Next actions: M2-0 builder running; agy attacking the M2 breakdown. Then M2-1a, M2-1b, M2-2, M2-3 + M2-4, M2-5, docs, acceptance (BACKLOG). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
+- Next actions: M2-0 in review; M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -23,7 +23,7 @@ Updated: 2026-11-04 by sup (third session)
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M2-0 | active | see Panes | t/M2-0 | — | carried M1 lows; CLAUDE.md HEALTHCHECK_PING_URL low dropped (already done, line 89) |
+| M2-0 | review | see Panes | t/M2-0 | agy pending | carried M1 lows; added migration 0004 so a failed row can keep its verdict; docs follow-ups in Result; CLAUDE.md HEALTHCHECK_PING_URL low dropped (already done, line 89) |
 | M2-1a..M2-5 | todo | — | — | — | briefs committed 2026-11-04; see BACKLOG |
 | M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |

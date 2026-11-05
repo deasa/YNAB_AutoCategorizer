@@ -55,12 +55,12 @@ in `tasks/`. Deferred because their data doesn't exist yet: `get_category_decisi
 | ID | Title | Depends | Touches | Notes |
 |---|---|---|---|---|
 | M2-0 | Carried M1 cleanup | none | cmd/ (comment), store/, sync/ | plan_scan overwrite, ScanError.Unwrap, DB files 0600. Deploy: yes. |
-| M2-1a | Persistent OAuth storage | M2-0 | auth/, store/ | fosite on SQLite, token_generations, persisted HMAC secret. |
+| M2-1a | Persistent OAuth storage | M2-0 | auth/, store/ | fosite on SQLite, token_generations, persisted HMAC secret, DCR eviction. |
 | M2-1b | Authorization server port | M2-1a | auth/ | Spike AS, Google sign-in, consent, allowlist. |
 | M2-2 | MCP server in serve | M2-1b | mcp/, cmd/, config/ | data_freshness, `finbot revoke`, `/healthz` kept off the public port. |
-| M2-3 | Transaction read tools | M2-2 | mcp/, store/ | query_transactions, compare_spending. Can run beside M2-4 (own files). |
-| M2-4 | Snapshot and tax-bucket tags | M2-2 | mcp/, store/, cmd/ | get_financial_snapshot, get_goals, get_income_events, tag-account. |
-| M2-5 | Tunnel cutover from finbot-spike | M2-3, M2-4 | deploy/, Dockerfile | finance.hoidlabs.site stays up; rollback script. Deploy: yes. |
+| M2-3 | Transaction read tools | M2-2 | mcp/, store/ | query_transactions, compare_spending. |
+| M2-4 | Snapshot and tax-bucket tags | M2-3 | mcp/, store/, cmd/ | get_financial_snapshot, get_goals, get_income_events, tag-account. |
+| M2-5 | Tunnel cutover from finbot-spike | M2-4 | deploy/, Dockerfile | finance.hoidlabs.site stays up; rollback script. Deploy: yes. |
 | M2-docs | Docs follow-ups | M2-5 | CLAUDE.md, docs/plan | Gate docs task. |
 | M2-acceptance | Independent test | M2-docs | tests/acceptance/M2/ | Black-box, by agy. Includes the wife's real sign-in (BA-16). |
 
