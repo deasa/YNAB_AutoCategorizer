@@ -4,7 +4,7 @@ Updated: 2026-11-04 by sup (third session)
 
 ## Now
 - Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
-- Next actions: M2-0 merged + deployed; M2-0, M2-1a, M2-1b merged; M2-2 builder running; M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
+- Next actions: M2-0 merged + deployed; M2-0, M2-1a, M2-1b merged; M2-2 in review; M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -16,7 +16,7 @@ Updated: 2026-11-04 by sup (third session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p26 | control (w1:t7) | reviewer (Antigravity); counter 1 (M2-1b) | — | 2026-11-05 | |
+| agy | w1:p26 | control (w1:t7) | reviewer (Antigravity); counter 2 (M2-1b, M2-2); replace after this | — | 2026-11-05 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | b-m2-2 | w1:p27 | build | builder | M2-2 | 2026-11-05 | worktree ../YNAB_AutoCategorizer.wt/M2-2 |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
@@ -25,7 +25,7 @@ Updated: 2026-11-04 by sup (third session)
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M2-0 | merged + deployed | — | — | agy PASS (no findings) | merged + deployed 2026-11-04; migration 0004 lets a failed row keep its verdict. Follow-up: ScanDiscretionary still omits a failed plan from its returned list even when the stored verdict is true, so `sync --archived` skips it that run. Docs follow-ups in tasks/M2-0.md Result (CLAUDE.md store role, architecture.md:48) |
-| M2-2 | active | see Panes | t/M2-2 | — | started 2026-11-05 |
+| M2-2 | review | see Panes | t/M2-2 | agy pending | built 2026-11-05 |
 | M2-1b | merged | — | — | agy PASS (no findings) | merged 2026-11-05, not deployed. Real Google sign-in first exercised at M2-5. Display name comes from Google's claim until a `users` table exists. Docs follow-ups in tasks/M2-1b.md Result |
 | M2-1a | merged | — | — | agy PASS (no findings) | merged 2026-11-04, not deployed. fosite on SQLite. Lows: a mid-sign-in client can be evicted in a flood at the cap; a revoked user's unexpired tokens count as live for eviction. Docs follow-ups in tasks/M2-1a.md Result, including `finbot revoke --all` after a restore |
 | M2-3..M2-5 | todo | — | — | — | briefs committed 2026-11-04; see BACKLOG |
