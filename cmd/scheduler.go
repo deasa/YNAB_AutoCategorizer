@@ -20,10 +20,10 @@ func newRealTicker(d time.Duration) Ticker { return realTicker{time.NewTicker(d)
 
 // Scheduler runs the sync job immediately and then every SyncEvery, and the
 // import job every ImportEvery when Import is set. All jobs run on the
-// scheduler's one goroutine, so no two ticks ever overlap; a tick that comes
-// due while a job runs is dropped, not queued. The backup job, when set, runs
-// once per BackupDelay; if it comes due during another job it runs right after,
-// since dropping it would lose a night.
+// scheduler's one goroutine, so no two ticks ever overlap. A job's own tick that
+// comes due while it runs is dropped, not queued; another job's tick that comes
+// due meanwhile runs right after. The backup job, when set, runs once per
+// BackupDelay.
 type Scheduler struct {
 	Sync        func(ctx context.Context) error
 	SyncEvery   time.Duration
