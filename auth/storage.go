@@ -1,6 +1,7 @@
-// Package auth holds finbot's OAuth state for the MCP authorization server: a
-// SQLite implementation of the fosite storage interfaces, DCR clients, per-user
-// token generations and the persisted HMAC secret.
+// Package auth is finbot's OAuth 2.1 authorization server for MCP. Server is the
+// http.Handler for its endpoints and the token verifier for the MCP endpoint.
+// Storage is its state: a SQLite implementation of the fosite storage interfaces,
+// DCR clients, per-user token generations and the persisted HMAC secret.
 //
 // Sessions must be *fosite.DefaultSession; anything else is refused when it is
 // stored. Get methods ignore the session argument (fosite passes nil from
