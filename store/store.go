@@ -93,6 +93,11 @@ func (d *DB) Close() error {
 	return rerr
 }
 
+// Writer returns the single-connection write pool, for packages that keep their
+// own tables. A multi-statement write must run on one pinned connection between
+// BEGIN IMMEDIATE and COMMIT, as writeTx does.
+func (d *DB) Writer() *sql.DB { return d.w }
+
 // Reader returns the read-only pool, for queries by other packages.
 func (d *DB) Reader() *sql.DB { return d.r }
 

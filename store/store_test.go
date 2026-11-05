@@ -75,8 +75,8 @@ func TestOpenFailsFastWithoutPragmas(t *testing.T) {
 
 func TestMigrationsIdempotent(t *testing.T) {
 	db, path := openTest(t)
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 4 {
-		t.Fatalf("schema_migrations rows = %d, want 4", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 5 {
+		t.Fatalf("schema_migrations rows = %d, want 5", n)
 	}
 	db.Close()
 
@@ -88,8 +88,8 @@ func TestMigrationsIdempotent(t *testing.T) {
 	if err := migrate(context.Background(), db2.w); err != nil {
 		t.Fatalf("re-migrate: %v", err)
 	}
-	if n := count(t, db2, `SELECT count(*) FROM schema_migrations`); n != 4 {
-		t.Fatalf("schema_migrations rows after reopen = %d, want 4", n)
+	if n := count(t, db2, `SELECT count(*) FROM schema_migrations`); n != 5 {
+		t.Fatalf("schema_migrations rows after reopen = %d, want 5", n)
 	}
 }
 
@@ -119,8 +119,8 @@ func TestMigration0002OnExisting0001DB(t *testing.T) {
 		t.Fatalf("Open on a 0001 DB: %v", err)
 	}
 	defer db.Close()
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 4 {
-		t.Errorf("schema_migrations rows = %d, want 4", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 5 {
+		t.Errorf("schema_migrations rows = %d, want 5", n)
 	}
 	if st, ok, err := db.GetSyncState(ctx, "p"); err != nil || !ok || st.ServerKnowledge != 7 {
 		t.Errorf("pre-existing sync_state lost: %+v %v %v", st, ok, err)
@@ -144,8 +144,8 @@ func TestMigrationsOrderedAndAtomic(t *testing.T) {
 	if err := migrateFS(ctx, db.w, fsys); err == nil || !strings.Contains(err.Error(), "0101_c.sql") {
 		t.Fatalf("migrateFS = %v, want failure in 0101", err)
 	}
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 5 {
-		t.Errorf("schema_migrations rows = %d, want 5", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 6 {
+		t.Errorf("schema_migrations rows = %d, want 6", n)
 	}
 	if n := count(t, db, `SELECT count(*) FROM sqlite_master WHERE name = 'c'`); n != 0 {
 		t.Error("failed migration 0101 left table c behind")
