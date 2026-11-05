@@ -416,3 +416,57 @@ func TestNextDaily(t *testing.T) {
 		}
 	}
 }
+
+func TestScheduler_PruneRunsAtStartupAndOnItsTick(t *testing.T) {
+	const pruneEvery = 24 * time.Hour
+	var inflight, maxSeen atomic.Int32
+	sj, pj := newJob(&inflight, &maxSeen), newJob(&inflight, &maxSeen)
+	tk := &tickers{}
+	stop := start(t, &Scheduler{Sync: sj.run, SyncEvery: syncEvery, Prune: pj.run, PruneEvery: pruneEvery, NewTicker: tk.new})
+	defer stop()
+	expectStart(t, pj, "pj")
+	expectStart(t, sj, "sj")
+	tk.get(pruneEvery).tick()
+	expectStart(t, pj, "pj")
+	if pj.calls.Load() != 2 || sj.calls.Load() != 1 || maxSeen.Load() != 1 {
+		t.Errorf("prune %d, sync %d, overlap %d", pj.calls.Load(), sj.calls.Load(), maxSeen.Load())
+	}
+}
+
+func TestScheduler_PruneErrorLeavesSyncHealthy(t *testing.T) {
+	const pruneEvery = 24 * time.Hour
+	var inflight, maxSeen atomic.Int32
+	sj, pj := newJob(&inflight, &maxSeen), newJob(&inflight, &maxSeen)
+	pj.err = errors.New("prune boom")
+	h := &Health{StaleAfter: time.Hour}
+	tk := &tickers{}
+	stop := start(t, &Scheduler{Sync: sj.run, SyncEvery: syncEvery, Prune: pj.run, PruneEvery: pruneEvery, Health: h, NewTicker: tk.new})
+	defer stop()
+	expectStart(t, pj, "pj")
+	expectStart(t, sj, "sj")
+	waitHealthOK(t, h)
+	// A later prune starting means the earlier one, and whatever followed it, is over.
+	for deadline := time.Now().Add(5 * time.Second); pj.calls.Load() < 3 && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		tk.get(pruneEvery).tick()
+		select {
+		case <-pj.started:
+		default:
+		}
+	}
+	if pj.calls.Load() < 3 {
+		t.Fatal("prune didn't run on its tick")
+	}
+	if code, body := getHealth(t, h); code != 200 || body.LastError != "" {
+		t.Errorf("after a prune error: %d, last_error %q", code, body.LastError)
+	}
+}
+
+func waitHealthOK(t *testing.T, h *Health) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		if code, _ := getHealth(t, h); code == 200 {
+			return
+		}
+	}
+	t.Fatal("health never went OK")
+}

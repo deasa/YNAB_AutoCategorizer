@@ -341,7 +341,7 @@ func (a *app) serve(ctx context.Context) error {
 }
 
 // shutdownTimeout bounds the graceful part of stopping the listeners.
-const shutdownTimeout = 5 * time.Second
+var shutdownTimeout = 5 * time.Second
 
 // shutdown drains the servers, then closes whatever is left. An open MCP stream
 // never finishes by itself, so reaching the close is normal, not a failure.
