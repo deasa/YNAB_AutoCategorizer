@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -219,15 +220,17 @@ var uuidRE = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 // ScanDiscretionary is the one-shot archived-plan scan: it lists every plan
 // the token can reach, checks each for a live category named "Discretionary"
-// (case-insensitive), stores the whole result in db (replacing any earlier
-// scan; read it back with db.PlanScans), and returns the plans that have one,
-// in list order. It costs one GET for the list plus one per plan, and is
+// (case-insensitive), stores the result in db (dropping plans no longer listed;
+// read it back with db.PlanScans), and returns the plans this scan found one
+// in, in list order. It costs one GET for the list plus one per plan, and is
 // never run per tick.
 //
 // A plan whose categories can't be fetched doesn't stop the scan: it is
-// stored with its redacted error, and the call returns the plans found
-// together with a *ScanError naming every plan that failed. If listing
-// fails, or ctx ends, nothing is stored.
+// stored with its redacted error, keeping the verdict and time of its last
+// successful scan, and the call returns the plans found together with a
+// *ScanError naming every plan that failed. A failed plan is never in the
+// returned list, whatever its stored verdict. If listing fails, or ctx ends,
+// nothing is stored.
 func ScanDiscretionary(ctx context.Context, lister PlanLister, client ClientFunc, db *store.DB) ([]ynab.PlanSummary, error) {
 	plans, err := lister.Plans(ctx)
 	if err != nil {
@@ -249,7 +252,7 @@ func ScanDiscretionary(ctx context.Context, lister PlanLister, client ClientFunc
 			// *ynab.Client errors are already redacted; strip any id a
 			// different PlanAPI might leave in.
 			row.ScanError = uuidRE.ReplaceAllString(err.Error(), "{id}")
-			scanErr.Failed = append(scanErr.Failed, PlanScanFailure{Name: p.Name, Err: row.ScanError})
+			scanErr.Failed = append(scanErr.Failed, PlanScanFailure{Name: p.Name, Err: row.ScanError, orig: err})
 		} else if row.HasDiscretionary = hasDiscretionary(groups); row.HasDiscretionary {
 			out = append(out, p)
 		}
@@ -266,7 +269,9 @@ func ScanDiscretionary(ctx context.Context, lister PlanLister, client ClientFunc
 }
 
 // ScanError reports the plans whose categories ScanDiscretionary couldn't
-// fetch. Their rows are still stored, with the error and no verdict.
+// fetch. Their rows are still stored, with the error and their last good
+// verdict. errors.Is sees the underlying causes (ynab.ErrBudgetExhausted,
+// ynab.ErrRateLimited), but errors.As and Unwrap reach only redacted text.
 type ScanError struct {
 	Scanned int
 	Failed  []PlanScanFailure
@@ -276,6 +281,7 @@ type ScanError struct {
 type PlanScanFailure struct {
 	Name string
 	Err  string
+	orig error // may hold ids: only ever matched, never exposed
 }
 
 func (e *ScanError) Error() string {
@@ -286,6 +292,26 @@ func (e *ScanError) Error() string {
 	}
 	return sb.String()
 }
+
+// Unwrap returns one redacted error per failed plan.
+func (e *ScanError) Unwrap() []error {
+	errs := make([]error, 0, len(e.Failed))
+	for _, f := range e.Failed {
+		errs = append(errs, &scanCause{msg: f.Err, orig: f.orig})
+	}
+	return errs
+}
+
+// scanCause shows redacted text and matches the original through errors.Is. It
+// has no Unwrap, and so no way to reach the original's text.
+type scanCause struct {
+	msg  string
+	orig error
+}
+
+func (e *scanCause) Error() string { return e.msg }
+
+func (e *scanCause) Is(target error) bool { return errors.Is(e.orig, target) }
 
 func hasDiscretionary(groups []*ynab.CategoryGroup) bool {
 	for _, g := range groups {

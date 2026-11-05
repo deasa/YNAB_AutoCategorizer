@@ -662,3 +662,132 @@ func TestSyncPlan_PlansAreKeyedByID(t *testing.T) {
 		t.Errorf("archived plan rows = %d, active = %d; want 2 each", n, h.count("transactions", ""))
 	}
 }
+
+func TestScanDiscretionary_FailureKeepsLastGoodScan(t *testing.T) {
+	ctx := context.Background()
+	group := func(name string) []*ynab.CategoryGroup {
+		c := ynabapi.Category{}
+		c.Name = name
+		return []*ynab.CategoryGroup{{Name: "G", Categories: []ynabapi.Category{c}}}
+	}
+	const failingID = "44444444-4444-4444-4444-444444444444"
+	apis := map[string]*fakeAPI{
+		failingID: {groups: group("Discretionary")},
+		"steady":  {groups: group("Groceries")},
+		"gains":   {groups: group("Groceries")},
+		"leaving": {groups: group("Discretionary")},
+	}
+	client := func(id string) PlanAPI { return apis[id] }
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "finbot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rowsByID := func() map[string]store.PlanScan {
+		t.Helper()
+		rows, err := db.PlanScans(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]store.PlanScan{}
+		for _, r := range rows {
+			m[r.PlanID] = r
+		}
+		return m
+	}
+
+	lister := fakeLister{{ID: failingID, Name: "Failing"}, {ID: "steady", Name: "Steady"},
+		{ID: "gains", Name: "Gains"}, {ID: "leaving", Name: "Leaving"}}
+	if _, err := ScanDiscretionary(ctx, lister, client, db); err != nil {
+		t.Fatal(err)
+	}
+	before := rowsByID()
+	time.Sleep(2 * time.Millisecond) // so a rewritten scanned_at would differ
+
+	// The cause names the plan, as a non-*ynab.Client error might.
+	apis[failingID].err = fmt.Errorf("fetch categories %s: %w", failingID, ynab.ErrBudgetExhausted)
+	apis["gains"].groups = group("Discretionary")
+	apis["brandnew"] = &fakeAPI{err: fmt.Errorf("fetch categories: %w", ynab.ErrRateLimited)}
+	lister = fakeLister{{ID: failingID, Name: "Failing"}, {ID: "steady", Name: "Steady"},
+		{ID: "gains", Name: "Gains"}, {ID: "brandnew", Name: "Brand new"}}
+	got, err := ScanDiscretionary(ctx, lister, client, db)
+
+	var scanErr *ScanError
+	if !errors.As(err, &scanErr) || len(scanErr.Failed) != 2 {
+		t.Fatalf("err = %v, want a ScanError with two failures", err)
+	}
+	if len(got) != 1 || got[0].ID != "gains" {
+		t.Errorf("returned %+v, want only gains", got)
+	}
+
+	rows := rowsByID()
+	if len(rows) != 4 {
+		t.Errorf("stored %d rows, want 4 (leaving dropped): %+v", len(rows), rows)
+	}
+	f := rows[failingID]
+	if !f.HasDiscretionary || !f.ScannedAt.Equal(before[failingID].ScannedAt) || f.ScanError == "" {
+		t.Errorf("failed plan row = %+v, want the old verdict and time, with an error", f)
+	}
+	if strings.Contains(f.ScanError, failingID) {
+		t.Errorf("stored error leaks the plan id: %q", f.ScanError)
+	}
+	if s := rows["steady"]; s.HasDiscretionary || s.ScanError != "" || !s.ScannedAt.After(before["steady"].ScannedAt) {
+		t.Errorf("steady row = %+v, want a fresh clean scan", s)
+	}
+	if g := rows["gains"]; !g.HasDiscretionary || g.ScanError != "" || !g.ScannedAt.After(before["gains"].ScannedAt) {
+		t.Errorf("gains row = %+v, want the new verdict", g)
+	}
+	if n := rows["brandnew"]; n.HasDiscretionary || n.ScanError == "" {
+		t.Errorf("never-scanned plan row = %+v, want false with an error", n)
+	}
+}
+
+func TestScanError_MatchesCausesWithoutLeakingIDs(t *testing.T) {
+	ctx := context.Background()
+	const id1 = "55555555-5555-5555-5555-555555555555"
+	const id2 = "66666666-6666-6666-6666-666666666666"
+	apis := map[string]*fakeAPI{
+		id1: {err: fmt.Errorf("categories %s: %w", id1, ynab.ErrBudgetExhausted)},
+		id2: {err: fmt.Errorf("categories %s: %w", id2, ynab.ErrRateLimited)},
+	}
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "finbot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = ScanDiscretionary(ctx, fakeLister{{ID: id1, Name: "One"}, {ID: id2, Name: "Two"}},
+		func(id string) PlanAPI { return apis[id] }, db)
+	if err == nil {
+		t.Fatal("want a ScanError")
+	}
+	if !errors.Is(err, ynab.ErrBudgetExhausted) || !errors.Is(err, ynab.ErrRateLimited) {
+		t.Errorf("errors.Is misses a cause: %v", err)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Error("errors.Is matched an unrelated error")
+	}
+
+	// Walk everything reachable through Unwrap, both forms.
+	var walk func(error)
+	seen := 0
+	walk = func(e error) {
+		seen++
+		if uuidRE.MatchString(e.Error()) {
+			t.Errorf("%T carries an id: %q", e, e.Error())
+		}
+		switch u := e.(type) {
+		case interface{ Unwrap() error }:
+			if next := u.Unwrap(); next != nil {
+				walk(next)
+			}
+		case interface{ Unwrap() []error }:
+			for _, next := range u.Unwrap() {
+				walk(next)
+			}
+		}
+	}
+	walk(err)
+	if seen != 3 {
+		t.Errorf("walked %d errors, want the ScanError and two causes", seen)
+	}
+}

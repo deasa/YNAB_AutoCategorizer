@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -74,8 +75,8 @@ func TestOpenFailsFastWithoutPragmas(t *testing.T) {
 
 func TestMigrationsIdempotent(t *testing.T) {
 	db, path := openTest(t)
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 3 {
-		t.Fatalf("schema_migrations rows = %d, want 3", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 4 {
+		t.Fatalf("schema_migrations rows = %d, want 4", n)
 	}
 	db.Close()
 
@@ -87,8 +88,8 @@ func TestMigrationsIdempotent(t *testing.T) {
 	if err := migrate(context.Background(), db2.w); err != nil {
 		t.Fatalf("re-migrate: %v", err)
 	}
-	if n := count(t, db2, `SELECT count(*) FROM schema_migrations`); n != 3 {
-		t.Fatalf("schema_migrations rows after reopen = %d, want 3", n)
+	if n := count(t, db2, `SELECT count(*) FROM schema_migrations`); n != 4 {
+		t.Fatalf("schema_migrations rows after reopen = %d, want 4", n)
 	}
 }
 
@@ -118,8 +119,8 @@ func TestMigration0002OnExisting0001DB(t *testing.T) {
 		t.Fatalf("Open on a 0001 DB: %v", err)
 	}
 	defer db.Close()
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 3 {
-		t.Errorf("schema_migrations rows = %d, want 3", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 4 {
+		t.Errorf("schema_migrations rows = %d, want 4", n)
 	}
 	if st, ok, err := db.GetSyncState(ctx, "p"); err != nil || !ok || st.ServerKnowledge != 7 {
 		t.Errorf("pre-existing sync_state lost: %+v %v %v", st, ok, err)
@@ -143,8 +144,8 @@ func TestMigrationsOrderedAndAtomic(t *testing.T) {
 	if err := migrateFS(ctx, db.w, fsys); err == nil || !strings.Contains(err.Error(), "0101_c.sql") {
 		t.Fatalf("migrateFS = %v, want failure in 0101", err)
 	}
-	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 4 {
-		t.Errorf("schema_migrations rows = %d, want 4", n)
+	if n := count(t, db, `SELECT count(*) FROM schema_migrations`); n != 5 {
+		t.Errorf("schema_migrations rows = %d, want 5", n)
 	}
 	if n := count(t, db, `SELECT count(*) FROM sqlite_master WHERE name = 'c'`); n != 0 {
 		t.Error("failed migration 0101 left table c behind")
@@ -273,5 +274,96 @@ func TestSnapshot_ConsistentCopy(t *testing.T) {
 	}
 	if n != 2 {
 		t.Errorf("snapshot has %d rows, want 2", n)
+	}
+}
+
+func wantMode0600(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != 0o600 {
+			t.Errorf("%s: mode %o, want 600", filepath.Base(p), got)
+		}
+	}
+}
+
+func writeSomething(t *testing.T, db *DB) {
+	t.Helper()
+	err := db.ReplacePlanScans(context.Background(), []PlanScan{{PlanID: "p", Name: "P", ScannedAt: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenNewDatabaseIsPrivate(t *testing.T) {
+	db, path := openTest(t)
+	wantMode0600(t, path)
+	writeSomething(t, db)
+	wantMode0600(t, path, path+"-wal", path+"-shm")
+}
+
+// An existing database left at 0644 with a live WAL, as on hoid: a copy taken
+// while it's open has all three files.
+func TestOpenTightensExistingDatabase(t *testing.T) {
+	ctx := context.Background()
+	src, srcPath := openTest(t)
+	writeSomething(t, src)
+	path := filepath.Join(t.TempDir(), "finbot.db")
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		body, err := os.ReadFile(srcPath + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path+suffix, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path+suffix, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { db.Close() }()
+	wantMode0600(t, path, path+"-wal", path+"-shm")
+	writeSomething(t, db)
+	wantMode0600(t, path, path+"-wal", path+"-shm")
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err = Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSomething(t, db)
+	wantMode0600(t, path, path+"-wal", path+"-shm")
+}
+
+func TestOpenFailsIfFilesCantBeTightened(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "finbot.db")
+	// A symlink to itself: chmod fails with ELOOP, which isn't "doesn't exist".
+	if err := os.Symlink(filepath.Base(path)+"-wal", path+"-wal"); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(context.Background(), path)
+	if err == nil {
+		db.Close()
+		t.Fatal("Open succeeded with a -wal file it can't chmod")
+	}
+}
+
+func TestMakePrivateSkipsMemory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := makePrivate(":memory:"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(":memory:"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("created a file named :memory: (%v)", err)
 	}
 }

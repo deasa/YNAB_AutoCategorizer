@@ -6,8 +6,11 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -36,7 +39,12 @@ type DB struct {
 // Open opens (creating if needed) the database at path, verifies that the
 // required pragmas took effect, and applies pending migrations. path must be a
 // file: WAL is not available for in-memory databases, so ":memory:" fails.
+// The database holds financial data, so its files are kept 0600 (see
+// makePrivate); failing to do that fails the open.
 func Open(ctx context.Context, path string) (*DB, error) {
+	if err := makePrivate(path); err != nil {
+		return nil, err
+	}
 	w, err := openPool(ctx, path, false)
 	if err != nil {
 		return nil, err
@@ -51,6 +59,29 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		return nil, err
 	}
 	return &DB{w: w, r: r}, nil
+}
+
+// makePrivate runs before SQLite touches path: it creates the main file 0600 if
+// needed and tightens any existing main, -wal and -shm files to 0600. SQLite
+// gives new -wal and -shm files the main file's mode, so they stay private.
+func makePrivate(path string) error {
+	if path == ":memory:" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("store: create database file: %w", err)
+	}
+	f.Close()
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("store: restrict database file: %w", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := os.Chmod(path+suffix, 0o600); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("store: restrict database file: %w", err)
+		}
+	}
+	return nil
 }
 
 // Close closes both pools.
