@@ -58,15 +58,29 @@ func revokeCmd(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer db.Close()
+	storage := auth.New(db)
+	// Counted first because the revoke invalidates what it counts. A failed count
+	// must never get in the way of the revoke, and neither must a zero: a sign-in
+	// waiting on the consent page holds no tokens yet and is still cancelled.
+	active, countErr := storage.ActiveTokens(ctx, user)
 	// auth.Server.RevokeUser does just this, but building a Server needs Google.
-	if _, err := auth.New(db).BumpGeneration(ctx, user); err != nil {
+	if _, err := storage.BumpGeneration(ctx, user); err != nil {
 		fmt.Fprintln(stderr, "finbot revoke:", scrub(err.Error(), args[0]))
 		return 1
 	}
+	who := user
 	if user == auth.AllUsers {
-		fmt.Fprintln(stdout, "revoked tokens for all users")
-	} else {
-		fmt.Fprintf(stdout, "revoked tokens for %s\n", user)
+		who = "all users"
+	}
+	switch {
+	case countErr != nil:
+		fmt.Fprintf(stdout, "revoked tokens for %s (couldn't count them)\n", who)
+	case active == 0 && user == auth.AllUsers:
+		fmt.Fprintln(stdout, "no active tokens for any user, so nobody was signed out")
+	case active == 0:
+		fmt.Fprintf(stdout, "no active tokens for %s, so nobody was signed out. If you expected some, check for a typo.\n", who)
+	default:
+		fmt.Fprintf(stdout, "revoked %d active tokens for %s\n", active, who)
 	}
 	return 0
 }

@@ -144,8 +144,11 @@ func TestDataFreshness(t *testing.T) {
 	if !got.DataFreshness.Stale || got.DataFreshness.LastSyncedAt != "" || got.DataFreshness.AgeSeconds != nil {
 		t.Errorf("never synced: %+v", got.DataFreshness)
 	}
-	if got.Data.StaleAfterSeconds != 1800 {
-		t.Errorf("stale_after_seconds = %d", got.Data.StaleAfterSeconds)
+	if got.Data.StaleAfterSeconds != 1800 || got.Data.ImportStaleAfterDays != importStaleAfterDays {
+		t.Errorf("data = %+v", got.Data)
+	}
+	if got.DataFreshness.LinksOK || len(got.DataFreshness.Warnings) != 1 {
+		t.Errorf("never synced should warn and not claim links are fine: %+v", got.DataFreshness)
 	}
 
 	for _, c := range []struct {

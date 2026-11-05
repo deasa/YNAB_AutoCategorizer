@@ -431,8 +431,21 @@ func TestServe_MCPEndToEnd(t *testing.T) {
 	if code := Main([]string{"revoke", testEmail}, &out, &errOut); code != 0 {
 		t.Fatalf("revoke = %d: %s", code, errOut.String())
 	}
+	if !regexp.MustCompile(`^revoked [1-9]\d* active tokens for u_[0-9a-f]{12}\n$`).MatchString(out.String()) {
+		t.Errorf("real revoke printed %q", out.String())
+	}
 	if got := postMCP(t, r.url("/mcp"), "", token).StatusCode; got != http.StatusUnauthorized {
 		t.Errorf("revoked token: %d, want 401", got)
+	}
+	// The same user again, and a typo: both plainly nothing, both exit 0.
+	for _, arg := range []string{testEmail, "alcie@example.com"} {
+		out.Reset()
+		if code := Main([]string{"revoke", arg}, &out, &errOut); code != 0 {
+			t.Errorf("revoke %q = %d", arg, code)
+		}
+		if !strings.HasPrefix(out.String(), "no active tokens for u_") || strings.Contains(out.String(), "@") {
+			t.Errorf("revoke %q printed %q", arg, out.String())
+		}
 	}
 	if got := postMCP(t, r.url("/mcp"), "", r.signIn()).StatusCode; got != http.StatusOK {
 		t.Errorf("fresh sign-in after revoke: %d", got)
@@ -669,6 +682,9 @@ func TestRevoke_OnlyNeedsDBPath(t *testing.T) {
 		if strings.Contains(out.String(), "@") || strings.Contains(strings.ToLower(out.String()), "alice") {
 			t.Errorf("revoke %q printed the email: %s", arg, out.String())
 		}
+		if !strings.HasPrefix(out.String(), "no active tokens for ") {
+			t.Errorf("revoke %q with no tokens printed %q", arg, out.String())
+		}
 		if gen, err := s.CurrentGeneration(ctx, subject); err != nil || gen != i+1 {
 			t.Errorf("after revoke %q: generation %d, %v", arg, gen, err)
 		}
@@ -764,5 +780,39 @@ func TestShutdown_EndsOpenStreams(t *testing.T) {
 	case <-ended:
 	case <-time.After(2 * time.Second):
 		t.Error("the stream's handler is still running after shutdown")
+	}
+}
+
+// A failed write is a failure, never "no active tokens". A failed count must not
+// stop the revoke, and doesn't pretend there were none.
+func TestRevoke_FailuresAreNotReportedAsNoTokens(t *testing.T) {
+	ctx := context.Background()
+
+	db := revokeEnv(t)
+	if _, err := db.Writer().ExecContext(ctx, `DROP TABLE oauth_pkce_sessions; DROP TABLE oauth_auth_codes`); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if code := Main([]string{"revoke", testEmail}, &out, &errOut); code != 0 {
+		t.Errorf("count failed: exit %d: %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "couldn't count") || strings.Contains(out.String(), "no active") {
+		t.Errorf("count failed: printed %q", out.String())
+	}
+	if gen, err := auth.New(db).CurrentGeneration(ctx, auth.UserID(testEmail)); err != nil || gen != 1 {
+		t.Errorf("count failed: the revoke didn't happen: generation %d, %v", gen, err)
+	}
+
+	db = revokeEnv(t)
+	if _, err := db.Writer().ExecContext(ctx, `DROP TABLE token_generations`); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Main([]string{"revoke", testEmail}, &out, &errOut); code != 1 {
+		t.Errorf("bump failed: exit %d", code)
+	}
+	if out.Len() != 0 || strings.Contains(errOut.String(), testEmail) {
+		t.Errorf("bump failed: stdout %q, stderr %q", out.String(), errOut.String())
 	}
 }
