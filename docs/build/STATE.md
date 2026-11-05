@@ -16,14 +16,13 @@ Updated: 2026-11-04 by sup (third session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p23 | control (w1:t7) | reviewer (Antigravity, quota confirmed 2026-11-04); counter 1 (M2-0) | — | 2026-11-04 | |
-| b-m2-0 | w1:p22 | build | builder | M2-0 | 2026-11-04 | worktree ../YNAB_AutoCategorizer.wt/M2-0 |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M2-0 | review | see Panes | t/M2-0 | agy pending | carried M1 lows; added migration 0004 so a failed row can keep its verdict; docs follow-ups in Result; CLAUDE.md HEALTHCHECK_PING_URL low dropped (already done, line 89) |
+| M2-0 | merged | — | — | agy PASS (no findings) | merged 2026-11-04; migration 0004 lets a failed row keep its verdict. Follow-up: ScanDiscretionary still omits a failed plan from its returned list even when the stored verdict is true, so `sync --archived` skips it that run. Docs follow-ups in tasks/M2-0.md Result (CLAUDE.md store role, architecture.md:48) |
 | M2-1a..M2-5 | todo | — | — | — | briefs committed 2026-11-04; see BACKLOG |
 | M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |
