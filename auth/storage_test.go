@@ -396,22 +396,41 @@ func TestTransactions(t *testing.T) {
 		t.Error("Rollback with no transaction succeeded")
 	}
 
-	// A cancelled request can still roll back and free the writer.
+	// A failed Commit frees the writer by itself, and Rollback is then a no-op.
 	cctx, cancel := context.WithCancel(ctxBG)
 	if tx, err = e.s.BeginTX(cctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.CreateAccessTokenSession(tx, "cancelled", request(t, e, c, "r", "alice")); err != nil {
 		t.Fatal(err)
 	}
 	cancel()
 	if err := e.s.Commit(tx); err == nil {
 		t.Error("Commit on a cancelled context succeeded")
 	}
-	if err := e.s.Rollback(tx); err != nil {
-		t.Errorf("Rollback: %v", err)
-	}
 	wctx, wcancel := context.WithTimeout(ctxBG, 5*time.Second)
 	defer wcancel()
 	if _, err := e.s.BumpGeneration(wctx, "bob"); err != nil {
 		t.Errorf("writer not released: %v", err)
+	}
+	if err := e.s.Rollback(tx); err != nil {
+		t.Errorf("Rollback: %v", err)
+	}
+	if _, err := e.s.GetAccessTokenSession(ctxBG, "cancelled", nil); !errors.Is(err, fosite.ErrNotFound) {
+		t.Errorf("failed Commit persisted the row: %v", err)
+	}
+
+	// A cancelled request can still roll back and free the writer.
+	cctx, cancel = context.WithCancel(ctxBG)
+	if tx, err = e.s.BeginTX(cctx); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := e.s.Rollback(tx); err != nil {
+		t.Errorf("Rollback on a cancelled context: %v", err)
+	}
+	if _, err := e.s.BumpGeneration(wctx, "bob"); err != nil {
+		t.Errorf("writer not released after Rollback: %v", err)
 	}
 }
 
