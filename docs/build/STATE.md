@@ -1,10 +1,11 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-10-29 by sup (second session)
+Updated: 2026-11-04 by sup (third session)
 
 ## Now
-- Milestone: **M1 — Read-only mirror on hoid: COMPLETE 2026-11-01** (gate: waiting for Brendan's "continue" before M2)
-- Next actions: **wait for Brendan's "continue"**, then expand M2 BACKLOG entries into tasks (see handoff docs/build/handoffs/sup-2026-11-01-1300.md). Open Brendan items at gate: (a) enable `IMPORT_ENABLED` live? (b) pin the status message + point his staleness automation at it; (c) copy the age private key offline; (d) LICENSE file or drop README's MIT line. sup watchers stopped; nothing in flight.
+- Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
+- Next actions: M2-0 builder running; agy attacking the M2 breakdown. Then M2-1a, M2-1b, M2-2, M2-3 + M2-4, M2-5, docs, acceptance (BACKLOG). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
+- Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
 - hoid finbot: **1de3376** deployed 2026-11-01 by sup (M1-5c status message + TZ; earlier today ec0b29c, 786656e). Status message created in #finbot-finances (Brendan to pin + point his staleness automation at it); backups 03:17 America/Denver (`./deploy/deploy.sh`; compose project `finbot` in `~/finbot`, volume `finbot_finbot-data`). Backup smoke: `finbot backup` on hoid OK (20261101T180719Z-456de3e8, 2.4 MB ciphertext), restored on the Mac with the private key: integrity ok, 2070 txns / 24 accounts; secret grep 0. Backups at 03:17 **UTC** until M1-5c sets TZ. Earlier smoke: healthy, uid 10001, finbot.env 600, log secret grep 0/0/0, import disabled, ping disabled, initial sync OK; finbot-spike untouched (/mcp 401)
@@ -14,12 +15,16 @@ Updated: 2026-10-29 by sup (second session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| rev | w1:p10 | control (w1:t7) | reviewer (Claude Opus); counter 1 (M1-docs r2) | — | 2026-11-01 | worktree ../YNAB_AutoCategorizer.wt/M1-acceptance; replace after this |
+| agy | w1:p21 | control (w1:t7) | reviewer (Antigravity, quota confirmed 2026-11-04); counter 0 | — | 2026-11-04 | |
+| rev | w1:p10 | control (w1:t7) | idle fallback reviewer, used only if agy runs out of quota | — | 2026-11-01 | counter 1; its old worktree is gone, so give any reuse an explicit path |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
+| (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
+| M2-0 | active | see Panes | t/M2-0 | — | carried M1 lows; CLAUDE.md HEALTHCHECK_PING_URL low dropped (already done, line 89) |
+| M2-1a..M2-5 | todo | — | — | — | briefs committed 2026-11-04; see BACKLOG |
 | M0-1 | merged | — | — | agy PASS (1 low, optional) | merged 2026-10-27; findings docs/build/spikes/jev.md: Jev primary behind rules, τ=0.8 → ~90% precision / ~73% coverage. Docs follow-ups in tasks/M0-1.md Result. Note: no YNAB approvals since 2026-04-20 |
 | M0-1b | merged | — | — | agy PASS (1 low wording nit) | merged 2026-10-27; per-category difficulty in spikes/jev.md for Brendan's category simplification. Follow-up: re-measure Jev after simplification (needs a fresh Jev budget) |
 | M0-2a | merged | — | — | agy PASS r3 (r1 FIX, r2 FIX; 1 low) | merged 2026-10-29; findings docs/build/spikes/mcp.md, reviews docs/build/spikes/mcp-review.md. go-sdk v1.8.0 + fosite v0.49.0 AS (DCR, PKCE S256, opaque HMAC tokens, refresh rotation, RFC 7009) + Google sign-in via go-oidc, allowlist on verified email, CSRF consent page, per-user generation revocation; spike module go 1.26. Brendan live sign-in OK twice (incl. consent page). **M0-2b MUST**: proxy to the container on the Docker network with `MCP_LISTEN_ADDR=:8080` and no host port, never via host 127.0.0.1 (go-sdk loopback DNS-rebinding guard → 403 on `finance.<domain>` Host); add `https://finance.<domain>/oauth/google/callback` to the Google client; persist the fosite HMAC secret, or accept re-login per deploy. Other follow-ups in tasks/M0-2a.md Result |
@@ -55,6 +60,11 @@ Updated: 2026-10-29 by sup (second session)
 | BA-11 | Tell sup whether the old 6h categorizer is running live anywhere (confounds §3.1 payee-memory finding) | M1 | done 2026-10-27: Brendan believes it is not running → M0-5's 9/75 unapproved+categorized imports are likely YNAB payee memory (§3.1 assumption leans VERIFIED; still confirm by observation in M1) |
 | BA-12 | Confirm the active plan: `.env` `YNAB_BUDGET_ID` points to "May 2025 (Archived on 2026-03-14)". Give sup the plan finbot should sync live (name is enough; sup fixes `.env`) | M1-5a deploy | done 2026-10-29: keep the \"May 2025\" plan (already in `.env`); see Decisions |
 | BA-9 | YNAB: create an empty "finbot-sandbox" plan in the YNAB UI for write tests (API can't create plans) | M3 | open |
+| BA-13 | Decide `IMPORT_ENABLED` live: keep off or turn on. The 2026-11-04 prompt arrived with its template placeholder unfilled. Stays off until decided. Turning it on is a deploy change (compose forces false), after M2-0 | after M2-0 | open |
+| BA-14 | Decide README "License: MIT": add a LICENSE file or drop the line. The 2026-11-04 prompt arrived with its template placeholder unfilled | M2-docs | open |
+| BA-15 | Cloudflare rate-limit rules on `/oauth/*` and `/mcp` (block-only, skip `160.79.104.0/21`). Needs his Cloudflare login (passkey recovery in progress 2026-11-04). Cutover itself needs no dashboard change | M2 gate | open |
+| BA-16 | After M2-5: reconnect the claude.ai connector. Then the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
+| BA-17 | Say which tax bucket each account belongs to (or run `finbot tag-account` once M2-4 lands). Untagged accounts show as `untagged` | after M2-4 | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
 - 2026-10-27: Build workflow approved by Brendan: Opus 5.5 builders, agy review/testing, herdr orchestration, 40% context cap, supervisor restarted from these docs. sup may commit to main.
@@ -74,6 +84,7 @@ Updated: 2026-10-29 by sup (second session)
 - 2026-10-29: finbot syncs the **"May 2025 (Archived on 2026-03-14)"** plan (Brendan, BA-12). He has no active categorizing plan (categorizing lapsed ~a year); that plan still receives linked-account imports (latest seen 2026-10-24), so it is the live mirror target until the M4 fresh start. `.env` `YNAB_BUDGET_ID` already points to it.
 - 2026-10-29: M1-5a deploys without the healthchecks ping while BA-7 is open (`HEALTHCHECK_PING_URL` optional; sup offered, no objection needed since it is additive). Add the URL when BA-7 lands.
 - 2026-11-01 (Brendan): BA-7 replaced by a Slack status message in `#finbot-finances`, edited after every sync; his own Slack automation alerts on staleness. BA-8: Turso holds only age-encrypted snapshot blobs (sup's recommendation; never plaintext or a live replica). The arch §1 "no Turso" (as the primary store) still holds.
+- 2026-11-04 (sup technical calls, flagged to Brendan): `/healthz` moves off the public MCP port because the tunnel exposes every path and it returns `last_error`. `get_category_decisions`, `get_tithing_status`, `get_fun_money` deferred to M3/M4 because their data doesn't exist yet. Reviews back on agy; `rev` kept as fallback.
 
 ## Milestone log
 - **M1 Read-only mirror on hoid: complete 2026-11-01** (all tasks merged + deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M1-acceptance.md`, scripts `tests/acceptance/M1/`). main = 3636b6f; hoid runs 91df942 (code identical; later commits are docs).

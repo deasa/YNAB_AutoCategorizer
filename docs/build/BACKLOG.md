@@ -46,18 +46,23 @@ Milestone acceptance:
 | M1-5b | Encrypted off-site backup + restore test | M1-5a | deploy/backup | Nightly SQLite `.backup`, then age, then an off-site push (BA-8), and a documented restore test. Deploy: yes. |
 | M1-5c | Slack status message (heartbeat) | M1-5b | status/, cmd/ | One message in #finbot-finances edited after each sync/backup; replaces healthchecks.io (BA-7, Brendan 2026-11-01). |
 
-## M2: MCP read tools + OAuth + public exposure (current plan) [expand at gate]
+## M2: MCP read tools + OAuth + public exposure (current plan) [expanded 2026-11-04]
 
-Covers §4 read tools, `get_financial_snapshot`, data freshness, account tax-bucket tags, and auth for two users. Uses M0-2's
-choice.
+Covers §4 read tools, `get_financial_snapshot`, data freshness, account tax-bucket tags, and auth for two users. Briefs are
+in `tasks/`. Deferred because their data doesn't exist yet: `get_category_decisions` (M3), `get_tithing_status` and
+`get_fun_money` (M4).
 
-M0 notes (arch §2, §4, §6):
-- `mcp/` + `auth/` from `spikes/mcp/` (go-sdk v1.8.0 + fosite v0.49.0 + go-oidc).
-- Persistent fosite storage in SQLite + `token_generations`, and a persisted HMAC secret (redeploys keep sign-ins).
-- Cloudflare rate-limiting rules on `/oauth/*` and `/mcp`: block-only, never a challenge, skip `160.79.104.0/21`.
-- Container hardening (agy, M0-2b review): `cap_drop: [ALL]`, `no-new-privileges`, `read_only`, log rotation,
-  cloudflared `--metrics 127.0.0.1:20241`, pinned base images.
-- The wife's real Google sign-in through a connector (allowlist her account; UNVERIFIED in M0).
+| ID | Title | Depends | Touches | Notes |
+|---|---|---|---|---|
+| M2-0 | Carried M1 cleanup | none | cmd/ (comment), store/, sync/ | plan_scan overwrite, ScanError.Unwrap, DB files 0600. Deploy: yes. |
+| M2-1a | Persistent OAuth storage | M2-0 | auth/, store/ | fosite on SQLite, token_generations, persisted HMAC secret. |
+| M2-1b | Authorization server port | M2-1a | auth/ | Spike AS, Google sign-in, consent, allowlist. |
+| M2-2 | MCP server in serve | M2-1b | mcp/, cmd/, config/ | data_freshness, `finbot revoke`, `/healthz` kept off the public port. |
+| M2-3 | Transaction read tools | M2-2 | mcp/, store/ | query_transactions, compare_spending. Can run beside M2-4 (own files). |
+| M2-4 | Snapshot and tax-bucket tags | M2-2 | mcp/, store/, cmd/ | get_financial_snapshot, get_goals, get_income_events, tag-account. |
+| M2-5 | Tunnel cutover from finbot-spike | M2-3, M2-4 | deploy/, Dockerfile | finance.hoidlabs.site stays up; rollback script. Deploy: yes. |
+| M2-docs | Docs follow-ups | M2-5 | CLAUDE.md, docs/plan | Gate docs task. |
+| M2-acceptance | Independent test | M2-docs | tests/acceptance/M2/ | Black-box, by agy. Includes the wife's real sign-in (BA-16). |
 
 ## M3: Classifier + Slack (dry-run, then live) [expand at gate]
 
