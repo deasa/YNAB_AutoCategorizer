@@ -49,10 +49,27 @@ func define[In, Out any](scope string, tool *sdkmcp.Tool, h handler[In, Out]) to
 // errTool is all a client sees of a failure; the detail goes to the log.
 var errTool = errors.New("this tool failed; see the finbot logs")
 
+// clientError is a failure the caller can fix, such as a bad filter. Unlike
+// every other error, its message goes to the client, so it must be built only
+// from the caller's own input and fixed text: never from an error, id or secret.
+type clientError struct{ msg string }
+
+func (e *clientError) Error() string { return e.msg }
+
+// badRequest returns a clientError.
+func badRequest(format string, args ...any) error {
+	return &clientError{msg: fmt.Sprintf(format, args...)}
+}
+
 // respond runs a tool's body and wraps its data with freshness. A failure to
 // read freshness fails the call, because no answer goes out without it.
 func respond[T any](ctx context.Context, o *Options, name string, body func() (T, error)) (Response[T], error) {
 	data, err := body()
+	var ce *clientError
+	if errors.As(err, &ce) {
+		o.Log.Info("mcp tool refused input", "tool", name)
+		return Response[T]{}, ce
+	}
 	if err == nil {
 		var f Freshness
 		if f, err = readFreshness(ctx, o); err == nil {
