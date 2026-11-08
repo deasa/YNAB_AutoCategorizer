@@ -75,8 +75,9 @@ type MonthFlow struct {
 
 // MonthlyFlows sums on-budget lines per month for dates start..end, inclusive,
 // skipping months with no such lines. The split into income, categorized and
-// uncategorized follows CategoryTotals: on-budget transfers and off-budget
-// accounts are neither income nor spending.
+// uncategorized follows CategoryTotals: on-budget transfers, off-budget
+// accounts and transfers in from off-budget accounts are neither income nor
+// spending.
 func (d *DB) MonthlyFlows(ctx context.Context, planID, start, end string) ([]MonthFlow, error) {
 	rows, err := d.r.QueryContext(ctx, linesCTE+`, kinds AS (
     SELECT substr(l.date, 1, 7) AS month, l.amount,
@@ -86,6 +87,9 @@ func (d *DB) MonthlyFlows(ctx context.Context, planID, start, end string) ([]Mon
     WHERE l.date >= ?2 AND l.date <= ?3
       AND a.on_budget = 1
       AND NOT (l.category_id IS NULL AND l.transfer_account_id IS NOT NULL)
+      -- Money in from an off-budget account is categorized to Ready to Assign,
+      -- but it's moved savings, not income.
+      AND NOT (l.transfer_account_id IS NOT NULL AND COALESCE(c.internal, 0) = 1 AND c.name LIKE 'Inflow:%')
 )
 SELECT month,
        COALESCE(sum(CASE WHEN kind = 'i' THEN amount END), 0),
