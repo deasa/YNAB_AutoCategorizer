@@ -1,10 +1,10 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-04 by sup (third session)
+Updated: 2026-11-08 by sup (third session; handoff docs/build/handoffs/sup-2026-11-08-1245.md)
 
 ## Now
 - Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
-- Next actions: M2-0 merged + deployed; M2-0..M2-4 merged; M2-5 in re-review r2 (cutover itself waits for Brendan's go-ahead); M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
+- Next actions: M2-0..M2-5 merged (main f87b3f6). **Cutover (M2-5 deploy steps) waits for Brendan's go-ahead**, then he reconnects the connector (BA-16). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -18,14 +18,13 @@ Updated: 2026-11-04 by sup (third session)
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p2D | control (w1:t7) | reviewer (Antigravity); counter 1 (M2-5 r2) | — | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
-| b-m2-5 | w1:p2C | build | builder | M2-5 | 2026-11-08 | worktree ../YNAB_AutoCategorizer.wt/M2-5 |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M2-0 | merged + deployed | — | — | agy PASS (no findings) | merged + deployed 2026-11-04; migration 0004 lets a failed row keep its verdict. Follow-up: ScanDiscretionary still omits a failed plan from its returned list even when the stored verdict is true, so `sync --archived` skips it that run. Docs follow-ups in tasks/M2-0.md Result (CLAUDE.md store role, architecture.md:48) |
-| M2-5 | review | see Panes | t/M2-5 | agy r1 FIX (1 med: ssh drop strands two connectors; 1 low); r2 pending | built 2026-11-08. Builder note: if ssh drops after step 3 the auto-rollback can't reach hoid |
+| M2-5 | merged | — | — | agy PASS r2 (r1 FIX: ssh drop could strand two connectors; 1 low) | merged 2026-11-08; **cutover not yet run** (needs Brendan's go). Steps 3-6 + rollback run detached on hoid. Not proven: hoid compose is 5.6.1 vs local 2.15.1 rehearsal. Docs follow-ups in tasks/M2-5.md Result |
 | M2-4 | merged | — | — | agy PASS (1 low, for M4: a categorized transfer to an investment account counts as spending in the savings rate) | merged 2026-11-08, not deployed. Follow-ups: tag-account --clear; CSP labels (M4); paycheck matcher (M4). Docs follow-ups in tasks/M2-4.md Result |
 | M2-3 | merged | — | — | agy PASS | merged 2026-11-05, not deployed. Follow-ups: no averaged multi-period baseline in compare_spending; ASCII-only case-insensitive category match. Docs follow-ups in tasks/M2-3.md Result |
 | M2-2 | merged | — | — | agy PASS r2 (r1 FIX: per-account freshness) | merged 2026-11-05, not deployed; MCP stays dark until M2-5. `finbot revoke` says when a user has no tokens. Docs follow-ups in tasks/M2-2.md Result, including removing `HTTP_ADDR=:8080` from old local .env files |
@@ -69,7 +68,8 @@ Updated: 2026-11-04 by sup (third session)
 | BA-13 | Decide `IMPORT_ENABLED` live: keep off or turn on. The 2026-11-04 prompt arrived with its template placeholder unfilled. Stays off until decided. Turning it on is a deploy change (compose forces false), after M2-0 | after M2-0 | open |
 | BA-14 | Decide README "License: MIT": add a LICENSE file or drop the line. The 2026-11-04 prompt arrived with its template placeholder unfilled | M2-docs | open |
 | BA-15 | Cloudflare rate-limit rules on `/oauth/*` and `/mcp` (block-only, skip `160.79.104.0/21`). Needs his Cloudflare login (passkey recovery in progress 2026-11-04). Cutover itself needs no dashboard change | M2 gate | open |
-| BA-16 | After M2-5: reconnect the claude.ai connector. Then the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
+| BA-16 | Go-ahead for the M2-5 cutover (asked 2026-11-08); after it, reconnect the claude.ai connector. Then the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
+| BA-18 | agy shows "sign-in is missing permissions… run /logout": re-authenticate agy (Google AI Pro) | next review | open |
 | BA-17 | Say which tax bucket each account belongs to (or run `finbot tag-account` once M2-4 lands). Untagged accounts show as `untagged` | after M2-4 | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
