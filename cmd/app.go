@@ -1,6 +1,6 @@
 // Package cmd implements the finbot subcommands: `serve` (the daemon),
 // `sync` (one-shot), `health` (the container healthcheck), `backup` and
-// `restore` (off-site copies of the database), and `revoke` (MCP sign-out). Nothing it logs or prints carries a plan, account or
+// `restore` (off-site copies of the database), `revoke` (MCP sign-out) and `tag-account` (local tax-bucket tags). Nothing it logs or prints carries a plan, account or
 // transaction id, or the token.
 package cmd
 
@@ -40,6 +40,9 @@ commands:
                     download and decrypt a backup (newest by default) to a new file, then verify it
   revoke <email | u_hash | --all>
                     sign a user (or everyone) out of MCP at once, with no restart
+  tag-account [<account name> <bucket>]
+                    tag an account of the active plan with a tax bucket (taxable, traditional,
+                    roth, hsa, cash, none); with no arguments, list every account's tag
 `
 
 // Main runs finbot with args (without the program name) and returns the
@@ -76,6 +79,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return restoreCmd(args[1:], stdout, stderr)
 	case "revoke":
 		return revokeCmd(args[1:], stdout, stderr)
+	case "tag-account":
+		return tagAccountCmd(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "finbot: unknown command %q\n\n%s", args[0], usage)
 		return 2
