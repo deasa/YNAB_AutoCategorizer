@@ -12,7 +12,7 @@ mkdir -p "$bin"
 real_stat=$(command -v stat)
 real_sleep=$(command -v sleep)
 # SECONDS ticks on the wall clock, so a timeout of 1 can expire at once.
-export HOST=rehearsal.invalid TUNNEL_TIMEOUT=3 HEALTH_TIMEOUT=3
+export HOST=rehearsal.invalid TUNNEL_TIMEOUT=3 HEALTH_TIMEOUT=3 POLL_TIMEOUT=30
 CANARIES=(CANARY_YNAB_TOKEN CANARY_GOOGLE_SECRET CANARY_TUNNEL_TOKEN canary-allowed@example.invalid)
 passed=0 failed=0
 
@@ -318,7 +318,7 @@ check "no marker" absent finbot/tunnel-active
 check "no gap" no_gap
 
 echo "== a simulated ssh drop: hoid finishes alone"
-fresh drop-ok; export DROP=after-start POLL_TIMEOUT=1; run cutover.sh; unset DROP POLL_TIMEOUT
+fresh drop-ok; export DROP=after-start POLL_TIMEOUT=1; run cutover.sh; unset DROP; export POLL_TIMEOUT=30
 check "drop after start: Mac reports unknown" is "$rc" 3
 check "drop after start: says to re-attach" out_has 'cutover.sh --watch'
 check "drop after start: hoid finishes" result_on_hoid ok
@@ -330,7 +330,7 @@ rm "$W/ssh-down"; : >"$W/out"; run "cutover.sh --watch"
 check "--watch after the link returns: exit 0" is "$rc" 0
 check "--watch shows the whole log" out_has 'step 3'
 
-fresh drop-step5; export FAIL=step5 DROP=after-start POLL_TIMEOUT=1; run cutover.sh; unset DROP POLL_TIMEOUT
+fresh drop-step5; export FAIL=step5 DROP=after-start POLL_TIMEOUT=1; run cutover.sh; unset DROP; export POLL_TIMEOUT=30
 check "drop plus step 5 failure: Mac reports unknown" is "$rc" 3
 check "drop plus step 5 failure: hoid rolls back alone" result_on_hoid 'rolled-back step=5'
 unset FAIL
@@ -341,7 +341,7 @@ check "drop plus step 5 failure: no gap" no_gap
 rm "$W/ssh-down"; : >"$W/out"; run "cutover.sh --watch"
 check "--watch reports the rollback" is "$rc" 1
 
-fresh drop-during; export DROP=during-start POLL_TIMEOUT=1; run cutover.sh; unset DROP POLL_TIMEOUT
+fresh drop-during; export DROP=during-start POLL_TIMEOUT=1; run cutover.sh; unset DROP; export POLL_TIMEOUT=30
 check "drop during start: not treated as a start failure" is "$rc" 3
 check "drop during start: hoid finishes" result_on_hoid ok
 check "drop during start: marker created" exists finbot/tunnel-active
