@@ -4,7 +4,7 @@ Updated: 2026-11-04 by sup (third session)
 
 ## Now
 - Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
-- Next actions: M2-0 merged + deployed; M2-0..M2-4 merged; M2-5 in review (cutover itself waits for Brendan's go-ahead); M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
+- Next actions: M2-0 merged + deployed; M2-0..M2-4 merged; M2-5 fixing agy r1 (cutover itself waits for Brendan's go-ahead); M2 breakdown reviewed by agy (FIX; findings applied to the briefs). Then M2-1a, M2-1b, M2-2, M2-3, M2-4, M2-5, docs, acceptance (BACKLOG, all serial). `finance.hoidlabs.site` stays on finbot-spike until M2-5.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -25,7 +25,7 @@ Updated: 2026-11-04 by sup (third session)
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M2-0 | merged + deployed | — | — | agy PASS (no findings) | merged + deployed 2026-11-04; migration 0004 lets a failed row keep its verdict. Follow-up: ScanDiscretionary still omits a failed plan from its returned list even when the stored verdict is true, so `sync --archived` skips it that run. Docs follow-ups in tasks/M2-0.md Result (CLAUDE.md store role, architecture.md:48) |
-| M2-5 | review | see Panes | t/M2-5 | agy pending | built 2026-11-08. Builder note: if ssh drops after step 3 the auto-rollback can't reach hoid |
+| M2-5 | fix | see Panes | t/M2-5 | agy r1 FIX (1 med: ssh drop strands two connectors; 1 low) | built 2026-11-08. Builder note: if ssh drops after step 3 the auto-rollback can't reach hoid |
 | M2-4 | merged | — | — | agy PASS (1 low, for M4: a categorized transfer to an investment account counts as spending in the savings rate) | merged 2026-11-08, not deployed. Follow-ups: tag-account --clear; CSP labels (M4); paycheck matcher (M4). Docs follow-ups in tasks/M2-4.md Result |
 | M2-3 | merged | — | — | agy PASS | merged 2026-11-05, not deployed. Follow-ups: no averaged multi-period baseline in compare_spending; ASCII-only case-insensitive category match. Docs follow-ups in tasks/M2-3.md Result |
 | M2-2 | merged | — | — | agy PASS r2 (r1 FIX: per-account freshness) | merged 2026-11-05, not deployed; MCP stays dark until M2-5. `finbot revoke` says when a user has no tokens. Docs follow-ups in tasks/M2-2.md Result, including removing `HTTP_ADDR=:8080` from old local .env files |
