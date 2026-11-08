@@ -1,7 +1,8 @@
 # Compose project finbot, deployed by deploy/deploy.sh to hoid:~/finbot
 # (source in ~/finbot/src, this file at ~/finbot/src/deploy/compose.yaml).
 # The project directory is this file's, so compose never reads ~/finbot/.env.
-# No cloudflared yet: finbot-spike owns the tunnel until M2.
+# cloudflared is in profile "tunnel": deploy.sh enables it only when ~/finbot/tunnel-active
+# exists, which deploy/cutover.sh creates and deploy/rollback.sh removes.
 services:
   finbot:
     build:
@@ -10,12 +11,16 @@ services:
         GIT_SHA: ${GIT_SHA:-dev} # deploy.sh sets it; finbot shows it in the Slack status message
     image: finbot:latest
     command: ["serve"]
-    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, optional HEALTHCHECK_PING_URL, BACKUP_* and SLACK_* only.
+    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, GOOGLE_OAUTH_*, MCP_ALLOWED_EMAILS, optional
+    # HEALTHCHECK_PING_URL, BACKUP_* and SLACK_* only. Never the tunnel token.
     # deploy.sh points FINBOT_ENV_FILE at ~/finbot/finbot.env (0600).
     env_file: ${FINBOT_ENV_FILE:-finbot.env}
     environment:
       FINBOT_DB_PATH: /data/finbot.db
       IMPORT_ENABLED: "false"
+      MCP_LISTEN_ADDR: ":8080" # container interface, not loopback: keeps go-sdk's DNS-rebinding guard off
+      MCP_PUBLIC_URL: https://finance.hoidlabs.site
+      HTTP_ADDR: "127.0.0.1:8081" # /healthz stays off the port the tunnel forwards; finbot health reads this too
       TZ: America/Denver # hoid's zone, so BACKUP_AT is local time
     volumes:
       - finbot-data:/data
@@ -31,6 +36,27 @@ services:
       timeout: 10s
       retries: 3
       start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  cloudflared:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2026.10.6
+    # Metrics stay on the container's loopback. The token comes from TUNNEL_TOKEN, never argv.
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:20241", "run"]
+    # TUNNEL_TOKEN only. deploy.sh points this at ~/finbot/tunnel.env (0600) when the marker
+    # exists and at /dev/null otherwise, so a host without the file can still deploy.
+    env_file: ${TUNNEL_ENV_FILE:-tunnel.env}
+    user: "65532:65532" # the image's nonroot user, stated so compose config shows it
+    depends_on:
+      - finbot
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
     logging:
       driver: json-file
       options:
