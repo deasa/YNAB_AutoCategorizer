@@ -20,7 +20,6 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p2Q | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-0a, M3-0b), replace before next review | — | 2026-11-08 | |
-| b-m3-0a | w1:p2M | build | builder | M3-0a | 2026-11-08 | |
 | b-m3-0b | w1:p2N | build | builder | M3-0b | 2026-11-08 | |
 | b-m3-1a | w1:p2P | build2 | builder | M3-1a | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
@@ -29,7 +28,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-0a | review | w1:p2M | t/M3-0a | — | sync/, ynab/ carried cleanup |
+| M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
 | M3-0b | review | w1:p2N | t/M3-0b | — | deploy/: retire rollback.sh |
 | M3-1a | active | w1:p2P | t/M3-1a | — | store/: decisions (0006), labelled history |
 | M3-plan | merged | — | — | agy PASS r2 (r1 FIX: dry_run→auto write leak, image deps, reconcile timing, candidates, store reads, probe flags, redaction) | 28 tasks in BACKLOG M3; briefs in tasks/M3-*.md |
