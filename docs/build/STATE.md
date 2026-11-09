@@ -1,10 +1,10 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-08 by sup (third session; handoff docs/build/handoffs/sup-2026-11-08-1245.md)
+Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs/sup-2026-11-08-1245.md)
 
 ## Now
 - Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
-- Next actions: M2-0..M2-5 merged (main f87b3f6). **Cutover (M2-5 deploy steps) waits for Brendan's go-ahead**, then he reconnects the connector (BA-16). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
+- Next actions: M2-0..M2-5 merged (main 0bcaaf9). **Cutover: Brendan said GO 2026-11-08; sup running deploy/cutover.sh**, then he reconnects the connector (BA-16). Then a deploy change turning IMPORT_ENABLED on (BA-13). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -65,11 +65,11 @@ Updated: 2026-11-08 by sup (third session; handoff docs/build/handoffs/sup-2026-
 | BA-11 | Tell sup whether the old 6h categorizer is running live anywhere (confounds §3.1 payee-memory finding) | M1 | done 2026-10-27: Brendan believes it is not running → M0-5's 9/75 unapproved+categorized imports are likely YNAB payee memory (§3.1 assumption leans VERIFIED; still confirm by observation in M1) |
 | BA-12 | Confirm the active plan: `.env` `YNAB_BUDGET_ID` points to "May 2025 (Archived on 2026-03-14)". Give sup the plan finbot should sync live (name is enough; sup fixes `.env`) | M1-5a deploy | done 2026-10-29: keep the \"May 2025\" plan (already in `.env`); see Decisions |
 | BA-9 | YNAB: create an empty "finbot-sandbox" plan in the YNAB UI for write tests (API can't create plans) | M3 | open |
-| BA-13 | Decide `IMPORT_ENABLED` live: keep off or turn on. The 2026-11-04 prompt arrived with its template placeholder unfilled. Stays off until decided. Turning it on is a deploy change (compose forces false), after M2-0 | after M2-0 | open |
-| BA-14 | Decide README "License: MIT": add a LICENSE file or drop the line. The 2026-11-04 prompt arrived with its template placeholder unfilled | M2-docs | open |
+| BA-13 | Decide `IMPORT_ENABLED` live: keep off or turn on | after M2-0 | done 2026-11-08: **turn on after the cutover, as a deploy change** (compose currently forces false) |
+| BA-14 | Decide README "License: MIT": add a LICENSE file or drop the line | M2-docs | done 2026-11-08: **drop the line** (in M2-docs) |
 | BA-15 | Cloudflare rate-limit rules on `/oauth/*` and `/mcp` (block-only, skip `160.79.104.0/21`). Needs his Cloudflare login (passkey recovery in progress 2026-11-04). Cutover itself needs no dashboard change | M2 gate | open |
-| BA-16 | Go-ahead for the M2-5 cutover (asked 2026-11-08); after it, reconnect the claude.ai connector. Then the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
-| BA-18 | agy shows "sign-in is missing permissions… run /logout": re-authenticate agy (Google AI Pro) | next review | open |
+| BA-16 | Go-ahead for the M2-5 cutover (GO given 2026-11-08, Brendan present to reconnect); after it, reconnect the claude.ai connector. Then the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
+| BA-18 | agy shows "sign-in is missing permissions… run /logout": re-authenticate agy (Google AI Pro) | next review | done 2026-11-08 |
 | BA-17 | Say which tax bucket each account belongs to (or run `finbot tag-account` once M2-4 lands). Untagged accounts show as `untagged` | after M2-4 | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
