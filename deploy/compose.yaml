@@ -17,7 +17,7 @@ services:
     env_file: ${FINBOT_ENV_FILE:-finbot.env}
     environment:
       FINBOT_DB_PATH: /data/finbot.db
-      IMPORT_ENABLED: "false"
+      IMPORT_ENABLED: "true"
       MCP_LISTEN_ADDR: ":8080" # container interface, not loopback: keeps go-sdk's DNS-rebinding guard off
       MCP_PUBLIC_URL: https://finance.hoidlabs.site
       HTTP_ADDR: "127.0.0.1:8081" # /healthz stays off the port the tunnel forwards; finbot health reads this too
