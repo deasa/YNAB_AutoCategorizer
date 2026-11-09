@@ -19,12 +19,14 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p2G | control (w1:t7) | reviewer (Antigravity); counter 2 (M2-acceptance), replace before next review | — | 2026-11-08 | |
+| b-m2-inv1 | w1:p2H | build | builder (investigation) | M2-inv1 | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
+| M2-inv1 | active | w1:p2H | t/M2-inv1 | — | read-only: claude.ai sees one credit card, no Oct grocery txns. Bug or data fact? |
 | M2-acceptance | active | w1:p2G (agy) | t/M2-acceptance | — | black-box by agy; real Google sign-in + connector query are Brendan-pending (BA-16) |
 | M2-docs | merged | — | — | agy PASS (1 low, task-file note only) | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
 | M2-6 | merged + deployed | — | — | agy PASS (1 low: slog goes to stderr, use `docker logs … 2>&1`) | IMPORT_ENABLED true in deploy/compose.yaml (BA-13); Deploy: yes |
