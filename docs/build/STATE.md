@@ -3,7 +3,7 @@
 Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs/sup-2026-11-08-1245.md)
 
 ## Now
-- Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
+- Milestone: **M2 — MCP read tools + OAuth + public exposure: COMPLETE 2026-11-08, waiting at the gate for Brendan's "continue"** before M3. M1 complete 2026-11-01.
 - Next actions: M2-0..M2-5 merged (main 0bcaaf9). **Cutover done 2026-11-08 (RESULT ok, exit 0)**; Brendan reconnects the connector (BA-16). **M2-6 merged + deployed; M2-docs merged; M2-acceptance running (agy).** First import fires 6h after the container starts (timer resets each restart). Follow-up: import failures only reach the logs, not /healthz, ping or Slack. Then a deploy change turning IMPORT_ENABLED on (BA-13). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
@@ -26,7 +26,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M2-inv1 | merged | — | — | (investigation) | **data fact, not a bug**: mirror = YNAB; tools return all 10 open cards of Trying auto-categorizer, but only 1 has Oct txns and none is linked; no Groceries category. Active spending (linked card, grocery category) is in plan **Make Money Work** → BA-19 |
-| M2-acceptance | active | w1:p2G (agy) | t/M2-acceptance | — | black-box by agy; real Google sign-in + connector query are Brendan-pending (BA-16) |
+| M2-acceptance | merged | — | — | agy **PASS** (2 low) | 2026-11-08; report ../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md; scripts tests/acceptance/M2/. Lows: first live import not yet observed; a wrong-PKCE token request leaves the auth code active (counted by ActiveTokens) until its 5-min TTL |
 | M2-docs | merged | — | — | agy PASS (1 low, task-file note only) | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
 | M2-6 | merged + deployed | — | — | agy PASS (1 low: slog goes to stderr, use `docker logs … 2>&1`) | IMPORT_ENABLED true in deploy/compose.yaml (BA-13); Deploy: yes |
 | M2-0 | merged + deployed | — | — | agy PASS (no findings) | merged + deployed 2026-11-04; migration 0004 lets a failed row keep its verdict. Follow-up: ScanDiscretionary still omits a failed plan from its returned list even when the stored verdict is true, so `sync --archived` skips it that run. Docs follow-ups in tasks/M2-0.md Result (CLAUDE.md store role, architecture.md:48) |
@@ -102,6 +102,12 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 - 2026-11-08 (Brendan): finbot's active plan is now **"Trying auto-categorizer"**, replacing the "May 2025" plan (BA-12). Found when claude.ai saw only one credit card and no October groceries in the old plan. sup set `YNAB_BUDGET_ID` in the main `.env` and the worktree copies, then redeployed; the first sync of the new plan is a full export. Import (BA-13) now applies to this plan.
 
 ## Milestone log
+- **M2 MCP read tools + OAuth + public exposure: complete 2026-11-08** (all tasks merged; M2-1..M2-6 deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md`, scripts `tests/acceptance/M2/`).
+  - finbot's own MCP server live at finance.hoidlabs.site behind its own cloudflared (cutover from the spike, rollback script kept). OAuth AS on fosite with SQLite storage, Google sign-in, email allowlist, consent page, `finbot revoke`.
+  - Read tools: data_freshness, query_transactions, compare_spending, get_financial_snapshot, get_goals, get_income_events; `finbot tag-account`. `/healthz` private on 127.0.0.1:8081.
+  - Brendan's claude.ai connector reconnected; a real query worked. Bank import on in the hoid deploy (BA-13).
+  - Active plan changed to "Trying auto-categorizer" (Brendan). M2-inv1: finbot shows that plan faithfully, but it has little current data (no linked cards, 38 Oct txns) → BA-19.
+  - Open at the gate: BA-19 active plan; wife's sign-in (BA-16); Cloudflare rate limits (BA-15); spike stack cleanup (Brendan's call; M0 gate kept it running); tax-bucket tags (BA-17). Lows: import outcomes only reach logs; import timer resets on each deploy; wrong-PKCE auth code lingers 5 min.
 - **M1 Read-only mirror on hoid: complete 2026-11-01** (all tasks merged + deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M1-acceptance.md`, scripts `tests/acceptance/M1/`). main = 3636b6f; hoid runs 91df942 (code identical; later commits are docs).
   - One `finbot` binary (`serve`, `sync`, `sync --archived`, `health`, `backup`, `restore`); old 6h categorizer + Turso/AI stack deleted (last at b2414be for the M3 guardrail port).
   - Delta sync every 15 min of the "May 2025" plan (BA-12) into SQLite on hoid; import trigger built but **off** pending Brendan.
