@@ -45,7 +45,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 ## 2. Data model (SQLite)
 - Mirror tables per plan_id: accounts (+ local `tax_bucket` tag), category_groups, categories (+targets), payees, transactions, subtransactions (keyed by `id`, FK `transaction_id`), month_categories, scheduled_transactions; `sync_state(plan_id, server_knowledge, synced_at)`.
   - A split parent's `category_id` is a sentinel that is not in `categories`: no FK from transactions to categories (or map the sentinel to NULL + `is_split`). Category reads and aggregations use `subtransactions`, never the split parent's sentinel `category_id`.
-- `plan_scan`: plan_id, name, has_discretionary, scan_error, scanned_at. The latest archived-plan scan, one row per plan; a scan replaces the whole table. Read with `store.PlanScans`.
+- `plan_scan`: plan_id, name, has_discretionary, scan_error, scanned_at. The latest archived-plan scan, one row per plan. A plan whose check failed keeps its last good `has_discretionary` and `scanned_at`, and plans no longer listed are dropped. Read with `store.PlanScans`.
 - `decisions`: txn_id, chosen category, confidence, runner-up, method (rule/model), model+version, input features, created_at, superseded_by.
 - `write_log`: id, actor (system / brendan / wife), via (scheduler / mcp / slack), tier, endpoint, txn/category ids, before_json, after_json, request_id, reverted_by.
 - `human_locks`: (txn_id, field) diverged from our last write → never overwrite (R6b). Also emitted as labeled training examples.

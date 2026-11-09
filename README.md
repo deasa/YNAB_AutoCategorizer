@@ -9,10 +9,12 @@ The old AI categorizer is gone. Categorization returns in a later milestone.
 
 - **Sync:** a full export the first time a plan is seen, then one delta request every 15 minutes.
 - **Archived scan:** `finbot sync --archived` finds every plan with a `Discretionary` category and syncs it.
-- **Bank import:** a trigger is built, but it's off by default (`IMPORT_ENABLED=false`). It's a YNAB write, and the only
-  one finbot makes.
+- **Bank import:** off by default (`IMPORT_ENABLED=false`), on in the hoid deploy. It's a YNAB write, and the only one
+  finbot makes.
+- **MCP:** read-only tools over the local mirror at `/mcp`, behind OAuth with Google sign-in and an email allowlist,
+  reached through a Cloudflare Tunnel. `finbot revoke` signs a user out at once.
 - **Status:** one Slack message is edited after every scheduled sync and backup, so a stale message means finbot has
-  gone quiet. `GET /healthz` reports sync freshness.
+  gone quiet. `GET /healthz` reports sync freshness on a private listener (`HTTP_ADDR`, default `127.0.0.1:8081`).
 - **Backup:** nightly age-encrypted snapshots are stored off-site in Turso, which only ever sees ciphertext. Restore
   runs on a machine holding the private key.
 
@@ -26,10 +28,7 @@ go build -o finbot .
 
 ./finbot sync    # one sync of the active plan, then exit
 ./finbot serve   # daemon: sync on a schedule, /healthz on HTTP_ADDR
+./finbot revoke <email | u_hash | --all>   # sign a user (or everyone) out of MCP
 ```
 
 Commands, architecture, configuration and deployment are in [CLAUDE.md](CLAUDE.md).
-
-## License
-
-MIT

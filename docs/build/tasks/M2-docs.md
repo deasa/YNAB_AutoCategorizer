@@ -35,3 +35,66 @@ Cloudflare Tunnel, import on in the hoid deploy). This is the one task allowed t
 - [ ] `grep -n "License" README.md` → no "MIT" line
 - [ ] Every subcommand in CLAUDE.md's Build & Run exists in `cmd/` dispatch (list them as checked)
 - [ ] go build ./... && go vet ./... && go test ./... green (sanity; no code should change)
+
+## Result
+- Status: DONE
+- What changed:
+  - `CLAUDE.md`: Build & Run (two subcommands, cutover/rollback/rehearsal scripts, tunnel marker), `Scheduler` and
+    `store/`/`backup/` roles, new `auth/` and `mcp/` roles, Safety, Configuration.
+  - `README.md`: MCP bullet, private `/healthz`, import on in the hoid deploy, `finbot revoke`; License section removed.
+  - `docs/plan/architecture.md:48`: `plan_scan` semantics.
+  - `.env.example`: no change needed; M2-2 already set `HTTP_ADDR=127.0.0.1:8081` and added the MCP keys.
+- Follow-ups:
+
+| Task | Item | Outcome |
+|---|---|---|
+| M2-0 | `0004_plan_scan_keep_verdict` in migrations | CLAUDE.md:77 |
+| M2-0 | database files kept 0600 | CLAUDE.md:78 |
+| M2-0 | architecture.md `plan_scan` | docs/plan/architecture.md:48 |
+| M2-1a | `auth/` package role | CLAUDE.md:96 |
+| M2-1a | `0004` and `0005_oauth` in migrations | CLAUDE.md:77-78 |
+| M2-1a | backups hold the HMAC secret and token signatures; `revoke --all` after a restore | CLAUDE.md:95 |
+| M2-1b | `auth/` covers the server; `go-oidc` and go-sdk | CLAUDE.md:96-97 |
+| M2-2 | `mcp/` package role | CLAUDE.md:103 |
+| M2-2 | `finbot revoke` | CLAUDE.md:16, README.md:15,31 |
+| M2-2 | `HTTP_ADDR` default `127.0.0.1:8081` | CLAUDE.md:146 |
+| M2-2 | `MCP_*` and `GOOGLE_OAUTH_*` config | CLAUDE.md:146,155 |
+| M2-2 | forwarded by deploy.sh | CLAUDE.md:142, partly: see Deviations |
+| M2-2 | prune job in `Scheduler` | CLAUDE.md:66 |
+| M2-2 | `/healthz` on its own private listener | CLAUDE.md:70, README.md:17 |
+| M2-2 | old `.env`: drop `HTTP_ADDR=:8080` | CLAUDE.md:147 |
+| M2-2 | `ActiveTokens` | CLAUDE.md:101-102 |
+| M2-2 | `data_freshness` fields and the 14-day rule | CLAUDE.md:107-109 |
+| M2-3 | `QueryLines`, `CategoryTotals` in `store/transactions_read.go` | CLAUDE.md:80-81 |
+| M2-3 | tools `query_transactions`, `compare_spending`; `badRequest` | CLAUDE.md:106,109 (in the `mcp/` role; there is no MCP section) |
+| M2-4 | `finbot tag-account` | CLAUDE.md:17 |
+| M2-4 | three new tools | CLAUDE.md:106 |
+| M2-4 | `store/snapshot_read.go` | CLAUDE.md:82 |
+| M2-4 | window rule | CLAUDE.md:110-111 |
+| M2-4 | income rule | CLAUDE.md:82-83 |
+| M2-5 | cutover, rollback, remote and rehearsal scripts | CLAUDE.md:39-42,53 |
+| M2-5 | `tunnel-active`, `tunnel.env`, `cutover.log` | CLAUDE.md:50-53 |
+| M2-5 | Google and allowlist keys forwarded | CLAUDE.md:142 |
+| M2-5 | `HTTP_ADDR` on hoid | CLAUDE.md:47-48 |
+| M2-6 | Build & Run `IMPORT_ENABLED=true` | CLAUDE.md:47 |
+| M2-6 | Safety wording | CLAUDE.md:123-125 |
+| Brief | README: drop "License: MIT" (BA-14), no LICENSE file | README.md, section removed |
+
+- Acceptance:
+  - Table above → pass.
+  - `grep -n "License" README.md` → pass, no output.
+  - Every subcommand in Build & Run is in `cmd/app.go` dispatch → pass. Checked: serve, sync (and `--archived`), health,
+    backup (and `--list`), restore, revoke, tag-account. Bare `./finbot` is the usage path.
+  - `go build ./... && go vet ./... && go test ./...` → pass.
+  - Also checked: all seven `deploy/*.sh` exist and are executable; every `MCP_*`, `GOOGLE_OAUTH_*`, `HTTP_*`, `TUNNEL_*`
+    name written is in `config`, `cmd` or `deploy`; the diff has no UUIDs, emails or the public hostname.
+- Deviations from brief:
+  - M2-2 says to add `MCP_*` to deploy.sh's forwarded list. The code forwards only `MCP_ALLOWED_EMAILS`; compose sets
+    `MCP_LISTEN_ADDR` and `MCP_PUBLIC_URL`. Code wins, and CLAUDE.md says so.
+  - M2-4's Result mentions `tag-account [--list]`. `cmd/tag_account.go` takes no arguments or two, so `--list` exits 2.
+    CLAUDE.md documents the real form, matching M2-4's follow-up text.
+  - Small additions the follow-ups don't name, needed for the docs to match main: `GOOGLE_OAUTH_CLIENT_SECRET`,
+    `TUNNEL_TOKEN` and allowlisted emails in Safety's secrets line (CLAUDE.md:126-128); "HTTP servers" in the shutdown
+    sentence; README MCP bullet and the import wording.
+- Follow-ups for backlog: none
+- Docs follow-ups: none
