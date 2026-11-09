@@ -1,14 +1,14 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-08 by sup (fourth session; handoff docs/build/handoffs/sup-2026-11-08-2330.md)
+Updated: 2026-11-09 by sup (first live import checked; handoff docs/build/handoffs/sup-2026-11-08-2330.md)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
-- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-13 merged (main ff3fd25). Nothing in flight. **Dispatch M3-1c next** (store/; the only unblocked task), then M3-2, M3-7, M3-9. Check the first live import (due ~02:49 MST 2026-11-09). See handoff sup-2026-11-08-2330.md.
-- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-13 merged (main ff3fd25). Nothing in flight. **Dispatch M3-1c next** (store/; the only unblocked task), then M3-2, M3-7, M3-9. Check the first live import (due ~02:49 MST 2026-11-09). See handoff sup-2026-11-08-2330.md.
+- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-13 merged (main ff3fd25). Nothing in flight. **Dispatch M3-1c next** (store/; the only unblocked task), then M3-2, M3-7, M3-9. See handoff sup-2026-11-08-2330.md.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
+- 2026-11-09 02:49 MST: **first live bank import OK** on "Trying auto-categorizer" (M2-6, BA-13), one 6h interval after the 20:49 MST container start: `import tick` imported=0 skipped=false, no `import tick failed`. 0 new means YNAB had nothing pending; checked by sup via `docker logs --since 09:30Z`.
 - hoid finbot: **beb943d** deployed 2026-11-08 20:28 MST by sup (M2-6, IMPORT_ENABLED=true, BA-13). Smoke: healthy, /mcp 401, cloudflared untouched, env IMPORT_ENABLED=true, log `import enabled` 6h0m0s. First import due ~2026-11-09 02:28 MST; check `docker logs finbot-finbot-1 2>&1` for `import tick` with skipped=false.
 - hoid finbot: **653c38f** deployed 2026-11-08 by sup via `deploy/cutover.sh` (M2-1..M2-5, MCP + OAuth live). finbot's cloudflared serves finance.hoidlabs.site; spike connector stopped, spike finbot + volume kept until the gate. Smoke: POST /mcp 401, protected-resource `resource_name` finbot, public /healthz 404, finbot healthy, cutover log secret grep 0. Marker `tunnel-active` created. IMPORT_ENABLED still false.
 - hoid finbot: **857a118** deployed 2026-11-04 by sup (M2-0). Smoke: db, -wal, -shm all 600, healthy, 0 restarts, status message edited not re-posted, import disabled, finbot-spike untouched (/mcp 401). The entry below is history.
