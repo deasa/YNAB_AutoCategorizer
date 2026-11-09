@@ -99,6 +99,8 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 - 2026-11-01 (Brendan): BA-7 replaced by a Slack status message in `#finbot-finances`, edited after every sync; his own Slack automation alerts on staleness. BA-8: Turso holds only age-encrypted snapshot blobs (sup's recommendation; never plaintext or a live replica). The arch §1 "no Turso" (as the primary store) still holds.
 - 2026-11-04 (sup technical calls, flagged to Brendan): `/healthz` moves off the public MCP port because the tunnel exposes every path and it returns `last_error`. `get_category_decisions`, `get_tithing_status`, `get_fun_money` deferred to M3/M4 because their data doesn't exist yet. Reviews back on agy. The `rev` pane vanished on 2026-11-04; if agy runs out of quota, start a fresh Claude reviewer pane.
 
+- 2026-11-08 (Brendan): finbot's active plan is now **"Trying auto-categorizer"**, replacing the "May 2025" plan (BA-12). Found when claude.ai saw only one credit card and no October groceries in the old plan. sup set `YNAB_BUDGET_ID` in the main `.env` and the worktree copies, then redeployed; the first sync of the new plan is a full export. Import (BA-13) now applies to this plan.
+
 ## Milestone log
 - **M1 Read-only mirror on hoid: complete 2026-11-01** (all tasks merged + deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M1-acceptance.md`, scripts `tests/acceptance/M1/`). main = 3636b6f; hoid runs 91df942 (code identical; later commits are docs).
   - One `finbot` binary (`serve`, `sync`, `sync --archived`, `health`, `backup`, `restore`); old 6h categorizer + Turso/AI stack deleted (last at b2414be for the M3 guardrail port).
