@@ -29,7 +29,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 |---|---|---|---|---|---|
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
 | M3-0b | merged | — | — | agy PASS | merged 2026-11-08: cutover/rollback/rehearse scripts removed. Follow-up: flaky TestServe_MCPEndToEnd (freePort race, cmd/serve_test.go:88) |
-| M3-1b | review | w1:p2T | t/M3-1b | agy r1 pending | store/: write_log + human_locks (0007) |
+| M3-1b | fix | w1:p2T | t/M3-1b | agy r1 FIX (2 high: LabeledHistory counts system writes as labels; Lock deadlocks inside a sync tx) | store/: write_log + human_locks (0007) |
 | M3-13 | merged | — | — | agy PASS (no findings) | merged 2026-11-08: get_category_decisions(transaction_id) |
 | M3-1a | merged | — | — | agy PASS (2 low → carried into M3-2, M3-5 briefs) | merged 2026-11-08: decisions (0006), labelled history, mirror reads |
 | M3-plan | merged | — | — | agy PASS r2 (r1 FIX: dry_run→auto write leak, image deps, reconcile timing, candidates, store reads, probe flags, redaction) | 28 tasks in BACKLOG M3; briefs in tasks/M3-*.md |
