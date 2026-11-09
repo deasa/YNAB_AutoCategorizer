@@ -19,8 +19,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p2Q | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-0a, M3-0b), replace before next review | — | 2026-11-08 | |
-| b-m3-0b | w1:p2N | build | builder | M3-0b | 2026-11-08 | |
+| agy | w1:p2R | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-1a) |
 | b-m3-1a | w1:p2P | build2 | builder | M3-1a | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
@@ -29,8 +28,8 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
-| M3-0b | review | w1:p2N | t/M3-0b | — | deploy/: retire rollback.sh |
-| M3-1a | active | w1:p2P | t/M3-1a | — | store/: decisions (0006), labelled history |
+| M3-0b | merged | — | — | agy PASS | merged 2026-11-08: cutover/rollback/rehearse scripts removed. Follow-up: flaky TestServe_MCPEndToEnd (freePort race, cmd/serve_test.go:88) |
+| M3-1a | review | w1:p2P | t/M3-1a | — | store/: decisions (0006), labelled history |
 | M3-plan | merged | — | — | agy PASS r2 (r1 FIX: dry_run→auto write leak, image deps, reconcile timing, candidates, store reads, probe flags, redaction) | 28 tasks in BACKLOG M3; briefs in tasks/M3-*.md |
 | M2-inv1 | merged | — | — | (investigation) | **data fact, not a bug**: mirror = YNAB; tools return all 10 open cards of Trying auto-categorizer, but only 1 has Oct txns and none is linked; no Groceries category. Active spending (linked card, grocery category) is in plan **Make Money Work** → BA-19 |
 | M2-acceptance | merged | — | — | agy **PASS** (2 low) | 2026-11-08; report ../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md; scripts tests/acceptance/M2/. Lows: first live import not yet observed; a wrong-PKCE token request leaves the auth code active (counted by ActiveTokens) until its 5-min TTL |
