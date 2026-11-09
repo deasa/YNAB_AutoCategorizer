@@ -27,7 +27,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-plan | review | w1:p2J | t/M3-plan | — | gate breakdown: BACKLOG M3 table + briefs; agy attacks it before dispatch |
+| M3-plan | fix | w1:p2J | t/M3-plan | agy r1 FIX (2 high: dry_run→auto write leak, Dockerfile lacks claude install deps) | gate breakdown: BACKLOG M3 table + briefs; agy attacks it before dispatch |
 | M2-inv1 | merged | — | — | (investigation) | **data fact, not a bug**: mirror = YNAB; tools return all 10 open cards of Trying auto-categorizer, but only 1 has Oct txns and none is linked; no Groceries category. Active spending (linked card, grocery category) is in plan **Make Money Work** → BA-19 |
 | M2-acceptance | merged | — | — | agy **PASS** (2 low) | 2026-11-08; report ../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md; scripts tests/acceptance/M2/. Lows: first live import not yet observed; a wrong-PKCE token request leaves the auth code active (counted by ActiveTokens) until its 5-min TTL |
 | M2-docs | merged | — | — | agy PASS (1 low, task-file note only) | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
