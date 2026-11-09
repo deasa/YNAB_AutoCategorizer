@@ -73,7 +73,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | BA-13 | Decide `IMPORT_ENABLED` live: keep off or turn on | after M2-0 | done 2026-11-08: **turn on after the cutover, as a deploy change** (compose currently forces false) |
 | BA-14 | Decide README "License: MIT": add a LICENSE file or drop the line | M2-docs | done 2026-11-08: **drop the line** (in M2-docs) |
 | BA-15 | Cloudflare rate-limit rules on `/oauth/*` and `/mcp` (block-only, skip `160.79.104.0/21`). Needs his Cloudflare login (passkey recovery in progress 2026-11-04). Cutover itself needs no dashboard change | M2 gate | open |
-| BA-16 | Go-ahead for the M2-5 cutover (GO given 2026-11-08; **cutover done; Brendan reconnected the claude.ai connector and a real query worked, 2026-11-08**); still open: reconnect the claude.ai connector. Then the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
+| BA-16 | Go-ahead for the M2-5 cutover (GO given 2026-11-08; **cutover done; Brendan reconnected the claude.ai connector and a real query worked, 2026-11-08**). Still open: the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
 | BA-18 | agy shows "sign-in is missing permissions… run /logout": re-authenticate agy (Google AI Pro) | next review | done 2026-11-08 |
 | BA-17 | Say which tax bucket each account belongs to (or run `finbot tag-account` once M2-4 lands). Untagged accounts show as `untagged` | after M2-4 | open |
 
