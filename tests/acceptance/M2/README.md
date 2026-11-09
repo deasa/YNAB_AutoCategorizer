@@ -1,0 +1,8 @@
+# M2 acceptance scripts
+
+Run from the repo root. All scripts are read-only against YNAB, Slack and hoid, and never print secrets, UUIDs, tokens or email addresses.
+
+- `lib.sh`: shared `secret_count` helper (checks `.env` secret/id values with inline comments stripped, token-shaped strings, UUIDs, and email addresses).
+- `public_check.sh`: black-box probes of `https://finance.hoidlabs.site` (Cloudflare headers, protected-resource metadata with `resource_name: "finbot"`, AS metadata, 401s on `/mcp`, CORS preflight, `/healthz` returning 404, DCR validation and registration, local 400 on missing/plain PKCE, 302 to Google on S256 PKCE).
+- `hoid_check.sh`: read-only inspection of `finbot-finbot-1` and `finbot-cloudflared-1` on hoid (container hardening, uid 10001 and 65532, no published ports, `IMPORT_ENABLED=true`, `HTTP_ADDR=127.0.0.1:8081`, no `TUNNEL_TOKEN` on finbot, `0600` on `/data/finbot.db*` and `~/finbot/{finbot.env,tunnel.env,cutover.log,tunnel-active}`, `RESULT ok` in `cutover.log`, 0 warn/error lines and 0 secrets/UUIDs/emails in logs, `*Import:* on` in Slack status).
+- `local_check.sh` + `mcp_driver.go`: builds `finbot` locally, runs a read-only `finbot sync` (initial + delta) into a temporary SQLite DB with `SLACK_BOT_TOKEN`, `HEALTHCHECK_PING_URL` and `BACKUP_*` blanked and `IMPORT_ENABLED=false`, then exercises `finbot tag-account`, `finbot revoke`, `0600` DB tightening, DCR cap eviction, OAuth PKCE code exchange, refresh rotation and replay detection, restart persistence, live CLI revocation without restart, and all 6 MCP read tools (`data_freshness`, `query_transactions`, `compare_spending`, `get_financial_snapshot`, `get_goals`, `get_income_events`) over Streamable HTTP.
