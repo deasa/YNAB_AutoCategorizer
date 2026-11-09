@@ -15,7 +15,9 @@ agy, black-box, confirms M3's safety properties on the running system before any
 - On hoid in dry-run: `write_log` is empty, questions appear, the cap holds, and a click records without changing YNAB.
 - Against the sandbox: the writer applies, logs before/after, and refuses a human-edited row. A human edit made in the sandbox stays through a later sync.
 - Slack: an unlisted user's click has no effect; a double click applies once; a restart keeps routing.
-- `CLASSIFY_MODE=auto` with a mismatched hash behaves as dry-run (local, against the sandbox, never hoid).
+- `CLASSIFY_MODE=auto` with a mismatched hash behaves as dry-run, including a Slack `categorize` answer (local, against the sandbox, never hoid).
+- Transition (local, against the sandbox): an open `dry_run_check` from a `dry_run` run is closed when `auto` starts, is never written if clicked, and a row older than `CLASSIFY_AUTO_SINCE` is never written.
+- Crash after a sandbox PATCH and before `done`: after restart and sync, the intent becomes `done` and the row isn't locked.
 - `get_category_decisions` works through the authenticated MCP.
 - Secret and id grep over logs, Slack text and DB exports used in the test.
 

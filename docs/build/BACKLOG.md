@@ -105,17 +105,20 @@ behind a flag only Brendan turns on. Briefs are in `tasks/`. M3 classifies into 
 Valid order: M3-0a, M3-0b, M3-1a, M3-1b, M3-1c, M3-2, M3-3, M3-4, M3-5, M3-6, M3-7, M3-8, M3-9, M3-10a, M3-10b, M3-11, M3-12a,
 M3-12b, M3-13, M3-14a, M3-14b, M3-15, M3-16, M3-17, M3-docs, M3-acceptance, M3-dryrun, M3-golive.
 
+`store/` is finished after M3-1c: M3-1a to M3-1c add every read the later tasks need, and a later task that finds a gap raises a QUESTION rather than editing it.
+
 ### What the active plan means for M3
 "Trying auto-categorizer" has about 38 transactions in Oct 2026 (roughly 9 a week), 3 linked accounts, many uncategorized rows
 and no Groceries category.
 - **Labelled data for calibration** (M3-5): approved, categorized transactions from the active plan plus every plan with
   `has_discretionary` true in `plan_scan` (valid per Decisions 2026-10-29), joined to the active plan's categories by exact
-  name. There is no remap.
+  name. There is no remap. Ready to Assign, Credit Card Payments, internal and set-aside labels are left out.
 - **Missing categories**: a labelled transaction whose category isn't in the active plan (Groceries, for one) has no correct
   answer at run time. Calibration keeps it as a hard negative: auto-applying it at τ counts as wrong. τ therefore measures the
   real risk of forcing a grocery charge into the nearest category.
 - **τ is tied to the list**: adding or renaming a category in the active plan changes the candidate hash, and auto falls back
-  to dry-run until `finbot calibrate` reruns. BA-19 says Brendan may still add categories, so expect at least one rerun.
+  to dry-run until `finbot calibrate` reruns. M3-6 calibrates on the current state; Brendan's category and card changes come later, and sup reruns M3-6 when they land.
+  With today's list, `auto_eligible` may come back false, which holds go-live until that rerun.
 - **Payee history** comes from the same cross-plan labels, because the active plan alone is too thin to feed the rules or Jev.
 - **Dry-run week**: about 9 new transactions can't confirm 85% precision (9 of 9 right has a Wilson lower bound near 70%).
   The dry-run also covers the last 45 days of uncategorized backlog, and every decision is a Slack question so that it can be
@@ -137,26 +140,20 @@ and no Groceries category.
 ### Brendan inputs
 | Input | First task blocked |
 |---|---|
-| Confirm the two Slack users (Slack user ids go in `.env` as `SLACK_USERS`; sup can look them up with an OK) and that both are in `#finbot-finances` | M3-14a live use; M3-17 deploy |
 | Slack app tidy-up: drop `groups:write`, keep `connections:write`, `chat:write`, `groups:read`, `groups:history`, `users:read`, event `message.groups`, Interactivity on | M3-17 (not a hard block; only the listed scopes are needed) |
-| Finish category and card changes in "Trying auto-categorizer" (BA-19) before the calibration that go-live relies on | M3-6 (rerun if the list changes later) |
-| OK that a dry-run posts real questions to the shared channel, capped at 5 open | M3-17 |
-| Answers to Plan questions 1 to 3 below (defaults are written into the briefs) | M3-11 |
 | Go-live after the dry-run report: only Brendan turns on `CLASSIFY_MODE=auto` | M3-golive |
-| Whether auto may also write the 45-day backlog, or only new transactions (default: new only) | M3-golive |
+| Make the category and card changes in "Trying auto-categorizer" when ready. sup then reruns M3-6; go-live needs a calibration matching the current list | M3-golive (only if the first calibration isn't `auto_eligible` or the list has changed) |
 
-Done, no longer inputs: category mapping (as is, 2026-11-08); BA-9 sandbox plan (`YNAB_SANDBOX_PLAN_ID` in the main `.env`).
+Done, no longer inputs (all 2026-11-08): category mapping as is; BA-9 sandbox plan (`YNAB_SANDBOX_PLAN_ID` in the main `.env`); `SLACK_USERS` in the main `.env` (2 humans); dry-run may post real questions, max 5 open; M3-6 calibrates on the current state and reruns later; Plan questions 1 to 3 defaults; auto writes new transactions only.
 sup actions, Brendan only if they fail: confirm `JEV_API_KEY` still has budget (M3-6; M0-1b noted a fresh budget may be needed; about $0.07 per 1,000
 transactions); copy `CLAUDE_CODE_OAUTH_TOKEN` from hoid's `~/finbot/.env` to the main `.env` unprinted, since deploy.sh builds `finbot.env` from the local file (M3-17).
 
 ### Plan questions
-1. **Can the claude second opinion cause an auto-apply?** §3.3 calls it a fallback or second opinion on the τ-miss band but gives
-   it no threshold, and τ is only measured for Jev. Default in M3-11: advisory only. It's logged in `decisions` and shown in the
-   question, never written.
-2. **§5 "split" button.** A split needs amounts and M3 has no free text. Default in M3-10b: the button says to split in YNAB and
-   closes the question; the next sync locks the row.
-3. **Which R11 alerts land in M3?** §3.7 lists all of them, but paycheck and tithing need M4's `profile`. Default: link error, stale
-   import, duplicate, price change and large charge in M3; missing or short paycheck and tithing in M4.
+1. **Can the claude second opinion cause an auto-apply?** Answered 2026-11-08: no. Advisory only; logged in `decisions` and shown in the
+   question, never written (M3-11).
+2. **§5 "split" button.** Answered 2026-11-08: the button says to split in YNAB and closes the question; the next sync locks the row (M3-10b).
+3. **Which R11 alerts land in M3?** Answered 2026-11-08: link error, stale import, duplicate, price change and large charge in M3; missing or
+   short paycheck and tithing in M4, which has the `profile` they need.
 4. **§3.3 and R6 say "mapped old→new".** Brendan's 2026-11-08 answer replaces that for M3. M3-docs records it; M4's Fresh Start
    needs a fresh calibration, since the category list and plan change.
 5. **Does the active plan have `Discretionary`?** §3.2 sends event spending there and the policy text depends on it, but M3-plan

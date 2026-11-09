@@ -13,7 +13,7 @@ The hoid service categorizes above τ on its own, with every write logged. This 
 
 ## Scope
 - Do not start without the STATE.md decision. Don't infer the go from a passing report.
-- `deploy/compose.yaml`: `CLASSIFY_MODE: "auto"`. Add `CLASSIFY_AUTO_SINCE` set to the go-live date unless Brendan chose to include the backlog. Dry-run answers aren't written to YNAB retroactively.
+- `deploy/compose.yaml`: `CLASSIFY_MODE: "auto"` and `CLASSIFY_AUTO_SINCE` set to the go-live date. Auto writes new transactions only, not the 45-day backlog (Brendan, 2026-11-08). Dry-run answers are never written to YNAB; open dry-run questions close on the first auto run.
 - `calibration.json` must have `auto_eligible=true` and match the current candidates hash. If it doesn't, stop and rerun M3-6 rather than editing the file.
 
 ## Out of scope
