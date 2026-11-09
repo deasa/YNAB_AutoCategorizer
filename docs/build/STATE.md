@@ -1,11 +1,11 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs/sup-2026-11-08-1245.md)
+Updated: 2026-11-08 by sup (fourth session; handoff docs/build/handoffs/sup-2026-11-08-2330.md)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
-- Next actions: M3-0a/0b/1a merged; M3-1b and M3-13 running. After M3-1b: M3-1c, then M3-2, M3-7, M3-9. agy counter 2: replace before the next review. `SLACK_USERS` in main .env is `brendan:…,hilarie:…`.
-- Next actions: M2-0..M2-5 merged (main 0bcaaf9). **Cutover done 2026-11-08 (RESULT ok, exit 0)**; Brendan reconnects the connector (BA-16). **M2-6 merged + deployed; M2-docs merged; M2-acceptance running (agy).** First import fires 6h after the container starts (timer resets each restart). Follow-up: import failures only reach the logs, not /healthz, ping or Slack. Then a deploy change turning IMPORT_ENABLED on (BA-13). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
+- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-13 merged (main ff3fd25). Nothing in flight. **Dispatch M3-1c next** (store/; the only unblocked task), then M3-2, M3-7, M3-9. Check the first live import (due ~02:49 MST 2026-11-09). See handoff sup-2026-11-08-2330.md.
+- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-13 merged (main ff3fd25). Nothing in flight. **Dispatch M3-1c next** (store/; the only unblocked task), then M3-2, M3-7, M3-9. Check the first live import (due ~02:49 MST 2026-11-09). See handoff sup-2026-11-08-2330.md.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -20,7 +20,6 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p2V | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-1b r1, r2), replace before next review |
-| b-m3-1b | w1:p2T | build2 | builder | M3-1b | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
@@ -29,7 +28,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 |---|---|---|---|---|---|
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
 | M3-0b | merged | — | — | agy PASS | merged 2026-11-08: cutover/rollback/rehearse scripts removed. Follow-up: flaky TestServe_MCPEndToEnd (freePort race, cmd/serve_test.go:88) |
-| M3-1b | review r2 | w1:p2T | t/M3-1b | agy r1 FIX (2 high: LabeledHistory counts system writes as labels; Lock deadlocks inside a sync tx); r2 pending | store/: write_log + human_locks (0007) |
+| M3-1b | merged | — | — | agy PASS r2 (r1 FIX: LabeledHistory counted system writes as labels; Lock deadlocked inside a sync tx) | merged 2026-11-08: write_log + human_locks (0007) |
 | M3-13 | merged | — | — | agy PASS (no findings) | merged 2026-11-08: get_category_decisions(transaction_id) |
 | M3-1a | merged | — | — | agy PASS (2 low → carried into M3-2, M3-5 briefs) | merged 2026-11-08: decisions (0006), labelled history, mirror reads |
 | M3-plan | merged | — | — | agy PASS r2 (r1 FIX: dry_run→auto write leak, image deps, reconcile timing, candidates, store reads, probe flags, redaction) | 28 tasks in BACKLOG M3; briefs in tasks/M3-*.md |
