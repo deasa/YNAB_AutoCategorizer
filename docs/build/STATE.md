@@ -19,14 +19,13 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p2G | control (w1:t7) | reviewer (Antigravity); counter 2 (M2-acceptance), replace before next review | — | 2026-11-08 | |
-| b-m2-inv1 | w1:p2H | build | builder (investigation) | M2-inv1 | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M2-inv1 | active | w1:p2H | t/M2-inv1 | — | read-only: claude.ai sees one credit card, no Oct grocery txns. Bug or data fact? |
+| M2-inv1 | merged | — | — | (investigation) | **data fact, not a bug**: mirror = YNAB; tools return all 10 open cards of Trying auto-categorizer, but only 1 has Oct txns and none is linked; no Groceries category. Active spending (linked card, grocery category) is in plan **Make Money Work** → BA-19 |
 | M2-acceptance | active | w1:p2G (agy) | t/M2-acceptance | — | black-box by agy; real Google sign-in + connector query are Brendan-pending (BA-16) |
 | M2-docs | merged | — | — | agy PASS (1 low, task-file note only) | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
 | M2-6 | merged + deployed | — | — | agy PASS (1 low: slog goes to stderr, use `docker logs … 2>&1`) | IMPORT_ENABLED true in deploy/compose.yaml (BA-13); Deploy: yes |
@@ -77,6 +76,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | BA-15 | Cloudflare rate-limit rules on `/oauth/*` and `/mcp` (block-only, skip `160.79.104.0/21`). Needs his Cloudflare login (passkey recovery in progress 2026-11-04). Cutover itself needs no dashboard change | M2 gate | open |
 | BA-16 | Go-ahead for the M2-5 cutover (GO given 2026-11-08; **cutover done; Brendan reconnected the claude.ai connector and a real query worked, 2026-11-08**). Still open: the wife's real Google sign-in; give sup her Google address for `MCP_ALLOWED_EMAILS` if it isn't already allowlisted | M2-5 / M2 gate | open |
 | BA-18 | agy shows "sign-in is missing permissions… run /logout": re-authenticate agy (Google AI Pro) | next review | done 2026-11-08 |
+| BA-19 | Pick finbot's active plan given M2-inv1: keep "Trying auto-categorizer" (link current cards, add categories in YNAB) or switch to "Make Money Work" (linked card, 35 Oct txns, grocery category). Import follows the active plan | M2 gate | open |
 | BA-17 | Say which tax bucket each account belongs to (or run `finbot tag-account` once M2-4 lands). Untagged accounts show as `untagged` | after M2-4 | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
