@@ -73,7 +73,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | BA-10 | YNAB: relink 3 credit-card connections in `direct_import_in_error` (found by M0-5) | M1 sync freshness | open |
 | BA-11 | Tell sup whether the old 6h categorizer is running live anywhere (confounds §3.1 payee-memory finding) | M1 | done 2026-10-27: Brendan believes it is not running → M0-5's 9/75 unapproved+categorized imports are likely YNAB payee memory (§3.1 assumption leans VERIFIED; still confirm by observation in M1) |
 | BA-12 | Confirm the active plan: `.env` `YNAB_BUDGET_ID` points to "May 2025 (Archived on 2026-03-14)". Give sup the plan finbot should sync live (name is enough; sup fixes `.env`) | M1-5a deploy | done 2026-10-29: keep the \"May 2025\" plan (already in `.env`); see Decisions |
-| BA-9 | YNAB: create an empty "finbot-sandbox" plan in the YNAB UI for write tests (API can't create plans) | M3 | open |
+| BA-9 | YNAB: create an empty "finbot-sandbox" plan in the YNAB UI for write tests (API can't create plans) | M3 | done 2026-11-08: plan created; sup stored its id in the main .env as `YNAB_SANDBOX_PLAN_ID` (copy into worktrees that need sandbox writes) |
 | BA-13 | Decide `IMPORT_ENABLED` live: keep off or turn on | after M2-0 | done 2026-11-08: **turn on after the cutover, as a deploy change** (compose currently forces false) |
 | BA-14 | Decide README "License: MIT": add a LICENSE file or drop the line | M2-docs | done 2026-11-08: **drop the line** (in M2-docs) |
 | BA-15 | Cloudflare rate-limit rules on `/oauth/*` and `/mcp` (block-only, skip `160.79.104.0/21`). Needs his Cloudflare login (passkey recovery in progress 2026-11-04). Cutover itself needs no dashboard change | M2 gate | done 2026-11-08 by sup in Brendan's Cloudflare session, with his yes: rate-limit rule `finbot oauth+mcp per-IP limit` (path starts with /oauth/ or /mcp, >50 req/10s per IP → Block 10s; free plan: path-only, 10s, 1 rule) + custom rule `skip rate limits for Anthropic egress` (ip.src in 160.79.104.0/21 → Skip all rate limiting rules). Checked: /mcp 401, metadata 200 |
@@ -104,6 +104,8 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 
 - 2026-11-08 (Brendan): finbot-spike stopped and removed on hoid (containers, volume, image, ~/finbot-spike; finbot's ~/finbot/tunnel.env holds the same tunnel token). `deploy/rollback.sh` now has no spike to fall back to → retire or rewrite it (M3 docs/deploy follow-up). BA-19: keep "Trying auto-categorizer". sup does BA-15 and BA-17 for him.
 - 2026-11-08 (Brendan): finbot's active plan is now **"Trying auto-categorizer"**, replacing the "May 2025" plan (BA-12). Found when claude.ai saw only one credit card and no October groceries in the old plan. sup set `YNAB_BUDGET_ID` in the main `.env` and the worktree copies, then redeployed; the first sync of the new plan is a full export. Import (BA-13) now applies to this plan.
+
+- 2026-11-08 (Brendan): **category mapping is fine as is**, good enough to keep going. M3 classifies into the active plan's existing categories; no old→new remap or category creation before M4 unless Brendan asks. (The PROPOSED simplified list stays a later M4 input.)
 
 ## Milestone log
 - **M2 MCP read tools + OAuth + public exposure: complete 2026-11-08** (all tasks merged; M2-1..M2-6 deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md`, scripts `tests/acceptance/M2/`).
