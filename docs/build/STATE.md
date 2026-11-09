@@ -4,7 +4,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 
 ## Now
 - Milestone: **M2 — MCP read tools + OAuth + public exposure: ACTIVE** (Brendan said "continue" 2026-11-04). M1 complete 2026-11-01.
-- Next actions: M2-0..M2-5 merged (main 0bcaaf9). **Cutover done 2026-11-08 (RESULT ok, exit 0)**; Brendan reconnects the connector (BA-16). **M2-6 merged + deployed.** First import fires 6h after the container starts (timer resets each restart). Follow-up: import failures only reach the logs, not /healthz, ping or Slack. Then a deploy change turning IMPORT_ENABLED on (BA-13). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
+- Next actions: M2-0..M2-5 merged (main 0bcaaf9). **Cutover done 2026-11-08 (RESULT ok, exit 0)**; Brendan reconnects the connector (BA-16). **M2-6 merged + deployed; M2-docs merged; M2-acceptance running (agy).** First import fires 6h after the container starts (timer resets each restart). Follow-up: import failures only reach the logs, not /healthz, ping or Slack. Then a deploy change turning IMPORT_ENABLED on (BA-13). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -18,15 +18,15 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p2G | control (w1:t7) | reviewer (Antigravity); counter 1 (M2-docs) | — | 2026-11-08 | |
-| b-m2-docs | w1:p2F | build | builder | M2-docs | 2026-11-08 | |
+| agy | w1:p2G | control (w1:t7) | reviewer (Antigravity); counter 2 (M2-acceptance), replace before next review | — | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M2-docs | review | w1:p2F | t/M2-docs | agy r1 pending | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
+| M2-acceptance | active | w1:p2G (agy) | t/M2-acceptance | — | black-box by agy; real Google sign-in + connector query are Brendan-pending (BA-16) |
+| M2-docs | merged | — | — | agy PASS (1 low, task-file note only) | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
 | M2-6 | merged + deployed | — | — | agy PASS (1 low: slog goes to stderr, use `docker logs … 2>&1`) | IMPORT_ENABLED true in deploy/compose.yaml (BA-13); Deploy: yes |
 | M2-0 | merged + deployed | — | — | agy PASS (no findings) | merged + deployed 2026-11-04; migration 0004 lets a failed row keep its verdict. Follow-up: ScanDiscretionary still omits a failed plan from its returned list even when the stored verdict is true, so `sync --archived` skips it that run. Docs follow-ups in tasks/M2-0.md Result (CLAUDE.md store role, architecture.md:48) |
 | M2-5 | merged + deployed | — | — | agy PASS r2 (r1 FIX: ssh drop could strand two connectors; 1 low) | merged 2026-11-08; **cut over + deployed 2026-11-08** (653c38f). Steps 3-6 + rollback run detached on hoid. Not proven: hoid compose is 5.6.1 vs local 2.15.1 rehearsal. Docs follow-ups in tasks/M2-5.md Result |
