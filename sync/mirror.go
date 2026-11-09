@@ -221,23 +221,22 @@ var uuidRE = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 // ScanDiscretionary is the one-shot archived-plan scan: it lists every plan
 // the token can reach, checks each for a live category named "Discretionary"
 // (case-insensitive), stores the result in db (dropping plans no longer listed;
-// read it back with db.PlanScans), and returns the plans this scan found one
-// in, in list order. It costs one GET for the list plus one per plan, and is
-// never run per tick.
+// read it back with db.PlanScans), and returns the plans whose stored verdict
+// is true, in list order. It costs one GET for the list plus one per plan, and
+// is never run per tick.
 //
 // A plan whose categories can't be fetched doesn't stop the scan: it is
 // stored with its redacted error, keeping the verdict and time of its last
 // successful scan, and the call returns the plans found together with a
-// *ScanError naming every plan that failed. A failed plan is never in the
-// returned list, whatever its stored verdict. If listing fails, or ctx ends,
-// nothing is stored.
+// *ScanError naming every plan that failed. A failed plan is in the returned
+// list only if its kept verdict is true, so one bad fetch doesn't drop a known
+// plan from the run. If listing fails, or ctx ends, nothing is stored.
 func ScanDiscretionary(ctx context.Context, lister PlanLister, client ClientFunc, db *store.DB) ([]ynab.PlanSummary, error) {
 	plans, err := lister.Plans(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sync: list plans: %w", err)
 	}
 	var (
-		out     []ynab.PlanSummary
 		rows    = make([]store.PlanScan, 0, len(plans))
 		scanErr ScanError
 	)
@@ -253,13 +252,28 @@ func ScanDiscretionary(ctx context.Context, lister PlanLister, client ClientFunc
 			// different PlanAPI might leave in.
 			row.ScanError = uuidRE.ReplaceAllString(err.Error(), "{id}")
 			scanErr.Failed = append(scanErr.Failed, PlanScanFailure{Name: p.Name, Err: row.ScanError, orig: err})
-		} else if row.HasDiscretionary = hasDiscretionary(groups); row.HasDiscretionary {
-			out = append(out, p)
+		} else {
+			row.HasDiscretionary = hasDiscretionary(groups)
 		}
 		rows = append(rows, row)
 	}
 	if err := db.ReplacePlanScans(ctx, rows); err != nil {
 		return nil, fmt.Errorf("sync: save plan scan: %w", err)
+	}
+	// Read the verdicts back: only the store knows what a failed plan kept.
+	stored, err := db.PlanScans(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sync: read plan scan: %w", err)
+	}
+	has := make(map[string]bool, len(stored))
+	for _, r := range stored {
+		has[r.PlanID] = r.HasDiscretionary
+	}
+	var out []ynab.PlanSummary
+	for _, p := range plans {
+		if has[p.ID] {
+			out = append(out, p)
+		}
 	}
 	if len(scanErr.Failed) > 0 {
 		scanErr.Scanned = len(plans)
