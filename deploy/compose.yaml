@@ -2,7 +2,7 @@
 # (source in ~/finbot/src, this file at ~/finbot/src/deploy/compose.yaml).
 # The project directory is this file's, so compose never reads ~/finbot/.env.
 # cloudflared is in profile "tunnel": deploy.sh enables it only when ~/finbot/tunnel-active
-# exists, which deploy/cutover.sh creates and deploy/rollback.sh removes.
+# exists. The marker was set on hoid at the cutover and stays there.
 services:
   finbot:
     build:

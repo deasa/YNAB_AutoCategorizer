@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Real-docker check of what the fake hoid in rehearse.sh can't prove: the real
-# image, compose file, listeners and cloudflared flags. Compose project
+# Real-docker check of the real image, compose file, listeners and cloudflared flags. Compose project
 # finbot-rehearsal with dummy credentials. It never reads .env. finbot gets egress
 # only so Google's public OIDC discovery works (the MCP routes are 503 without it),
 # with api.ynab.com pinned to loopback so it can't reach YNAB. cloudflared runs on
