@@ -4,7 +4,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
-- Next actions: M3-plan (builder) expands M3 into briefs; agy attacks the breakdown; then dispatch.
+- Next actions: wave 1 running (M3-0a, M3-0b, M3-1a). agy counter 2: replace before the next review. `SLACK_USERS` in main .env is `brendan:…,hilarie:…`.
 - Next actions: M2-0..M2-5 merged (main 0bcaaf9). **Cutover done 2026-11-08 (RESULT ok, exit 0)**; Brendan reconnects the connector (BA-16). **M2-6 merged + deployed; M2-docs merged; M2-acceptance running (agy).** First import fires 6h after the container starts (timer resets each restart). Follow-up: import failures only reach the logs, not /healthz, ping or Slack. Then a deploy change turning IMPORT_ENABLED on (BA-13). Then M2-docs, M2-acceptance, gate. See handoff sup-2026-11-08-1245.md. Nothing in flight.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
@@ -20,14 +20,19 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
 | agy | w1:p2K | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-plan r2), replace before next review | — | 2026-11-08 | |
-| b-m3-plan | w1:p2J | build | builder (planning) | M3-plan | 2026-11-08 | |
+| b-m3-0a | w1:p2M | build | builder | M3-0a | 2026-11-08 | |
+| b-m3-0b | w1:p2N | build | builder | M3-0b | 2026-11-08 | |
+| b-m3-1a | w1:p2P | build2 | builder | M3-1a | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-plan | review r2 | w1:p2J | t/M3-plan | agy r1 FIX (2 high: dry_run→auto write leak, Dockerfile lacks claude install deps) | gate breakdown: BACKLOG M3 table + briefs; agy attacks it before dispatch |
+| M3-0a | active | w1:p2M | t/M3-0a | — | sync/, ynab/ carried cleanup |
+| M3-0b | active | w1:p2N | t/M3-0b | — | deploy/: retire rollback.sh |
+| M3-1a | active | w1:p2P | t/M3-1a | — | store/: decisions (0006), labelled history |
+| M3-plan | merged | — | — | agy PASS r2 (r1 FIX: dry_run→auto write leak, image deps, reconcile timing, candidates, store reads, probe flags, redaction) | 28 tasks in BACKLOG M3; briefs in tasks/M3-*.md |
 | M2-inv1 | merged | — | — | (investigation) | **data fact, not a bug**: mirror = YNAB; tools return all 10 open cards of Trying auto-categorizer, but only 1 has Oct txns and none is linked; no Groceries category. Active spending (linked card, grocery category) is in plan **Make Money Work** → BA-19 |
 | M2-acceptance | merged | — | — | agy **PASS** (2 low) | 2026-11-08; report ../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md; scripts tests/acceptance/M2/. Lows: first live import not yet observed; a wrong-PKCE token request leaves the auth code active (counted by ActiveTokens) until its 5-min TTL |
 | M2-docs | merged | — | — | agy PASS (1 low, task-file note only) | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
