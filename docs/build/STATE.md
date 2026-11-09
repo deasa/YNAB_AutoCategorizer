@@ -19,7 +19,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
-| agy | w1:p2G | control (w1:t7) | reviewer (Antigravity); counter 2 (M2-acceptance), replace before next review | — | 2026-11-08 | |
+| agy | w1:p2K | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-plan breakdown) | — | 2026-11-08 | |
 | b-m3-plan | w1:p2J | build | builder (planning) | M3-plan | 2026-11-08 | |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
@@ -27,7 +27,7 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-plan | active | w1:p2J | t/M3-plan | — | gate breakdown: BACKLOG M3 table + briefs; agy attacks it before dispatch |
+| M3-plan | review | w1:p2J | t/M3-plan | — | gate breakdown: BACKLOG M3 table + briefs; agy attacks it before dispatch |
 | M2-inv1 | merged | — | — | (investigation) | **data fact, not a bug**: mirror = YNAB; tools return all 10 open cards of Trying auto-categorizer, but only 1 has Oct txns and none is linked; no Groceries category. Active spending (linked card, grocery category) is in plan **Make Money Work** → BA-19 |
 | M2-acceptance | merged | — | — | agy **PASS** (2 low) | 2026-11-08; report ../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md; scripts tests/acceptance/M2/. Lows: first live import not yet observed; a wrong-PKCE token request leaves the auth code active (counted by ActiveTokens) until its 5-min TTL |
 | M2-docs | merged | — | — | agy PASS (1 low, task-file note only) | gate docs task: all M2 docs follow-ups + drop License line (BA-14) |
