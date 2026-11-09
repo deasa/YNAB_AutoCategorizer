@@ -45,3 +45,24 @@ sup dispatches from these after agy attacks the breakdown.
 - [ ] Carried follow-ups table: each item → task or deferred
 - [ ] Brendan inputs list with the blocking task for each; Plan questions list (may be empty)
 - [ ] No ids, tokens or emails in anything written (grep)
+
+## Result
+- Status: DONE
+- What changed: `docs/build/BACKLOG.md` M3 section (`[expanded 2026-11-08]`: task table, valid order, active-plan impact, carried follow-ups, Brendan inputs,
+  Plan questions); 28 new briefs `docs/build/tasks/M3-*.md`. No code.
+- Supervisor update folded in (2026-11-08): (1) no old→new remap task and no category creation; M3 classifies into the active plan's existing categories, with
+  the labelled-data source in M3-5 and BACKLOG; (2) BA-9 done; M3-8 and M3-acceptance say sup copies the main `.env` into the worktree.
+- Acceptance:
+  - BACKLOG table present, every task has a brief, dependencies are a DAG → pass. Scripted over the table and brief headers: 28 tasks, no missing brief, no cycle,
+    header Touches and Depends match the table, the listed order is valid. Valid order: M3-0a, M3-0b, M3-1a, M3-1b, M3-1c, M3-2, M3-3, M3-4, M3-5, M3-6, M3-7, M3-8,
+    M3-9, M3-10a, M3-10b, M3-11, M3-12a, M3-12b, M3-13, M3-14a, M3-14b, M3-15, M3-16, M3-17, M3-docs, M3-acceptance, M3-dryrun, M3-golive.
+  - At most 2 packages per brief; parallel-runnable tasks share none → pass. Same script: for each pair with no ancestor relation (146 pairs) the Touches sets are disjoint, 0 clashes.
+    A directory and a package nested in it count as different Go packages (`classify/` and `classify/jev/`); M3-3's brief forbids editing `classify/`.
+  - Carried follow-ups table → pass (BACKLOG "Carried follow-ups"; one deferred, to M5, with the reason).
+  - Brendan inputs with blocking task, and Plan questions → pass (BACKLOG "Brendan inputs", "Plan questions", 7 items).
+  - No ids, tokens or emails → pass (grep for UUID shape, email shape, Slack and Anthropic token prefixes and `Bearer ` over BACKLOG and every M3 brief: 0 matches).
+  - `go build ./... && go vet ./... && go test ./...` → pass (docs-only change).
+- Deviations from brief: the "calibration (old→new category mapping)" item became calibration on existing categories, per the supervisor update. Slack free text stays in M5, so
+  the `llm/` task covers only the classifier site and auth probe, per §5a and BACKLOG M5.
+- Follow-ups for backlog: none beyond the BACKLOG M3 section.
+- Docs follow-ups: STATE.md (sup): record the two 2026-11-08 answers under Decisions and mark BA-9 done. Everything for CLAUDE.md and docs/plan is scoped to M3-docs.
