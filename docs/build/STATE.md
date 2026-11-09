@@ -107,6 +107,8 @@ Updated: 2026-11-08 by sup (fourth session; previous handoff docs/build/handoffs
 
 - 2026-11-08 (Brendan): **category mapping is fine as is**, good enough to keep going. M3 classifies into the active plan's existing categories; no old→new remap or category creation before M4 unless Brendan asks. (The PROPOSED simplified list stays a later M4 input.)
 
+- 2026-11-08 (Brendan, M3 inputs): (1) OK to look up Slack users: sup found exactly 2 humans in #finbot-finances (Brendan, Hilarie Ashton) and stored their ids in the main .env as `SLACK_USERS` (unprinted). (2) OK for the dry-run to post real questions to #finbot-finances, max 5 open. (3) Category/card changes in "Trying auto-categorizer" come later; M3-6 calibrates on the current state and reruns when they land. (4) Planner defaults accepted: claude second opinion advisory only; Slack "split" closes the question and points to YNAB; paycheck/tithing alerts in M4; auto mode writes new transactions only, not the 45-day backlog.
+
 ## Milestone log
 - **M2 MCP read tools + OAuth + public exposure: complete 2026-11-08** (all tasks merged; M2-1..M2-6 deployed; independent test PASS, report `../YNAB_AutoCategorizer.wt/_reviews/M2-acceptance.md`, scripts `tests/acceptance/M2/`).
   - finbot's own MCP server live at finance.hoidlabs.site behind its own cloudflared (cutover from the spike, rollback script kept). OAuth AS on fosite with SQLite storage, Google sign-in, email allowlist, consent page, `finbot revoke`.
