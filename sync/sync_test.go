@@ -716,8 +716,8 @@ func TestScanDiscretionary_FailureKeepsLastGoodScan(t *testing.T) {
 	if !errors.As(err, &scanErr) || len(scanErr.Failed) != 2 {
 		t.Fatalf("err = %v, want a ScanError with two failures", err)
 	}
-	if len(got) != 1 || got[0].ID != "gains" {
-		t.Errorf("returned %+v, want only gains", got)
+	if len(got) != 2 || got[0].ID != failingID || got[1].ID != "gains" {
+		t.Errorf("returned %+v, want the failed plan on its stored verdict, then gains", got)
 	}
 
 	rows := rowsByID()
@@ -739,6 +739,59 @@ func TestScanDiscretionary_FailureKeepsLastGoodScan(t *testing.T) {
 	}
 	if n := rows["brandnew"]; n.HasDiscretionary || n.ScanError == "" {
 		t.Errorf("never-scanned plan row = %+v, want false with an error", n)
+	}
+}
+
+// A plan that fails this run is judged on its stored verdict: true keeps it in
+// the returned list, false or none leaves it out. Either way it is reported.
+func TestScanDiscretionary_FailedPlanFollowsStoredVerdict(t *testing.T) {
+	ctx := context.Background()
+	group := func(name string) []*ynab.CategoryGroup {
+		c := ynabapi.Category{}
+		c.Name = name
+		return []*ynab.CategoryGroup{{Name: "G", Categories: []ynabapi.Category{c}}}
+	}
+	apis := map[string]*fakeAPI{
+		"kept-true":  {groups: group("Discretionary")},
+		"healthy":    {groups: group("Discretionary")},
+		"kept-false": {groups: group("Groceries")},
+	}
+	client := func(id string) PlanAPI { return apis[id] }
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "finbot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	lister := fakeLister{{ID: "kept-true", Name: "Kept true"}, {ID: "healthy", Name: "Healthy"},
+		{ID: "kept-false", Name: "Kept false"}}
+	if _, err := ScanDiscretionary(ctx, lister, client, db); err != nil {
+		t.Fatal(err)
+	}
+
+	boom := errors.New("boom")
+	apis["kept-true"].err = boom
+	apis["kept-false"].err = boom
+	apis["no-verdict"] = &fakeAPI{err: boom}
+	lister = append(fakeLister{{ID: "no-verdict", Name: "No verdict"}}, lister...)
+	got, err := ScanDiscretionary(ctx, lister, client, db)
+
+	var ids []string
+	for _, p := range got {
+		ids = append(ids, p.ID)
+	}
+	if strings.Join(ids, ",") != "kept-true,healthy" {
+		t.Errorf("returned %v, want [kept-true healthy] in list order", ids)
+	}
+	var scanErr *ScanError
+	if !errors.As(err, &scanErr) {
+		t.Fatalf("err = %v, want a ScanError", err)
+	}
+	var failed []string
+	for _, f := range scanErr.Failed {
+		failed = append(failed, f.Name)
+	}
+	if strings.Join(failed, ",") != "No verdict,Kept true,Kept false" {
+		t.Errorf("Failed = %v, want every failed plan reported", failed)
 	}
 }
 
