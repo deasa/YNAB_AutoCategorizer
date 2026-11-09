@@ -63,6 +63,11 @@ func (r labeledCandidate) fallbackKey() string {
 // the Credit Card Payments group or excludedNames are left out entirely. Names
 // compare ignoring case.
 //
+// A row finbot wrote is approved too, but its category is the model's, so it
+// counts only with a category lock, which says a person chose it. Without that,
+// finbot's guesses would feed the rules and calibration as ground truth. An open
+// intent counts as written, since it may have reached YNAB; a failed write doesn't.
+//
 // A transaction copied across plans comes back once, from the newest plan that
 // has a label for it: an older plan's label still counts when the newer copy is
 // unapproved. See newestFirst for what newest means. Rows are the same
@@ -154,7 +159,11 @@ LEFT JOIN payees p           ON p.plan_id = t.plan_id AND p.id = t.payee_id
 WHERE t.plan_id = ? AND t.approved = 1 AND t.deleted = 0 AND t.transfer_account_id IS NULL AND c.internal = 0
   AND NOT EXISTS (SELECT 1 FROM subtransactions s
                   WHERE s.plan_id = t.plan_id AND s.transaction_id = t.id AND s.deleted = 0)
-ORDER BY t.date DESC, t.id`, planID)
+  AND (EXISTS (SELECT 1 FROM human_locks hl
+               WHERE hl.plan_id = t.plan_id AND hl.txn_id = t.id AND hl.field = ?)
+       OR NOT EXISTS (SELECT 1 FROM write_log wl
+                      WHERE wl.plan_id = t.plan_id AND wl.txn_id = t.id AND wl.status IN ('intent', 'done')))
+ORDER BY t.date DESC, t.id`, planID, LockFieldCategory)
 	if err != nil {
 		return nil, fmt.Errorf("store: labeled history: %w", err)
 	}

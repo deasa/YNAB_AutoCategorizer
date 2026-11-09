@@ -29,6 +29,11 @@ const (
 	LockSlack      = "slack"
 )
 
+// LockFieldCategory is HumanLock.Field for a transaction's category, whichever
+// rule made the lock. LabeledHistory reads it, so a category lock under any other
+// name would not count as a human label.
+const LockFieldCategory = "category"
+
 // ErrWriteNotIntent means a write can't be finished: it is already done or
 // failed, or no such row exists.
 var ErrWriteNotIntent = errors.New("store: write is not an open intent")
@@ -190,23 +195,33 @@ type HumanLock struct {
 	CreatedAt time.Time // Lock uses now if zero
 }
 
-// Lock stores l. If the field is already locked it does nothing, so the first
-// lock's source and time stand.
-func (d *DB) Lock(ctx context.Context, l HumanLock) error {
+// Lock stores l and reports whether it added a row. If the field is already
+// locked it does nothing, so the first lock's source and time stand.
+func (t *Tx) Lock(l HumanLock) (bool, error) {
 	created := l.CreatedAt
 	if created.IsZero() {
 		created = time.Now()
 	}
-	err := writeTx(ctx, d.w, func(c *sql.Conn) error {
-		_, err := c.ExecContext(ctx, `
+	res, err := t.c.ExecContext(t.ctx, `
 INSERT INTO human_locks (plan_id, txn_id, field, source, created_at) VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (plan_id, txn_id, field) DO NOTHING`, l.PlanID, l.TxnID, l.Field, l.Source, formatTime(created))
+	if err != nil {
+		return false, fmt.Errorf("store: lock: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store: lock: %w", err)
+	}
+	return n > 0, nil
+}
+
+// Lock stores l in its own transaction. Inside Update, use Tx.Lock: the writer
+// pool has one connection, so calling this there would deadlock.
+func (d *DB) Lock(ctx context.Context, l HumanLock) error {
+	return d.Update(ctx, func(t *Tx) error {
+		_, err := t.Lock(l)
 		return err
 	})
-	if err != nil {
-		return fmt.Errorf("store: lock: %w", err)
-	}
-	return nil
 }
 
 // Locks returns the locks on txnIDs, keyed by transaction id, each transaction's

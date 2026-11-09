@@ -386,6 +386,48 @@ func TestLocksHandlesMoreIDsThanSQLiteVariables(t *testing.T) {
 	}
 }
 
+func TestTxLockCommitsAndRollsBackWithTheTransaction(t *testing.T) {
+	db, _ := openTest(t)
+	ctx := context.Background()
+	l := HumanLock{PlanID: plan, TxnID: "t1", Field: LockFieldCategory, Source: LockFirstTouch}
+
+	boom := errors.New("boom")
+	err := db.Update(ctx, func(tx *Tx) error {
+		if err := tx.SetSyncState(SyncState{PlanID: plan, ServerKnowledge: 5, SyncedAt: testSyncedAt}); err != nil {
+			return err
+		}
+		if _, err := tx.Lock(l); err != nil {
+			return err
+		}
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("Update = %v", err)
+	}
+	if got := locks(t, db, plan, "t1"); len(got) != 0 {
+		t.Errorf("lock survived the rollback: %+v", got)
+	}
+
+	err = db.Update(ctx, func(tx *Tx) error {
+		added, err := tx.Lock(l)
+		if err != nil || !added {
+			t.Errorf("first Lock = %v, %v; want true", added, err)
+		}
+		l.Source = LockSlack
+		added, err = tx.Lock(l)
+		if err != nil || added {
+			t.Errorf("repeat Lock = %v, %v; want false", added, err)
+		}
+		return tx.SetSyncState(SyncState{PlanID: plan, ServerKnowledge: 6, SyncedAt: testSyncedAt})
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if got := locks(t, db, plan, "t1")["t1"]; len(got) != 1 || got[0].Source != LockFirstTouch {
+		t.Errorf("locks = %+v", got)
+	}
+}
+
 func TestLabeledHistoryReturnsSlackLockedLabelOnceMirrored(t *testing.T) {
 	db, _ := openTest(t)
 	ctx := context.Background()
@@ -393,7 +435,13 @@ func TestLabeledHistoryReturnsSlackLockedLabelOnceMirrored(t *testing.T) {
 	unanswered.Approved, unanswered.CategoryID = false, nil
 	seedMirror(t, db, plan, []Transaction{unanswered}, nil)
 
-	if err := db.Lock(ctx, HumanLock{PlanID: plan, TxnID: "t1", Field: "category", Source: LockSlack}); err != nil {
+	// The writer's order for a Slack answer: intent, done, then the lock.
+	e := writeIntent("t1")
+	e.Actor, e.Via = ActorBrendan, ViaSlack
+	if err := db.MarkWriteDone(ctx, insertIntent(t, db, e), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Lock(ctx, HumanLock{PlanID: plan, TxnID: "t1", Field: LockFieldCategory, Source: LockSlack}); err != nil {
 		t.Fatal(err)
 	}
 	if got := history(t, db, []string{plan}, nil, nil); len(got) != 0 {
@@ -404,5 +452,66 @@ func TestLabeledHistoryReturnsSlackLockedLabelOnceMirrored(t *testing.T) {
 	got := history(t, db, []string{plan}, nil, nil)
 	if len(got) != 1 || got[0].Category != "Groceries" {
 		t.Errorf("history = %+v", got)
+	}
+}
+
+func TestLabeledHistoryCountsFinbotWritesOnlyWithACategoryLock(t *testing.T) {
+	ctx := context.Background()
+	const (
+		none = iota
+		open
+		done
+		failed
+	)
+	cases := []struct {
+		name      string
+		write     int
+		writePlan string
+		lock      *HumanLock
+		want      int
+	}{
+		{name: "no write, no lock: a human label", write: none, want: 1},
+		{name: "finbot's write echoed back", write: done, want: 0},
+		{name: "open intent may have landed", write: open, want: 0},
+		{name: "failed write changed nothing", write: failed, want: 1},
+		{name: "write in another plan", write: done, writePlan: "other-plan", want: 1},
+		{name: "human changed the category after finbot", write: done,
+			lock: &HumanLock{Field: LockFieldCategory, Source: LockYNABEdit}, want: 1},
+		{name: "answered in Slack", write: done, lock: &HumanLock{Field: LockFieldCategory, Source: LockSlack}, want: 1},
+		{name: "human categorized, then finbot wrote the memo", write: done,
+			lock: &HumanLock{Field: LockFieldCategory, Source: LockFirstTouch}, want: 1},
+		{name: "human edited only the memo", write: done, lock: &HumanLock{Field: "memo", Source: LockYNABEdit}, want: 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			db, _ := openTest(t)
+			seedMirror(t, db, plan, []Transaction{labeled("t1", "groc")}, nil)
+			if c.write != none {
+				e := writeIntent("t1")
+				if c.writePlan != "" {
+					e.PlanID = c.writePlan
+				}
+				id := insertIntent(t, db, e)
+				var err error
+				switch c.write {
+				case done:
+					err = db.MarkWriteDone(ctx, id, nil)
+				case failed:
+					err = db.MarkWriteFailed(ctx, id, "boom")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if c.lock != nil {
+				c.lock.PlanID, c.lock.TxnID = plan, "t1"
+				if err := db.Lock(ctx, *c.lock); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := history(t, db, []string{plan}, nil, nil); len(got) != c.want {
+				t.Errorf("got %d labels, want %d: %+v", len(got), c.want, got)
+			}
+		})
 	}
 }
