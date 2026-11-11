@@ -36,7 +36,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-14b | review | w1:p3M | t/M3-14b | agy r1 pending | DONE 2026-11-11: categorize after each successful sync, shared writer+gate, daily claude probe, CLASSIFY_MODE, slack Questions.Closed |
+| M3-14b | fix | w1:p3M | t/M3-14b | agy r1 FIX (high: flaky categorize-bound test; med: HistoryPlanIDs only the active plan, which has 0 labels; 2 low: shared timeout, unredacted pipeline logs) | DONE 2026-11-11: categorize after each successful sync, shared writer+gate, daily claude probe, CLASSIFY_MODE, slack Questions.Closed |
 | M3-14a | merged | — | — | agy PASS (2 low: 40s startup self-check wait ok; redact PostBlocks errors → M3-14b note) | merged 2026-11-11 (5e48e4f): serve wiring, config, SLACK_USERS hilarie→wife |
 | M3-12b | merged | — | — | agy PASS (1 low: no cursor baseline on an empty plan) | merged 2026-11-11 (3b21dc3): duplicate, price-change, large-charge rules |
 | M3-10b | merged | — | — | agy PASS (2 low: "other…" only with >3 options; CloseStale closes only on lock/delete) | merged 2026-11-11 (d642f8d): questions Block Kit, clicks, thread replies, CloseStale |
