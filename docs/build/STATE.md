@@ -21,7 +21,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
-| agy | w1:p3K | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-14a r1). Warns "Sign-in update needed" but works |
+| agy | w1:p3K | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-14a r1, M3-14b r1) → replace before next review. Warns "Sign-in update needed" but works |
 | b-m3-14b | w1:p3M | build | builder | M3-14b | 2026-11-11 | no .env |
 
 ## Tasks
@@ -36,7 +36,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-14b | active | w1:p3M | t/M3-14b | — | dispatched 2026-11-11 14:12: cmd/, config/, slack/ Closed |
+| M3-14b | review | w1:p3M | t/M3-14b | agy r1 pending | DONE 2026-11-11: categorize after each successful sync, shared writer+gate, daily claude probe, CLASSIFY_MODE, slack Questions.Closed |
 | M3-14a | merged | — | — | agy PASS (2 low: 40s startup self-check wait ok; redact PostBlocks errors → M3-14b note) | merged 2026-11-11 (5e48e4f): serve wiring, config, SLACK_USERS hilarie→wife |
 | M3-12b | merged | — | — | agy PASS (1 low: no cursor baseline on an empty plan) | merged 2026-11-11 (3b21dc3): duplicate, price-change, large-charge rules |
 | M3-10b | merged | — | — | agy PASS (2 low: "other…" only with >3 options; CloseStale closes only on lock/delete) | merged 2026-11-11 (d642f8d): questions Block Kit, clicks, thread replies, CloseStale |
