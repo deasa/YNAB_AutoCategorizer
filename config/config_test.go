@@ -2,6 +2,7 @@ package config
 
 import (
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestLoadFrom_Defaults(t *testing.T) {
 		Backup:             Backup{AtHour: 3, AtMinute: 17, Keep: 14, DBPath: "/data/finbot.db"},
 		MCP:                MCP{ListenAddr: ":8080"},
 	}
-	if *cfg != want {
+	if !reflect.DeepEqual(*cfg, want) {
 		t.Errorf("got %+v\nwant %+v", *cfg, want)
 	}
 }
@@ -258,5 +259,73 @@ func TestMCPSettings(t *testing.T) {
 		if _, err := load(map[string]string{"MCP_PUBLIC_URL": ok}); err != nil {
 			t.Errorf("MCP_PUBLIC_URL=%q: %v", ok, err)
 		}
+	}
+}
+
+func TestLoadFrom_SlackSocketMode(t *testing.T) {
+	full := map[string]string{
+		"SLACK_APP_TOKEN": "xapp-1-app-SECRET", "SLACK_BOT_TOKEN": "xoxb-bot-SECRET",
+		"SLACK_USERS": " brendan:U0AAA111 , Hilarie:U0BBB222 ",
+	}
+	cfg, err := LoadFrom(env(required(full)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SocketMode() {
+		t.Error("all set: Socket Mode off")
+	}
+	want := []SlackUser{{Label: "brendan", SlackID: "U0AAA111"}, {Label: "wife", SlackID: "U0BBB222"}}
+	if len(cfg.SlackUsers) != 2 || cfg.SlackUsers[0] != want[0] || cfg.SlackUsers[1] != want[1] {
+		t.Errorf("users = %+v, want %+v", cfg.SlackUsers, want)
+	}
+	if ids := cfg.SlackIDs(); len(ids) != 2 || ids[0] != "U0AAA111" || ids[1] != "U0BBB222" {
+		t.Errorf("SlackIDs = %v", ids)
+	}
+
+	// "wife" is accepted as a name too.
+	cfg, err = LoadFrom(env(required(map[string]string{"SLACK_USERS": "wife:W0CCC333"})))
+	if err != nil || len(cfg.SlackUsers) != 1 || cfg.SlackUsers[0].Label != "wife" {
+		t.Errorf("wife: %+v, %v", cfg, err)
+	}
+
+	for _, key := range []string{"SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "SLACK_USERS"} {
+		m := map[string]string{}
+		for k, v := range full {
+			m[k] = v
+		}
+		delete(m, key)
+		cfg, err := LoadFrom(env(required(m)))
+		if err != nil {
+			t.Fatalf("without %s: %v", key, err)
+		}
+		if cfg.SocketMode() {
+			t.Errorf("without %s: Socket Mode on", key)
+		}
+	}
+}
+
+func TestLoadFrom_SlackErrors(t *testing.T) {
+	const id = "U0SECRET9"
+	for _, tc := range []struct{ name, key, val string }{
+		{"no colon", "SLACK_USERS", "brendan" + id},
+		{"unknown name", "SLACK_USERS", "mallory:" + id},
+		{"empty id", "SLACK_USERS", "brendan:"},
+		{"bad id", "SLACK_USERS", "brendan:x" + id},
+		{"label twice", "SLACK_USERS", "hilarie:" + id + ",wife:U0OTHER1"},
+		{"id twice", "SLACK_USERS", "brendan:" + id + ",hilarie:" + id},
+		{"bot token as app token", "SLACK_APP_TOKEN", "xoxb-" + id},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadFrom(env(required(map[string]string{tc.key: tc.val})))
+			if err == nil {
+				t.Fatal("want error")
+			}
+			if !strings.Contains(err.Error(), tc.key) {
+				t.Errorf("error %q doesn't name %s", err, tc.key)
+			}
+			if strings.Contains(err.Error(), id) || strings.Contains(err.Error(), "mallory") {
+				t.Errorf("error echoes the value: %q", err)
+			}
+		})
 	}
 }

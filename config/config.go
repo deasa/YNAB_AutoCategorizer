@@ -55,8 +55,82 @@ type Config struct {
 	SlackBotToken      string
 	SlackStatusChannel string
 
+	// SlackAppToken is the app-level token (xapp-) for Socket Mode
+	// (SLACK_APP_TOKEN). It is a secret: never log it.
+	SlackAppToken string
+	// SlackUsers are the people finbot answers in Slack (SLACK_USERS,
+	// "<name>:<slack id>,..."). The ids are personal data: never log them.
+	SlackUsers []SlackUser
+
 	Backup Backup
 	MCP    MCP
+}
+
+// SlackUser maps a Slack user id to its store label (store.UserBrendan or
+// store.UserWife).
+type SlackUser struct {
+	Label   string
+	SlackID string
+}
+
+// slackLabels maps the names accepted in SLACK_USERS to store labels.
+var slackLabels = map[string]string{"brendan": "brendan", "hilarie": "wife", "wife": "wife"}
+
+// SocketMode reports whether the Slack Socket Mode client (and the alerts it
+// posts) runs: only when SLACK_APP_TOKEN, SLACK_BOT_TOKEN and SLACK_USERS are
+// all set.
+func (c *Config) SocketMode() bool {
+	return c.SlackAppToken != "" && c.SlackBotToken != "" && len(c.SlackUsers) > 0
+}
+
+// SlackIDs returns the configured Slack user ids, so they can be scrubbed
+// from logs.
+func (c *Config) SlackIDs() []string {
+	ids := make([]string, 0, len(c.SlackUsers))
+	for _, u := range c.SlackUsers {
+		ids = append(ids, u.SlackID)
+	}
+	return ids
+}
+
+// slackUsersFrom parses SLACK_USERS. Empty is not an error (Socket Mode is
+// just off). The error never echoes the value.
+func slackUsersFrom(v string) ([]SlackUser, error) {
+	if strings.Trim(v, ", ") == "" {
+		return nil, nil
+	}
+	bad := fmt.Errorf("config: SLACK_USERS must be comma-separated <name>:<slack user id> pairs, names brendan, hilarie or wife, each label once")
+	var users []SlackUser
+	seenLabel, seenID := map[string]bool{}, map[string]bool{}
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, id, ok := strings.Cut(part, ":")
+		name, id = strings.ToLower(strings.TrimSpace(name)), strings.TrimSpace(id)
+		label, known := slackLabels[name]
+		if !ok || !known || !validSlackID(id) || seenLabel[label] || seenID[id] {
+			return nil, bad
+		}
+		seenLabel[label], seenID[id] = true, true
+		users = append(users, SlackUser{Label: label, SlackID: id})
+	}
+	return users, nil
+}
+
+// validSlackID accepts a Slack user id: U or W, then upper-case letters and
+// digits.
+func validSlackID(id string) bool {
+	if len(id) < 3 || (id[0] != 'U' && id[0] != 'W') {
+		return false
+	}
+	for _, r := range id[1:] {
+		if !(r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // MCP configures the MCP server in `finbot serve`. The client secret is a
@@ -250,6 +324,7 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 
 		SlackBotToken:      getenv("SLACK_BOT_TOKEN"),
 		SlackStatusChannel: strings.TrimPrefix(get("SLACK_STATUS_CHANNEL", "finbot-finances"), "#"),
+		SlackAppToken:      getenv("SLACK_APP_TOKEN"),
 	}
 	for _, key := range []string{"YNAB_ACCESS_TOKEN", "YNAB_BUDGET_ID"} {
 		if getenv(key) == "" {
@@ -258,6 +333,12 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 	}
 
 	var err error
+	if cfg.SlackAppToken != "" && !strings.HasPrefix(cfg.SlackAppToken, "xapp-") {
+		return nil, fmt.Errorf("config: SLACK_APP_TOKEN must be an app-level token (xapp-)")
+	}
+	if cfg.SlackUsers, err = slackUsersFrom(getenv("SLACK_USERS")); err != nil {
+		return nil, err
+	}
 	if cfg.Backup, err = BackupFrom(getenv); err != nil {
 		return nil, err
 	}
