@@ -102,6 +102,10 @@ type app struct {
 	ynabLog *log.Logger
 
 	slackURL string // overrides the Slack API base URL (tests)
+
+	// Set by startSlack when Socket Mode is on; nil otherwise.
+	socket  socketClient
+	alerter alerter
 }
 
 func withApp(args []string, name string, stderr io.Writer, run func(context.Context, *app, *flag.FlagSet) error, flags ...func(*flag.FlagSet)) int {
@@ -148,6 +152,8 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 		gov:     gov,
 		ynabLog: ynabLog,
 		syncer:  finsync.New(db, clients, ynabLog).DetectLocks(cfg.YNABBudgetID),
+
+		slackURL: slackBaseURL,
 	}
 	if err := run(ctx, a, fs); err != nil {
 		logger.Error("finbot "+name+" failed", "err", scrub(err.Error(), secrets(cfg)...))
@@ -155,6 +161,9 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 	}
 	return 0
 }
+
+// slackBaseURL overrides the status message's Slack API base URL (tests).
+var slackBaseURL string
 
 // newPlanClient builds a plan's YNAB client (tests replace it, so a serve test
 // never reaches YNAB).
@@ -275,9 +284,12 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 	a.log.Info("healthcheck ping", "enabled", pinger.URL != "")
 	sched := &Scheduler{
 		Sync: func(ctx context.Context) error {
-			_, err := a.syncPlan(ctx, cfg.YNABBudgetID, "active")
+			res, err := a.syncPlan(ctx, cfg.YNABBudgetID, "active")
 			if ctx.Err() == nil {
 				pinger.After(ctx, err)
+			}
+			if err == nil && ctx.Err() == nil {
+				a.feedAlerts(ctx, res)
 			}
 			return err
 		},
@@ -327,6 +339,17 @@ func (a *app) serve(ctx context.Context) error {
 		ln.Close()
 		return err
 	}
+	// Slack comes up before the first sync, so its alerts can post.
+	slackDone, err := a.startSlack(schedCtx)
+	if err != nil {
+		cancel()
+		ln.Close()
+		if mcpLn != nil {
+			mcpLn.Close()
+		}
+		<-mcpDone
+		return err
+	}
 	srvErr := make(chan error, 2)
 	go func() { srvErr <- srv.Serve(ln) }()
 	if mcpSrv != nil {
@@ -345,10 +368,32 @@ func (a *app) serve(ctx context.Context) error {
 		a.log.Error("http server stopped", "err", err.Error())
 	}
 	cancel()
-	<-done
-	<-mcpDone
 
-	shutdown(servers)
+	// Every wait below shares one deadline, so a job that ignores its ctx
+	// can't hold the process.
+	deadline, stopWait := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer stopWait()
+	var hung []string
+	for _, w := range []struct {
+		name string
+		done <-chan struct{}
+	}{{"scheduler", done}, {"mcp", mcpDone}, {"slack", slackDone}} {
+		select {
+		case <-w.done:
+			continue // done already: never call it hung, even past the deadline
+		default:
+		}
+		select {
+		case <-w.done:
+		case <-deadline.Done():
+			hung = append(hung, w.name)
+		}
+	}
+	shutdown(deadline, servers)
+	if len(hung) > 0 {
+		a.log.Error("shutdown deadline passed; exiting anyway", "waiting_on", hung)
+		return fmt.Errorf("shutdown deadline passed waiting on %s", strings.Join(hung, ", "))
+	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -356,15 +401,15 @@ func (a *app) serve(ctx context.Context) error {
 	return nil
 }
 
-// shutdownTimeout bounds the graceful part of stopping the listeners.
+// shutdownTimeout bounds the whole of stopping: the running job, the Slack
+// client and the listeners.
 var shutdownTimeout = 5 * time.Second
 
-// shutdown drains the servers, then closes whatever is left. An open MCP stream
-// never finishes by itself, so reaching the close is normal, not a failure.
-// Every handler's ctx has ended by the time this returns, and the DB closes after.
-func shutdown(servers []*http.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
+// shutdown drains the servers until ctx ends, then closes whatever is left. An
+// open MCP stream never finishes by itself, so reaching the close is normal,
+// not a failure. Every handler's ctx has ended by the time this returns, and
+// the DB closes after.
+func shutdown(ctx context.Context, servers []*http.Server) {
 	var wg sync.WaitGroup
 	for _, s := range servers {
 		wg.Go(func() {
@@ -387,8 +432,8 @@ func secrets(cfg *config.Config) []string {
 	return append([]string{
 		cfg.YNABAccessToken,
 		cfg.HealthcheckPingURL, strings.TrimRight(cfg.HealthcheckPingURL, "/"),
-		cfg.SlackBotToken,
+		cfg.SlackBotToken, cfg.SlackAppToken,
 		cfg.Backup.TursoToken, cfg.Backup.TursoURL,
 		cfg.MCP.GoogleClientSecret,
-	}, cfg.MCP.Emails()...)
+	}, append(cfg.MCP.Emails(), cfg.SlackIDs()...)...)
 }

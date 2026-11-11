@@ -775,7 +775,9 @@ func TestShutdown_EndsOpenStreams(t *testing.T) {
 	defer resp.Body.Close()
 	<-entered
 
-	shutdown([]*http.Server{srv})
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	shutdown(ctx, []*http.Server{srv})
 	select {
 	case <-ended:
 	case <-time.After(2 * time.Second):
