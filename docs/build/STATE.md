@@ -21,7 +21,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
-| agy | w1:p3R | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-16 r1). Warns "Sign-in update needed" but works |
+| agy | w1:p3R | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-16 r1, M3-17 r1) → replace before next review. Warns "Sign-in update needed" but works |
 | b-m3-17 | w1:p3S | build | builder | M3-17 | 2026-11-11 | no .env (builder never deploys) |
 
 ## Tasks
@@ -36,7 +36,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-17 | active | w1:p3S | t/M3-17 | — | dispatched 2026-11-11: Dockerfile (pinned claude 2.1.312 outside /data), compose CLASSIFY_MODE dry_run, deploy.sh keys. Deploy: yes (sup). Main .env has all 5 keys, no ANTHROPIC_API_KEY (checked) |
+| M3-17 | review | w1:p3S | t/M3-17 | agy r1 pending | DONE 2026-11-11 (claude --version 2.1.312 as uid 10001 with /data volume; rehearse-docker 30/0; preflight test 26/0): Dockerfile (pinned claude 2.1.312 outside /data), compose CLASSIFY_MODE dry_run, deploy.sh keys. Deploy: yes (sup). Main .env has all 5 keys, no ANTHROPIC_API_KEY (checked) |
 | M3-16 | merged | — | — | agy PASS (1 low: report resolves dry_run_check answer names from q.Options only) | merged 2026-11-11 (e85c8db): finbot dry-run-report; fail-closed gate on LabelPlans error |
 | M3-15 | merged | — | — | agy PASS (1 low: gate not failed closed on LabelPlans error; lastMode → M3-16 note) | merged 2026-11-11 (23eaec0): import outcomes persisted, import timer resumes across restarts, status import/classifier lines |
 | M3-14b | merged | — | — | agy PASS r2 (r1 FIX: flaky bound test; HistoryPlanIDs = calibration plans; CloseStale reserve; pipeline log redaction) | merged 2026-11-11 (944ecbc): categorize after sync, CLASSIFY_MODE, shared writer+gate, daily claude probe |
