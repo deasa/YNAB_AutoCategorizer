@@ -43,6 +43,8 @@ commands:
   tag-account [<account name> <bucket>]
                     tag an account of the active plan with a tax bucket (taxable, traditional,
                     roth, hsa, cash, none); with no arguments, list every account's tag
+  calibrate [--limit N] [--batch N] [--out path]
+                    measure rules + Jev on labelled history, fit τ and write calibration.json
 `
 
 // Main runs finbot with args (without the program name) and returns the
@@ -81,6 +83,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return revokeCmd(args[1:], stdout, stderr)
 	case "tag-account":
 		return tagAccountCmd(args[1:], stdout, stderr)
+	case "calibrate":
+		return calibrateCmd(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "finbot: unknown command %q\n\n%s", args[0], usage)
 		return 2

@@ -12,7 +12,7 @@ import (
 )
 
 func TestMain_UsageExits2(t *testing.T) {
-	for _, args := range [][]string{nil, {"calibrate"}, {"sync", "--bogus"}, {"sync", "extra"}} {
+	for _, args := range [][]string{nil, {"bogus"}, {"sync", "--bogus"}, {"sync", "extra"}} {
 		var out, errOut bytes.Buffer
 		if code := Main(args, &out, &errOut); code != 2 {
 			t.Errorf("Main(%q) = %d, want 2", args, code)
