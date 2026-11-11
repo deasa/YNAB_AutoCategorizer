@@ -4,7 +4,7 @@ Updated: 2026-11-11 by sup (fifth session)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
-- Next actions: merged M3-0a, 0b, 1a, 1b, 1c, 2, 7, 9, 10a, 12a, 13 (main 51cef23). **Active: M3-3, M3-10b, M3-8.** Ready next: M3-4 (llm/), M3-12b (alerts/).
+- Next actions: merged M3-0a, 0b, 1a, 1b, 1c, 2, 3, 7, 9, 10a, 12a, 13 (main 5ee01df). **In review: M3-8 (agy), M3-10b (next fresh agy). Active: M3-5.** Ready next: M3-4 (llm/), M3-12b (alerts/).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -20,7 +20,7 @@ Updated: 2026-11-11 by sup (fifth session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
 | b-m3-10b | w1:p37 | build | builder | M3-10b | 2026-11-11 | no .env |
-| b-m3-3 | w1:p36 | build | builder | M3-3 | 2026-11-11 | .env copied for JEV_LIVE test |
+| b-m3-5 | w1:p3A | build | builder | M3-5 | 2026-11-11 | no .env |
 | b-m3-8 | w1:p38 | build2 | builder | M3-8 | 2026-11-11 | .env copied (sandbox writes) |
 | agy | w1:p39 | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-3 r1, M3-8 r1 queued) → replace before next review. Warns "Sign-in update needed" but works |
 
@@ -28,7 +28,8 @@ Updated: 2026-11-11 by sup (fifth session)
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
-| M3-3 | review | w1:p36 | t/M3-3 | agy r1 pending | DONE 2026-11-11: Jev client pinned jev-1.14.0; JEV_LIVE pass (3 synthetic txns, key grep 0) |
+| M3-5 | active | w1:p3A | t/M3-5 | — | dispatched 2026-11-11: calibrate/, cmd/calibrate.go |
+| M3-3 | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (5ee01df): Jev client pinned jev-1.14.0 |
 | M3-10a | merged | — | — | agy PASS (1 low: static_select value → noted in M3-10b brief) | merged 2026-11-11 (99b4b5f): Socket Mode client, ack-first, filter, auth, dedupe |
 | M3-8 | review | w1:p38 | t/M3-8 | agy r1 queued | DONE 2026-11-11: sandbox write test passed twice (11 requests, live-plan guard); each run leaves 2 payees in finbot-sandbox (API cannot delete) |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
