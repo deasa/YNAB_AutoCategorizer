@@ -5,7 +5,8 @@ Updated: 2026-11-11 by sup (fifth session)
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
 - 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
-- Next actions: merged M3-0a..M3-5, M3-7..M3-10b, M3-12a, M3-12b, M3-13 (main 3b21dc3; 17 of 28). **In review: M3-6. Active: M3-11, M3-14a.** Next: M3-14b (after 14a, 11), M3-15, M3-16, M3-17. Usage 5h 81%: no further dispatch at ≥85%.
+- 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
+- Next actions: merged M3-0a..M3-5, M3-7..M3-10b, M3-12a, M3-12b, M3-13 (main 3b21dc3; 17 of 28). **In review: M3-6. Active: M3-11, M3-14a.** Next: M3-14b (after 14a, 11), M3-15, M3-16, M3-17. **5h usage hit 85% (2026-11-11): no new dispatch until it drops.**
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
