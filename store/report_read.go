@@ -48,34 +48,69 @@ SELECT count(*) FROM write_log WHERE plan_id = ? AND created_at >= ? AND created
 	return n, nil
 }
 
-// HumanCategory is a transaction's category as it stands in the mirror, which
-// in a dry run only a person can have set.
+// HumanCategory is a transaction's category as it stands in the mirror, and
+// whether a person set it.
 type HumanCategory struct {
-	CategoryID   *string // nil when uncategorized; the sentinel for a split
-	CategoryName *string // nil when uncategorized, and for a split
+	HumanSet     bool    // approved or locked, and a split or a non-internal category
+	CategoryID   *string // nil unless HumanSet and not a split
+	CategoryName *string // nil unless HumanSet and not a split, or the category isn't in the mirror
 	IsSplit      bool
+	Approved     bool
 	Deleted      bool
-	Locked       bool // a human lock holds the category field
-	FirstSeenAt  time.Time
+	Locked       bool       // a human lock holds the category field
+	LockedAt     *time.Time // when that lock was made; nil if not locked
+	FirstSeenAt  time.Time  // transactions.first_seen_at
+	// SeenAt is the earliest time the mirror can show the label existed:
+	// LockedAt if locked, else FirstSeenAt. A label judges a decision only if
+	// SeenAt is after it. An unlocked label has no time of its own, so it falls
+	// back to FirstSeenAt, which precedes any decision on the row: it never
+	// judges one (conservative).
+	SeenAt time.Time
 }
 
-// CurrentHumanCategory returns the transaction's current category and when the
-// mirror first saw it. ok is false if the mirror doesn't have it.
+// CurrentHumanCategory returns the transaction's current category, whether a
+// person set it, and when the mirror first saw that label. An unapproved row's
+// category (YNAB's payee-memory guess) and an internal category (Uncategorized,
+// Ready to Assign) are not human-set unless a human lock holds the field. ok
+// is false if the mirror doesn't have the transaction.
 func (d *DB) CurrentHumanCategory(ctx context.Context, planID, txnID string) (h HumanCategory, ok bool, err error) {
-	t, ok, err := d.TransactionByID(ctx, planID, txnID)
-	if err != nil || !ok {
-		return HumanCategory{}, ok, err
-	}
+	var (
+		catID, catName *string
+		internal       bool
+		firstSeen      string
+		lockedAt       *string
+	)
 	err = d.r.QueryRowContext(ctx, `
-SELECT EXISTS (SELECT 1 FROM human_locks WHERE plan_id = ? AND txn_id = ? AND field = ?)`,
-		planID, txnID, LockFieldCategory).Scan(&h.Locked)
+SELECT t.category_id, c.name, COALESCE(c.internal, 0), t.approved, t.deleted, t.first_seen_at,
+       EXISTS (SELECT 1 FROM subtransactions s
+               WHERE s.plan_id = t.plan_id AND s.transaction_id = t.id AND s.deleted = 0),
+       hl.created_at
+FROM transactions t
+LEFT JOIN categories c   ON c.plan_id = t.plan_id AND c.id = t.category_id
+LEFT JOIN human_locks hl ON hl.plan_id = t.plan_id AND hl.txn_id = t.id AND hl.field = ?
+WHERE t.plan_id = ? AND t.id = ?`, LockFieldCategory, planID, txnID).
+		Scan(&catID, &catName, &internal, &h.Approved, &h.Deleted, &firstSeen, &h.IsSplit, &lockedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		err = nil
+		return HumanCategory{}, false, nil
 	}
 	if err != nil {
-		return HumanCategory{}, false, fmt.Errorf("store: human category lock: %w", err)
+		return HumanCategory{}, false, fmt.Errorf("store: human category: %w", err)
 	}
-	h.CategoryID, h.CategoryName, h.IsSplit, h.Deleted, h.FirstSeenAt =
-		t.CategoryID, t.CategoryName, t.IsSplit, t.Deleted, t.FirstSeenAt
+	if h.FirstSeenAt, err = time.Parse(timeLayout, firstSeen); err != nil {
+		return HumanCategory{}, false, fmt.Errorf("store: parse first_seen_at: %w", err)
+	}
+	h.SeenAt = h.FirstSeenAt
+	if lockedAt != nil {
+		at, err := time.Parse(timeLayout, *lockedAt)
+		if err != nil {
+			return HumanCategory{}, false, fmt.Errorf("store: parse lock created_at: %w", err)
+		}
+		h.Locked, h.LockedAt, h.SeenAt = true, &at, at
+	}
+	categorized := h.IsSplit || (catID != nil && !internal)
+	h.HumanSet = categorized && (h.Approved || h.Locked)
+	if h.HumanSet && !h.IsSplit {
+		h.CategoryID, h.CategoryName = catID, catName
+	}
 	return h, true, nil
 }

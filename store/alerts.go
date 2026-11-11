@@ -57,6 +57,31 @@ ON CONFLICT (plan_id, kind, dedupe_key) DO NOTHING`,
 	return id, inserted, nil
 }
 
+// HasAlert reports whether the alert (planID, kind, dedupeKey) is stored, so a
+// caller can post first and store after without double-sending on the next tick.
+func (d *DB) HasAlert(ctx context.Context, planID, kind, dedupeKey string) (bool, error) {
+	var has bool
+	err := d.r.QueryRowContext(ctx, `
+SELECT EXISTS (SELECT 1 FROM alerts WHERE plan_id = ? AND kind = ? AND dedupe_key = ?)`,
+		planID, kind, dedupeKey).Scan(&has)
+	if err != nil {
+		return false, fmt.Errorf("store: has alert: %w", err)
+	}
+	return has, nil
+}
+
+// DeleteAlert removes the alert (planID, kind, dedupeKey), if stored, so the
+// same key can alert again: a failed post that must retry, or an episode (link
+// error, stale import) that has cleared. It reports whether a row was removed.
+func (d *DB) DeleteAlert(ctx context.Context, planID, kind, dedupeKey string) (bool, error) {
+	n, err := d.execWrite(ctx, `DELETE FROM alerts WHERE plan_id = ? AND kind = ? AND dedupe_key = ?`,
+		planID, kind, dedupeKey)
+	if err != nil {
+		return false, fmt.Errorf("store: delete alert: %w", err)
+	}
+	return n == 1, nil
+}
+
 // CountSentNonCritical returns how many non-critical alerts of planID were sent
 // in [from, to): what the alert budget has spent.
 func (d *DB) CountSentNonCritical(ctx context.Context, planID string, from, to time.Time) (int, error) {
@@ -211,9 +236,10 @@ ORDER BY t.first_seen_at, t.id`, planID, formatTime(t))
 
 // PayeeCharge is one earlier outflow to a payee.
 type PayeeCharge struct {
-	TxnID  string
-	Date   string // YYYY-MM-DD
-	Amount int64  // milliunits, negative
+	TxnID    string
+	Date     string // YYYY-MM-DD
+	Amount   int64  // milliunits, negative
+	ImportID *string
 }
 
 // PayeeCharges returns planID's live, non-transfer outflows dated before
@@ -222,7 +248,7 @@ type PayeeCharge struct {
 // a NormalizePayee result.
 func (d *DB) PayeeCharges(ctx context.Context, planID, normalizedPayee, before string) ([]PayeeCharge, error) {
 	rows, err := d.r.QueryContext(ctx, `
-SELECT t.id, t.date, t.amount, COALESCE(p.name, t.import_payee_name, '')
+SELECT t.id, t.date, t.amount, t.import_id, COALESCE(p.name, t.import_payee_name, '')
 FROM transactions t
 LEFT JOIN payees p ON p.plan_id = t.plan_id AND p.id = t.payee_id
 WHERE t.plan_id = ? AND t.deleted = 0 AND t.transfer_account_id IS NULL AND t.amount < 0 AND t.date < ?
@@ -237,7 +263,7 @@ ORDER BY t.date, t.id`, planID, before)
 			c    PayeeCharge
 			name string
 		)
-		if err := rows.Scan(&c.TxnID, &c.Date, &c.Amount, &name); err != nil {
+		if err := rows.Scan(&c.TxnID, &c.Date, &c.Amount, &c.ImportID, &name); err != nil {
 			return nil, fmt.Errorf("store: scan payee charge: %w", err)
 		}
 		if NormalizePayee(name) == normalizedPayee {

@@ -482,6 +482,7 @@ func TestPayeeCharges(t *testing.T) {
 	}
 	imported := txn("imp", "2026-09-20", -700, nil)
 	imported.ImportPayeeName = ptr("COSTCO INC")
+	imported.ImportID = ptr("YNAB:-700:2026-09-20:1")
 	deleted := txn("del", "2026-09-10", -900, ptr("costco"))
 	deleted.Deleted = true
 	transfer := txn("xfer", "2026-09-11", -900, ptr("costco"))
@@ -499,13 +500,16 @@ func TestPayeeCharges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []PayeeCharge{{"c1", "2026-09-01", -5000}, {"imp", "2026-09-20", -700}, {"c2", "2026-10-01", -6000}}
+	want := []PayeeCharge{{"c1", "2026-09-01", -5000, nil}, {"imp", "2026-09-20", -700, ptr("YNAB:-700:2026-09-20:1")},
+		{"c2", "2026-10-01", -6000, nil}}
 	if len(got) != len(want) {
 		t.Fatalf("PayeeCharges = %+v, want %+v", got, want)
 	}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("PayeeCharges[%d] = %+v, want %+v", i, got[i], want[i])
+		g, w := got[i], want[i]
+		if g.TxnID != w.TxnID || g.Date != w.Date || g.Amount != w.Amount || (g.ImportID == nil) != (w.ImportID == nil) ||
+			(g.ImportID != nil && *g.ImportID != *w.ImportID) {
+			t.Errorf("PayeeCharges[%d] = %+v, want %+v", i, g, w)
 		}
 	}
 	if got, _ := db.PayeeCharges(ctx, plan, NormalizePayee("Costco Inc"), "2026-09-01"); len(got) != 0 {
@@ -552,15 +556,81 @@ func TestDryRunReportReads(t *testing.T) {
 		t.Errorf("CountWriteLog other plan = %d", n)
 	}
 
+	// t1: approved and locked after its decision; the lock time is when the label was seen.
 	h, ok, err := db.CurrentHumanCategory(ctx, plan, "t1")
-	if err != nil || !ok || *h.CategoryID != "dine" || *h.CategoryName != "Dining" || !h.Locked ||
-		!h.FirstSeenAt.Equal(testSyncedAt) || h.IsSplit || h.Deleted {
+	if err != nil || !ok || !h.HumanSet || *h.CategoryID != "dine" || *h.CategoryName != "Dining" || !h.Locked ||
+		!h.LockedAt.Equal(t0) || !h.SeenAt.Equal(t0) || !h.FirstSeenAt.Equal(testSyncedAt) || h.IsSplit || h.Deleted {
 		t.Errorf("CurrentHumanCategory t1 = %+v %v %v", h, ok, err)
 	}
-	if h, _, _ := db.CurrentHumanCategory(ctx, plan, "t2"); h.Locked || *h.CategoryName != "Groceries" {
+	// t2: approved, no lock: human-set, but seen only as of first_seen_at.
+	if h, _, _ := db.CurrentHumanCategory(ctx, plan, "t2"); !h.HumanSet || h.Locked || h.LockedAt != nil ||
+		*h.CategoryName != "Groceries" || !h.SeenAt.Equal(testSyncedAt) {
 		t.Errorf("CurrentHumanCategory t2 = %+v", h)
 	}
 	if _, ok, err := db.CurrentHumanCategory(ctx, plan, "nope"); ok || err != nil {
 		t.Errorf("unknown txn: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestCurrentHumanCategoryExcludesGuessesAndInternal(t *testing.T) {
+	ctx := context.Background()
+	db, _ := openTest(t)
+	guess := labeled("guess", "groc") // YNAB payee memory on an unapproved import
+	guess.Approved = false
+	guessLocked := labeled("guess-locked", "groc")
+	guessLocked.Approved = false
+	unc := labeled("unc", "unc")
+	rta := labeled("rta", "rta")
+	none := labeled("none", "groc")
+	none.CategoryID = nil
+	split := labeled("split", "split-sentinel")
+	seedMirror(t, db, plan, []Transaction{guess, guessLocked, unc, rta, none, split}, []Subtransaction{
+		{ID: "s1", TransactionID: "split", Amount: -500, CategoryID: ptr("groc")},
+		{ID: "s2", TransactionID: "split", Amount: -500, CategoryID: ptr("dine")},
+	})
+	if err := db.Lock(ctx, HumanLock{PlanID: plan, TxnID: "guess-locked", Field: LockFieldCategory, Source: LockYNABEdit,
+		CreatedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"guess", "unc", "rta", "none"} {
+		h, ok, err := db.CurrentHumanCategory(ctx, plan, id)
+		if err != nil || !ok || h.HumanSet || h.CategoryID != nil || h.CategoryName != nil {
+			t.Errorf("%s = %+v %v %v, want not human-set and no category", id, h, ok, err)
+		}
+	}
+	if h, _, _ := db.CurrentHumanCategory(ctx, plan, "guess-locked"); !h.HumanSet || *h.CategoryName != "Groceries" ||
+		!h.SeenAt.Equal(t0) {
+		t.Errorf("locked unapproved = %+v, want human-set as of the lock", h)
+	}
+	if h, _, _ := db.CurrentHumanCategory(ctx, plan, "split"); !h.HumanSet || !h.IsSplit || h.CategoryID != nil {
+		t.Errorf("split = %+v, want human-set split with no single category", h)
+	}
+}
+
+func TestHasAndDeleteAlert(t *testing.T) {
+	ctx := context.Background()
+	db, _ := openTest(t)
+	a := Alert{PlanID: plan, Kind: "link_error", DedupeKey: "Checking", Critical: true, Status: AlertSent, Body: "b", CreatedAt: t0}
+	if has, err := db.HasAlert(ctx, plan, a.Kind, a.DedupeKey); err != nil || has {
+		t.Fatalf("HasAlert before insert = %v %v", has, err)
+	}
+	if _, inserted, err := db.InsertAlert(ctx, a); err != nil || !inserted {
+		t.Fatal(err)
+	}
+	if has, _ := db.HasAlert(ctx, plan, a.Kind, a.DedupeKey); !has {
+		t.Error("HasAlert after insert = false")
+	}
+	if has, _ := db.HasAlert(ctx, "plan-2", a.Kind, a.DedupeKey); has {
+		t.Error("HasAlert matched another plan")
+	}
+	if removed, err := db.DeleteAlert(ctx, plan, a.Kind, a.DedupeKey); err != nil || !removed {
+		t.Fatalf("DeleteAlert = %v %v", removed, err)
+	}
+	if removed, _ := db.DeleteAlert(ctx, plan, a.Kind, a.DedupeKey); removed {
+		t.Error("second DeleteAlert removed a row")
+	}
+	// The episode cleared, so the same key alerts again.
+	if _, inserted, err := db.InsertAlert(ctx, a); err != nil || !inserted {
+		t.Errorf("re-insert after delete = %v %v", inserted, err)
 	}
 }
