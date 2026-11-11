@@ -59,8 +59,9 @@ type Message struct {
 	Subtype  string // "" or "thread_broadcast"
 }
 
-// Click is a Block Kit button click by an allowed user on a message in the
-// configured channel.
+// Click is a Block Kit button click or select choice by an allowed user on a
+// message in the configured channel. Value is the button's value, or the
+// chosen option's value for a static_select.
 type Click struct {
 	User      store.User
 	Channel   string
@@ -406,9 +407,14 @@ func (c *Client) click(ctx context.Context, data any) (Click, string) {
 	if reason != "" {
 		return Click{}, reason
 	}
+	// A select carries its choice in selected_option, not value.
+	value := a.Value
+	if a.Type == slackapi.ActionType(slackapi.OptTypeStatic) {
+		value = a.SelectedOption.Value
+	}
 	return Click{
 		User: u, Channel: ch, MessageTS: cb.Container.MessageTs, ActionTS: actionTS,
-		ActionID: a.ActionID, BlockID: a.BlockID, Value: a.Value,
+		ActionID: a.ActionID, BlockID: a.BlockID, Value: value,
 	}, ""
 }
 
