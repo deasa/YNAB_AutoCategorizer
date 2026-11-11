@@ -634,3 +634,25 @@ func TestHasAndDeleteAlert(t *testing.T) {
 		t.Errorf("re-insert after delete = %v %v", inserted, err)
 	}
 }
+
+func TestReportPlans(t *testing.T) {
+	ctx := context.Background()
+	db, _ := openTest(t)
+	if ps, err := db.ReportPlans(ctx); err != nil || len(ps) != 0 {
+		t.Fatalf("clean DB: ReportPlans = %v %v", ps, err)
+	}
+	if _, err := db.InsertDecision(ctx, decision("t1", "Dining")); err != nil {
+		t.Fatal(err)
+	}
+	e := writeIntent("t1")
+	e.PlanID = "plan-w"
+	insertIntent(t, db, e)
+	if _, err := db.InsertQuestion(ctx, Question{PlanID: "plan-q", Kind: QuestionDryRunCheck, SubjectID: "t1",
+		Options: []QuestionOption{}, Status: QuestionPending}); err != nil {
+		t.Fatal(err)
+	}
+	ps, err := db.ReportPlans(ctx)
+	if err != nil || len(ps) != 3 || ps[0] != plan || ps[1] != "plan-q" || ps[2] != "plan-w" {
+		t.Errorf("ReportPlans = %v %v", ps, err)
+	}
+}
