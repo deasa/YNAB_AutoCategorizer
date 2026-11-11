@@ -6,7 +6,7 @@ Updated: 2026-11-11 by sup (fifth session)
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
 - 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
-- Next actions: merged 19 of 28 (main 4b3c310). **In review: M3-14a.** Next: M3-14b (ready once 14a merges; may touch slack/ for Closed). **5h usage ≥85% (92%): no new builder until it drops.**
+- Next actions: merged 20 of 28 (main 5e48e4f). Nothing in flight. **M3-14b is ready** (cmd/, config/, plus slack/ Closed per its note) **but held: 5h usage 93%; dispatch when it drops below 85%.** Then M3-15, M3-16, M3-17.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -21,7 +21,6 @@ Updated: 2026-11-11 by sup (fifth session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
-| b-m3-14a | w1:p3J | build | builder | M3-14a | 2026-11-11 | no .env |
 | agy | w1:p3K | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-14a r1). Warns "Sign-in update needed" but works |
 
 ## Tasks
@@ -36,7 +35,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-14a | review | w1:p3J | t/M3-14a | agy r1 pending | DONE 2026-11-11: cmd/, config/ (SLACK_USERS hilarie→wife) |
+| M3-14a | merged | — | — | agy PASS (2 low: 40s startup self-check wait ok; redact PostBlocks errors → M3-14b note) | merged 2026-11-11 (5e48e4f): serve wiring, config, SLACK_USERS hilarie→wife |
 | M3-12b | merged | — | — | agy PASS (1 low: no cursor baseline on an empty plan) | merged 2026-11-11 (3b21dc3): duplicate, price-change, large-charge rules |
 | M3-10b | merged | — | — | agy PASS (2 low: "other…" only with >3 options; CloseStale closes only on lock/delete) | merged 2026-11-11 (d642f8d): questions Block Kit, clicks, thread replies, CloseStale |
 | M3-7 | merged | — | — | agy PASS r2 (r1 FIX: one-field change; Slack done+lock atomic; empty CategoryID) | merged 2026-11-11 (01339b4): writer/ gate+log+serialize+reconcile, ynab PatchTransactions |
