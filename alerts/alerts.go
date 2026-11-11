@@ -5,7 +5,9 @@
 //
 // Send is the one entry point. Every alert carries a dedupe key, and the
 // store's alert history makes it go out at most once. Freshness turns the
-// mirror's per-account import state into link-error and stale-import alerts.
+// mirror's per-account import state into link-error and stale-import alerts;
+// Anomalies runs the duplicate, price-change and large-charge rules over new
+// transactions.
 //
 // Alert text names accounts by name only; dedupe keys may hold ids and are
 // never logged or posted.
@@ -107,6 +109,7 @@ type Config struct {
 	Store  Store
 	Poster Poster
 	PlanID string
+	Mirror Mirror           // needed by Anomalies only
 	Now    func() time.Time // default time.Now; its zone sets the budget's months
 	Logger *slog.Logger     // default slog.Default()
 }
@@ -116,6 +119,7 @@ type Config struct {
 type Alerter struct {
 	store  Store
 	poster Poster
+	mirror Mirror
 	planID string
 	now    func() time.Time
 	log    *slog.Logger
@@ -123,7 +127,7 @@ type Alerter struct {
 
 // New returns an Alerter.
 func New(cfg Config) *Alerter {
-	a := &Alerter{store: cfg.Store, poster: cfg.Poster, planID: cfg.PlanID, now: cfg.Now, log: cfg.Logger}
+	a := &Alerter{store: cfg.Store, poster: cfg.Poster, mirror: cfg.Mirror, planID: cfg.PlanID, now: cfg.Now, log: cfg.Logger}
 	if a.now == nil {
 		a.now = time.Now
 	}
