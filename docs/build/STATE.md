@@ -29,7 +29,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
-| M3-6 | active | w1:p3F | t/M3-6 | — | dispatched 2026-11-11: calibrate/ calibration.json; may fix M3-5 low 1 (payee normalization) |
+| M3-6 | review-queued | w1:p3F | t/M3-6 | next fresh agy | DONE 2026-11-11: **τ = null, auto_eligible=false**. Active plan has 0 human labels (471 txns, 21 approved, 20 of them RTA); calibration used May 2025 plan only (1,056 rows). Fixed payee-casing (15 P2P rows). Rules 0.997 precision; top-3 0.78 → BA-20 |
 | M3-5 | merged | — | — | agy PASS (2 low: lowercased payee in calibration detail → M3-6 note; same-date split edge) | merged 2026-11-11 (08eb5c6): calibrate/ τ fit, finbot calibrate |
 | M3-3 | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (5ee01df): Jev client pinned jev-1.14.0 |
 | M3-10a | merged | — | — | agy PASS (1 low: static_select value → noted in M3-10b brief) | merged 2026-11-11 (99b4b5f): Socket Mode client, ack-first, filter, auth, dedupe |
@@ -101,6 +101,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | BA-18 | agy shows "sign-in is missing permissions… run /logout": re-authenticate agy (Google AI Pro) | next review | done 2026-11-08 |
 | BA-19 | Pick finbot's active plan given M2-inv1: keep "Trying auto-categorizer" (link current cards, add categories in YNAB) or switch to "Make Money Work" (linked card, 35 Oct txns, grocery category). Import follows the active plan | M2 gate | done 2026-11-08: **keep \"Trying auto-categorizer\"** (Brendan); he links current cards / adds categories in YNAB |
 | BA-17 | Say which tax bucket each account belongs to (or run `finbot tag-account` once M2-4 lands). Untagged accounts show as `untagged` | after M2-4 | done 2026-11-08 by sup at Brendan's request: 18 open accounts tagged on hoid (6 checking/savings cash, HSA hsa, 10 cards + mortgage none); 6 closed accounts left untagged; no investment accounts in this plan |
+| BA-20 | Calibration (M3-6) found no safe τ: "Trying auto-categorizer" has 0 human labels (its categorized rows are unapproved), so it calibrated on the old May 2025 plan and no threshold reached 0.85 precision. Auto-apply stays off; dry-run, rules and Slack questions still work. Options: approve categorized txns in the active plan and rerun calibrate later, or accept ask-only. Also: policy set-aside keywords "Gift" and "Vacation" match no category | before M3-golive (not blocking the build) | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
 - 2026-10-27: Build workflow approved by Brendan: Opus 5.5 builders, agy review/testing, herdr orchestration, 40% context cap, supervisor restarted from these docs. sup may commit to main.
