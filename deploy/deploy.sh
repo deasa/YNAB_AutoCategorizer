@@ -9,12 +9,20 @@ dir=finbot # relative to the remote home; ~/finbot/.env there is never read
 timeout=${HEALTH_TIMEOUT:-120}
 
 [[ -f .env && -f deploy/compose.yaml ]] || { echo "deploy: run from the repo root, with .env" >&2; exit 1; }
-# The Google and allowlist keys are required too: without them MCP is silently
-# off while the healthcheck still passes.
-for key in YNAB_ACCESS_TOKEN YNAB_BUDGET_ID GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET MCP_ALLOWED_EMAILS; do
+# The Google, allowlist, Slack, Jev and claude keys are required too: without them
+# MCP, Socket Mode or categorization is silently off while the healthcheck still passes.
+for key in YNAB_ACCESS_TOKEN YNAB_BUDGET_ID GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET MCP_ALLOWED_EMAILS \
+	SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_USERS JEV_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
 	grep -E "^${key}=" .env | grep -qvE "^${key}=[[:space:]]*(\"\"|'')?[[:space:]]*\$" ||
 		{ echo "deploy: .env has no value for ${key}" >&2; exit 1; }
 done
+# An API key would take precedence over the claude OAuth token. It is never forwarded,
+# but a .env that sets one is a mistake worth stopping on.
+if grep -E '^[[:space:]]*(export[[:space:]]+)?ANTHROPIC_API_KEY=' .env |
+	grep -qvE "ANTHROPIC_API_KEY=[[:space:]]*(\"\"|'')?[[:space:]]*\$"; then
+	echo "deploy: .env sets ANTHROPIC_API_KEY; remove it (finbot uses CLAUDE_CODE_OAUTH_TOKEN)" >&2
+	exit 1
+fi
 
 # Ship only committed, git-tracked files (never untracked or ignored ones such
 # as .claude/ or .env.*), so the deploy is exactly HEAD.
@@ -42,7 +50,7 @@ git archive --format=tar HEAD -- . ':!spikes' ':!docs' ':!.env*' ':!*.env' ':!**
 	ssh "$host" "rm -rf $dir/src.new && mkdir $dir/src.new && tar -x -C $dir/src.new && rm -rf $dir/src && mv $dir/src.new $dir/src"
 
 # finbot.env: only the keys finbot needs, from the local .env.
-grep -E '^(YNAB_ACCESS_TOKEN|YNAB_BUDGET_ID|HEALTHCHECK_PING_URL|BACKUP_AGE_RECIPIENT|BACKUP_TURSO_URL|BACKUP_TURSO_TOKEN|BACKUP_AT|BACKUP_KEEP|SLACK_BOT_TOKEN|SLACK_STATUS_CHANNEL|GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_SECRET|MCP_ALLOWED_EMAILS)=' .env |
+grep -E '^(YNAB_ACCESS_TOKEN|YNAB_BUDGET_ID|HEALTHCHECK_PING_URL|BACKUP_AGE_RECIPIENT|BACKUP_TURSO_URL|BACKUP_TURSO_TOKEN|BACKUP_AT|BACKUP_KEEP|SLACK_BOT_TOKEN|SLACK_STATUS_CHANNEL|SLACK_APP_TOKEN|SLACK_USERS|GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_SECRET|MCP_ALLOWED_EMAILS|JEV_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=' .env |
 	ssh "$host" "umask 077 && cat > $dir/finbot.env.new && chmod 600 $dir/finbot.env.new && mv $dir/finbot.env.new $dir/finbot.env"
 ssh "$host" "test -s $dir/finbot.env && test \"\$(stat -c %a $dir/finbot.env)\" = 600" ||
 	{ echo "deploy: ~/$dir/finbot.env is empty or not 0600" >&2; exit 1; }
