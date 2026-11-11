@@ -46,6 +46,8 @@ commands:
                     roth, hsa, cash, none); with no arguments, list every account's tag
   calibrate [--limit N] [--batch N] [--out path]
                     measure rules + Jev on labelled history, fit τ and write calibration.json
+  dry-run-report    how the dry run did: precision with a Wilson 95% interval, questions,
+                    model errors and YNAB writes, from the local database only
 `
 
 // Main runs finbot with args (without the program name) and returns the
@@ -86,6 +88,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return tagAccountCmd(args[1:], stdout, stderr)
 	case "calibrate":
 		return calibrateCmd(args[1:], stdout, stderr)
+	case "dry-run-report":
+		return dryRunReportCmd(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "finbot: unknown command %q\n\n%s", args[0], usage)
 		return 2

@@ -114,3 +114,27 @@ WHERE t.plan_id = ? AND t.id = ?`, LockFieldCategory, planID, txnID).
 	}
 	return h, true, nil
 }
+
+// ReportPlans returns every plan id that has a decision, a question or a
+// write_log row, sorted, so the dry-run report needs no configured plan.
+func (d *DB) ReportPlans(ctx context.Context) ([]string, error) {
+	rows, err := d.r.QueryContext(ctx, `
+SELECT plan_id FROM decisions UNION SELECT plan_id FROM questions UNION SELECT plan_id FROM write_log
+ORDER BY 1`)
+	if err != nil {
+		return nil, fmt.Errorf("store: report plans: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, fmt.Errorf("store: scan report plan: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: report plans: %w", err)
+	}
+	return out, nil
+}
