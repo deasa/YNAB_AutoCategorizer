@@ -22,14 +22,14 @@ Updated: 2026-11-11 by sup (fifth session)
 | b-m3-2 | w1:p2Y | build | builder | M3-2 | 2026-11-11 | no .env |
 | b-m3-7 | w1:p2Z | build | builder | M3-7 | 2026-11-11 | no .env |
 | b-m3-9 | w1:p20 | build2 | builder | M3-9 | 2026-11-11 | no .env |
-| agy | w1:p2X | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-1c r1, r2) → replace before next review. Old p2V gone by 2026-11-11; agy warns "Sign-in update needed" (may need /logout + re-auth) |
+| agy | w1:p31 | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-2, M3-9 queued in one prompt) → replace before next review. Warns "Sign-in update needed" but works |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-2 | active | w1:p2Y | t/M3-2 | — | dispatched 2026-11-11: classify/ |
+| M3-2 | review | w1:p2Y | t/M3-2 | agy r1 pending | DONE 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
 | M3-7 | active | w1:p2Z | t/M3-7 | — | dispatched 2026-11-11: writer/, ynab/ |
-| M3-9 | active | w1:p20 | t/M3-9 | — | dispatched 2026-11-11: sync/ |
+| M3-9 | review | w1:p20 | t/M3-9 | agy r1 pending | DONE 2026-11-11: human-lock detection in the sync tx. **Out of Touches**: store/ (migration 0009, Tx helpers) and cmd/app.go wiring; asked agy to judge. Renumber 0009 if another branch adds one |
 | M3-1c | merged | — | — | agy PASS r2 (r1 FIX: CurrentHumanCategory lock time + label filter; alert lookup/re-arm; PayeeCharge import id) | merged 2026-11-11 (ac85784): migration 0008 questions/users/slack_events/alerts/import_state/alert_cursor. Follow-ups: PruneSlackEvents caller (M3-15); docs (0006-0008 in CLAUDE.md, §2 questions fields) → M3-docs |
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
 | M3-0b | merged | — | — | agy PASS | merged 2026-11-08: cutover/rollback/rehearse scripts removed. Follow-up: flaky TestServe_MCPEndToEnd (freePort race, cmd/serve_test.go:88) |
