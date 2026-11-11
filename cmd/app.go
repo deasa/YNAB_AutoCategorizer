@@ -310,15 +310,8 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 	}
 	if cfg.ImportEnabled {
 		sched.ImportEvery = cfg.ImportInterval
-		sched.Import = func(ctx context.Context) error {
-			res, err := a.syncer.TriggerImport(ctx, cfg.YNABBudgetID)
-			if err != nil {
-				a.log.Error("import tick failed", "err", a.redact(err.Error()))
-				return err
-			}
-			a.log.Info("import tick", "imported", res.Imported, "skipped", res.Skipped)
-			return nil
-		}
+		sched.Import = a.importJob(time.Now)
+		sched.ImportDelay = func() time.Duration { return a.importDelay(context.Background(), time.Now()) }
 		a.log.Info("import enabled", "interval", cfg.ImportInterval.String())
 	} else {
 		a.log.Info("import disabled")
@@ -327,6 +320,61 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 	a.addStatus(sched)
 	a.addPrune(sched)
 	return sched, health
+}
+
+// importJob is serve's bank-import job. Each attempt's outcome is stored in
+// import_state (failure text redacted), even when shutdown cut the POST short,
+// so the next start counts from it. A tick skipped for want of rate budget
+// made no POST and records nothing.
+func (a *app) importJob(now func() time.Time) func(context.Context) error {
+	planID := a.cfg.YNABBudgetID
+	return func(ctx context.Context) error {
+		at := now()
+		res, err := a.syncer.TriggerImport(ctx, planID)
+		var errMsg *string
+		if err != nil {
+			msg := a.redact(err.Error())
+			errMsg = &msg
+			a.log.Error("import tick failed", "err", msg)
+		} else {
+			a.log.Info("import tick", "imported", res.Imported, "skipped", res.Skipped)
+			if res.Skipped {
+				return nil // no POST was made (no rate budget): nothing to record
+			}
+		}
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), importRecordTimeout)
+		defer cancel()
+		if e := a.db.RecordImport(rctx, planID, at, errMsg); e != nil {
+			a.log.Error("import record failed", "err", a.redact(e.Error()))
+		}
+		return err
+	}
+}
+
+// importRecordTimeout bounds the import_state write, which outlives ctx.
+const importRecordTimeout = 5 * time.Second
+
+// importDelay is the time from now until the first import: the last attempt
+// plus IMPORT_INTERVAL, so a restart (or a crash loop) never imports more than
+// once per interval. Overdue is zero; no prior attempt waits a full interval,
+// as before. A read failure also waits a full interval.
+func (a *app) importDelay(ctx context.Context, now time.Time) time.Duration {
+	every := a.cfg.ImportInterval
+	st, ok, err := a.db.GetImportState(ctx, a.cfg.YNABBudgetID)
+	if err != nil {
+		a.log.Error("import state read failed", "err", a.redact(err.Error()))
+		return every
+	}
+	if !ok {
+		return every
+	}
+	return firstImportDelay(st.LastAttemptAt, now, every)
+}
+
+// firstImportDelay is last+every-now, at most every (a clock that went
+// backwards can't push the import out further) and at least zero.
+func firstImportDelay(last, now time.Time, every time.Duration) time.Duration {
+	return max(0, min(every, last.Add(every).Sub(now)))
 }
 
 // syncJob is serve's sync job over sync: the ping, then, after a successful

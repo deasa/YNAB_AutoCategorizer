@@ -19,7 +19,8 @@ func (t realTicker) C() <-chan time.Time { return t.Ticker.C }
 func newRealTicker(d time.Duration) Ticker { return realTicker{time.NewTicker(d)} }
 
 // Scheduler runs the sync job immediately and then every SyncEvery, and the
-// import job every ImportEvery when Import is set. All jobs run on the
+// import job every ImportEvery when Import is set, the first one after
+// ImportDelay. All jobs run on the
 // scheduler's one goroutine, so no two ticks ever overlap. A job's own tick that
 // comes due while it runs is dropped, not queued; another job's tick that comes
 // due meanwhile runs right after. The backup job, when set, runs once per
@@ -30,6 +31,9 @@ type Scheduler struct {
 	SyncEvery   time.Duration
 	Import      func(ctx context.Context) error // nil: import disabled
 	ImportEvery time.Duration
+	// ImportDelay, if set, is the time until the first import; zero or less
+	// runs it right after the first sync. Nil waits a full ImportEvery.
+	ImportDelay func() time.Duration
 	Backup      func(ctx context.Context) error // nil: backups disabled
 	BackupDelay func() time.Duration            // time until the next backup; must be positive
 	Prune       func(ctx context.Context) error // nil: MCP disabled, nothing to prune
@@ -54,11 +58,41 @@ func (s *Scheduler) Run(ctx context.Context) {
 
 	syncT := newTicker(s.SyncEvery)
 	defer syncT.Stop()
+	var importT Ticker
 	var importC <-chan time.Time // nil (never fires) when import is disabled
-	if s.Import != nil {
-		importT := newTicker(s.ImportEvery)
-		defer importT.Stop()
+	importFirst := false         // importT is the one-shot first-import timer
+	importNow := false           // the first import is overdue: run it after the first sync
+	armImport := func(d time.Duration) {
+		if importT != nil {
+			importT.Stop()
+		}
+		importT = newTicker(d)
 		importC = importT.C()
+	}
+	if s.Import != nil {
+		d := s.ImportEvery
+		if s.ImportDelay != nil {
+			d = s.ImportDelay()
+		}
+		switch {
+		case d <= 0:
+			armImport(s.ImportEvery)
+			importNow = true
+		case d != s.ImportEvery:
+			armImport(d)
+			importFirst = true
+		default:
+			armImport(s.ImportEvery)
+		}
+		defer func() { importT.Stop() }()
+	}
+	runImport := func() {
+		_ = s.Import(ctx) // the job logs its own outcome
+		if importFirst {
+			importFirst = false
+			armImport(s.ImportEvery)
+		}
+		drain(importC)
 	}
 	var backupT Ticker
 	var backupC <-chan time.Time // nil (never fires) when backups are disabled
@@ -96,6 +130,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 		_ = s.Probe(ctx) // the job logs and alerts its own outcome
 		drain(probeC)
 	}
+	if importNow && ctx.Err() == nil {
+		runImport()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -104,8 +141,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 			s.runSync(ctx)
 			drain(syncT.C())
 		case <-importC:
-			_ = s.Import(ctx) // the job logs its own outcome
-			drain(importC)
+			runImport()
 		case <-backupC:
 			_ = s.Backup(ctx) // the job logs its own outcome
 			armBackup()
