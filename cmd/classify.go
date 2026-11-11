@@ -172,10 +172,10 @@ func (a *app) newCategorizer() (*categorizer, error) {
 		Mode:        writer.Mode(cfg.Classify.Mode),
 		Policy:      policy,
 		ModelID:     modelID,
-		Model:       model,
+		Model:       redactModel{model, a.redact},
 		Store:       a.db,
-		Applier:     w,
-		Asker:       lateAsker{a},
+		Applier:     redactApplier{w, a.redact},
+		Asker:       redactAsker{lateAsker{a}, a.redact},
 		SetMode:     a.gate.Set,
 		AutoSince:   cfg.Classify.AutoSince,
 		BacklogDays: cfg.Classify.BacklogDays,
@@ -189,10 +189,19 @@ func (a *app) newCategorizer() (*categorizer, error) {
 			return nil, fmt.Errorf("categorize: claude: %w", err)
 		}
 		a.claude = runner
-		pc.SecondOpinion, pc.SecondOpinionModelID = second, llm.ModelID
+		pc.SecondOpinion, pc.SecondOpinionModelID = redactModel{second, a.redact}, llm.ModelID
 	}
-	pipe := classify.New(pc)
-	c.Run = func(ctx context.Context) (classify.Result, error) { return pipe.Run(ctx, currentCalibration()) }
+	c.Run = func(ctx context.Context) (classify.Result, error) {
+		// The same plans calibration labelled from, read each run, since a
+		// `finbot sync --archived` scan can change them after startup.
+		plans, err := calibrate.LabelPlans(ctx, a.db, cfg.YNABBudgetID)
+		if err != nil {
+			return classify.Result{}, err
+		}
+		run := pc
+		run.HistoryPlanIDs = plans
+		return classify.New(run).Run(ctx, currentCalibration())
+	}
 	a.log.Info("categorize enabled", "mode", cfg.Classify.Mode, "model", modelID,
 		"second_opinion", cfg.Classify.Claude())
 	return c, nil
@@ -220,12 +229,19 @@ func (a *app) claudeConfig() llm.Config {
 	}
 }
 
+// closeStaleReserve is the part of Timeout kept for CloseStale, so it still
+// runs when the pipeline used up its share.
+const closeStaleReserve = 30 * time.Second
+
 // After runs one categorization pass after a successful sync that started at
-// syncStart. Every step is bounded by Timeout and only logged: nothing here
-// fails the sync job or touches Health.
-func (c *categorizer) After(ctx context.Context, syncStart time.Time) {
+// syncStart, bounded by Timeout in all: Reconcile and the pipeline share
+// Timeout less closeStaleReserve, and CloseStale gets its own reserve after.
+// Every step is only logged: nothing here fails the sync job or touches
+// Health.
+func (c *categorizer) After(parent context.Context, syncStart time.Time) {
 	a := c.a
-	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	reserve := min(closeStaleReserve, c.Timeout/2)
+	ctx, cancel := context.WithTimeout(parent, c.Timeout-reserve)
 	defer cancel()
 	if err := c.Reconcile(ctx, syncStart); err != nil {
 		a.log.Error("categorize reconcile failed", "err", a.redact(err.Error()))
@@ -234,6 +250,12 @@ func (c *categorizer) After(ctx context.Context, syncStart time.Time) {
 		res, err := c.Run(ctx)
 		c.logRun(res, err)
 	}
+	cancel()
+	if parent.Err() != nil {
+		return
+	}
+	ctx, cancel = context.WithTimeout(parent, reserve)
+	defer cancel()
 	if n, err := c.CloseStale(ctx); err != nil {
 		a.log.Error("categorize close stale questions failed", "err", a.redact(err.Error()))
 	} else if n > 0 {
@@ -314,4 +336,58 @@ func (a *app) probeClaude(ctx context.Context) error {
 		a.log.Info("claude probe alert", "outcome", out.String())
 	}
 	return err
+}
+
+// redactedError carries a redacted message but keeps the chain, so the
+// pipeline's errors.Is checks still work. Defence in depth: the packages
+// below already keep ids and secrets out of their errors.
+type redactedError struct {
+	msg string
+	err error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+func (e *redactedError) Unwrap() error { return e.err }
+
+func redactErr(err error, redact func(string) string) error {
+	if err == nil {
+		return nil
+	}
+	return &redactedError{msg: redact(err.Error()), err: err}
+}
+
+// redactModel redacts a classify.Model's errors before the pipeline logs them.
+type redactModel struct {
+	m      classify.Model
+	redact func(string) string
+}
+
+func (r redactModel) Classify(ctx context.Context, txns []classify.Txn, cands []classify.Candidate) ([]classify.Prediction, error) {
+	p, err := r.m.Classify(ctx, txns, cands)
+	return p, redactErr(err, r.redact)
+}
+
+// redactApplier redacts the writer's errors before the pipeline logs them.
+type redactApplier struct {
+	w      classify.Applier
+	redact func(string) string
+}
+
+func (r redactApplier) Apply(ctx context.Context, b writer.Batch, actor, via string) ([]writer.Outcome, error) {
+	out, err := r.w.Apply(ctx, b, actor, via)
+	return out, redactErr(err, r.redact)
+}
+
+// redactAsker redacts Slack's errors before the pipeline logs them.
+type redactAsker struct {
+	a      classify.Asker
+	redact func(string) string
+}
+
+func (r redactAsker) Ask(ctx context.Context, id int64) error {
+	return redactErr(r.a.Ask(ctx, id), r.redact)
+}
+
+func (r redactAsker) Closed(ctx context.Context, q store.Question, reason string) error {
+	return redactErr(r.a.Closed(ctx, q, reason), r.redact)
 }

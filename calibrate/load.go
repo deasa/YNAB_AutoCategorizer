@@ -108,6 +108,17 @@ GROUP BY display`, planID)
 	return out, nil
 }
 
+// LabelPlans is the plans whose human labels feed the rules and payee history,
+// in calibration and at run time alike: the active plan, then each scanned
+// plan with Discretionary (archived ones included), each once.
+func LabelPlans(ctx context.Context, db *store.DB, active string) ([]string, error) {
+	scans, err := db.PlanScans(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("calibrate: plan scans: %w", err)
+	}
+	return labelPlans(active, scans), nil
+}
+
 // labelPlans is the active plan, then each plan with Discretionary, each once.
 func labelPlans(active string, scans []store.PlanScan) []string {
 	plans := []string{active}

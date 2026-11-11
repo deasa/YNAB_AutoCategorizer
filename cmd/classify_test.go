@@ -7,6 +7,7 @@ import (
 	"log"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -214,7 +215,15 @@ func TestSyncJob_CategorizeBoundCancelsAndNextSyncRuns(t *testing.T) {
 		}
 		return classify.Result{}, ctx.Err()
 	})
-	a.cat.Timeout = 20 * time.Millisecond
+	a.cat.Timeout = 40 * time.Millisecond
+	var liveCloses atomic.Int32
+	a.cat.CloseStale = func(ctx context.Context) (int, error) {
+		if ctx.Err() == nil {
+			liveCloses.Add(1)
+		}
+		r.add("close_stale")
+		return 0, nil
+	}
 	var syncs atomic.Int32
 	tk := &tickers{}
 	stop := start(t, &Scheduler{
@@ -225,12 +234,22 @@ func TestSyncJob_CategorizeBoundCancelsAndNextSyncRuns(t *testing.T) {
 		SyncEvery: syncEvery, NewTicker: tk.new,
 	})
 	defer stop()
-	waitFor(t, func() bool { return cancelled.Load() == 1 })
-	tk.get(syncEvery).tick()
-	waitFor(t, func() bool { return syncs.Load() == 2 && cancelled.Load() == 2 })
-	steps := r.got()
-	if n := strings.Count(strings.Join(steps, ","), "close_stale"); n != 2 {
-		t.Errorf("CloseStale ran %d times after cancelled pipelines: %v", n, steps)
+	waitFor(t, func() bool { return cancelled.Load() >= 1 }) // the sync ticker exists by now
+	// A tick that lands while the job runs is drained, so tick until the
+	// second sync is seen.
+	tickUntil(t, tk.get(syncEvery), func() bool { return syncs.Load() >= 2 })
+	waitFor(t, func() bool { return cancelled.Load() >= 2 && liveCloses.Load() >= 2 })
+}
+
+// tickUntil ticks f until cond holds: a tick that lands while a job runs is
+// dropped by the scheduler's drain.
+func tickUntil(t *testing.T, f *fakeTicker, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(wait); !cond(); time.Sleep(2 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met in time")
+		}
+		f.tick()
 	}
 }
 
@@ -401,6 +420,69 @@ func TestScheduler_ProbesAtStartupAndDaily(t *testing.T) {
 	})
 	defer stop()
 	waitFor(t, func() bool { return probes.Load() == 1 && syncs.Load() == 1 })
-	tk.get(24 * time.Hour).tick()
-	waitFor(t, func() bool { return probes.Load() == 2 })
+	tickUntil(t, tk.get(24*time.Hour), func() bool { return probes.Load() >= 2 })
+}
+
+func TestCategorize_HistoryIncludesArchivedDiscretionaryPlans(t *testing.T) {
+	fakeModels(t)
+	a, _ := classifyApp(t, config.Classify{Mode: config.ClassifyDryRun, JevAPIKey: testJevKey})
+	ctx := context.Background()
+	str := func(s string) *string { return &s }
+	seed := func(plan string, txns []store.Transaction) {
+		err := a.db.Update(ctx, func(tx *store.Tx) error {
+			if err := tx.UpsertAccounts(plan, []store.Account{{ID: "a1", Name: "Checking", Type: "checking", OnBudget: true}}); err != nil {
+				return err
+			}
+			if err := tx.UpsertCategoryGroups(plan, []store.CategoryGroup{{ID: "g1", Name: "Everyday"}}); err != nil {
+				return err
+			}
+			if err := tx.UpsertCategories(plan, []store.Category{
+				{ID: "dine", CategoryGroupID: "g1", Name: "Dining"},
+				{ID: "groc", CategoryGroupID: "g1", Name: "Groceries"},
+				{ID: "disc", CategoryGroupID: "g1", Name: "Discretionary"},
+			}); err != nil {
+				return err
+			}
+			return tx.UpsertTransactions(plan, txns, time.Now())
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	today := time.Now().Format(time.DateOnly)
+	seed(testPlan, []store.Transaction{{ID: "new", Date: today, Amount: -5000, Cleared: "cleared", AccountID: "a1",
+		ImportPayeeName: str("Cafe")}})
+	var old []store.Transaction
+	for i, d := range []string{"2025-01-01", "2025-02-01", "2025-03-01"} {
+		old = append(old, store.Transaction{ID: "o" + strconv.Itoa(i), Date: d, Amount: -5000, Cleared: "cleared",
+			Approved: true, AccountID: "a1", ImportPayeeName: str("Cafe"), CategoryID: str("dine")})
+	}
+	seed("archived", old)
+
+	c, err := a.newCategorizer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Eligible != 1 || res.Rule != 0 {
+		t.Fatalf("before the scan: eligible %d, rule %d; want 1 and 0 (active plan alone has no labels)", res.Eligible, res.Rule)
+	}
+
+	if err := a.db.ReplacePlanScans(ctx, []store.PlanScan{
+		{PlanID: "archived", Name: "Old", HasDiscretionary: true, ScannedAt: time.Now()},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A decision from the first run would block a re-decide; use a new txn.
+	seed(testPlan, []store.Transaction{{ID: "new2", Date: today, Amount: -6000, Cleared: "cleared", AccountID: "a1",
+		ImportPayeeName: str("Cafe")}})
+	if res, err = c.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if res.Rule < 1 {
+		t.Errorf("after the scan: rule %d; the archived plan's Cafe → Dining labels didn't reach the pipeline (%+v)", res.Rule, res)
+	}
 }
