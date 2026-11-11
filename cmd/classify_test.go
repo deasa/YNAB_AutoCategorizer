@@ -486,3 +486,46 @@ func TestCategorize_HistoryIncludesArchivedDiscretionaryPlans(t *testing.T) {
 		t.Errorf("after the scan: rule %d; the archived plan's Cafe → Dining labels didn't reach the pipeline (%+v)", res.Rule, res)
 	}
 }
+
+func TestCategorize_LabelPlansErrorFailsClosed(t *testing.T) {
+	m := fakeModels(t)
+	old := labelPlans
+	labelPlans = func(context.Context, *store.DB, string) ([]string, error) { return nil, errors.New("plan scans broke") }
+	t.Cleanup(func() { labelPlans = old })
+	a, logs := classifyApp(t, config.Classify{Mode: config.ClassifyAuto, JevAPIKey: testJevKey, AutoSince: "2026-11-15"})
+	c, err := a.newCategorizer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.gate.Set(writer.ModeAuto) // as if an earlier run was effective auto
+	c.lastMode = string(writer.ModeAuto)
+	c.After(context.Background(), time.Now())
+	if a.gate.Mode() != writer.ModeDryRun {
+		t.Errorf("gate after LabelPlans failed = %s, want dry_run", a.gate.Mode())
+	}
+	if err := answer(t, slackApplier(t, a)); !errors.Is(err, writer.ErrDryRun) {
+		t.Errorf("answer after LabelPlans failed: %v, want ErrDryRun", err)
+	}
+	if got := c.LastMode(); got != string(writer.ModeDryRun) {
+		t.Errorf("LastMode = %q, want dry_run", got)
+	}
+	if m.calls.Load() != 0 || m.patches.Load() != 0 {
+		t.Errorf("model calls %d, PATCHes %d; want 0", m.calls.Load(), m.patches.Load())
+	}
+	if !strings.Contains(logs.String(), "categorize run failed") {
+		t.Errorf("no failure log line: %s", logs.String())
+	}
+}
+
+func TestCategorizer_LastModeFollowsFailedRunWithMode(t *testing.T) {
+	a, _ := classifyApp(t, config.Classify{Mode: config.ClassifyAuto})
+	c := &categorizer{Mode: config.ClassifyAuto, a: a, lastMode: string(writer.ModeAuto)}
+	c.logRun(classify.Result{Mode: writer.ModeDryRun}, errors.New("run failed after picking a mode"))
+	if got := c.LastMode(); got != string(writer.ModeDryRun) {
+		t.Errorf("after a failed downgraded run: LastMode = %q, want dry_run", got)
+	}
+	c.logRun(classify.Result{}, errors.New("failed before a mode"))
+	if got := c.LastMode(); got != string(writer.ModeDryRun) {
+		t.Errorf("after a failed run without a mode: LastMode = %q, want dry_run kept", got)
+	}
+}

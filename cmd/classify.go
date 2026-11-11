@@ -136,12 +136,13 @@ type categorizer struct {
 	Timeout    time.Duration
 	a          *app
 
-	// lastMode is the mode the last successful pipeline run ran as. Only the
+	// lastMode is the mode the last pipeline run ran as, or fell back to when
+	// it failed (a run that failed without a mode leaves it). Only the
 	// scheduler's goroutine reads or writes it.
 	lastMode string
 }
 
-// LastMode is what the last pipeline run ran as ("" before one succeeds). A
+// LastMode is what the last pipeline run ran as ("" before one reports a mode). A
 // nil categorizer reports "".
 func (c *categorizer) LastMode() string {
 	if c == nil {
@@ -149,6 +150,9 @@ func (c *categorizer) LastMode() string {
 	}
 	return c.lastMode
 }
+
+// labelPlans is calibrate.LabelPlans (tests replace it to fail).
+var labelPlans = calibrate.LabelPlans
 
 // newCategorizer wires categorization for serve. Mode off builds no pipeline
 // and no model. A bad Jev or claude setup fails startup.
@@ -207,9 +211,12 @@ func (a *app) newCategorizer() (*categorizer, error) {
 	c.Run = func(ctx context.Context) (classify.Result, error) {
 		// The same plans calibration labelled from, read each run, since a
 		// `finbot sync --archived` scan can change them after startup.
-		plans, err := calibrate.LabelPlans(ctx, a.db, cfg.YNABBudgetID)
+		plans, err := labelPlans(ctx, a.db, cfg.YNABBudgetID)
 		if err != nil {
-			return classify.Result{}, err
+			// Fail closed: the pipeline didn't run, so nothing re-checked
+			// that auto is still allowed.
+			a.gate.Set(writer.ModeDryRun)
+			return classify.Result{Mode: writer.ModeDryRun}, err
 		}
 		run := pc
 		run.HistoryPlanIDs = plans
@@ -295,7 +302,7 @@ func (c *categorizer) logRun(res classify.Result, err error) {
 			"pending": res.Pending,
 		},
 		"warnings", warnings}
-	if err == nil {
+	if res.Mode != "" {
 		c.lastMode = string(res.Mode)
 	}
 	switch {
