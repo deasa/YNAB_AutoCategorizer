@@ -4,7 +4,7 @@ Updated: 2026-11-11 by sup (fifth session)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
-- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-1c, M3-13 merged (main ac85784). **Active: M3-2, M3-7, M3-9** (3 builders, max). Next when a slot frees: M3-10a (slack/), M3-12a (alerts/), then per BACKLOG order.
+- Next actions: merged M3-0a, 0b, 1a, 1b, 1c, 2, 9, 13 (main 01d7f39). **In review: M3-7. Active: M3-10a, M3-12a.** Next per BACKLOG order once deps merge (M3-3, M3-4, M3-5, ...).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -19,17 +19,19 @@ Updated: 2026-11-11 by sup (fifth session)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
-| b-m3-2 | w1:p2Y | build | builder | M3-2 | 2026-11-11 | no .env |
 | b-m3-7 | w1:p2Z | build | builder | M3-7 | 2026-11-11 | no .env |
-| b-m3-9 | w1:p20 | build2 | builder | M3-9 | 2026-11-11 | no .env |
-| agy | w1:p31 | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-2, M3-9 queued in one prompt) → replace before next review. Warns "Sign-in update needed" but works |
+| b-m3-10a | w1:p33 | build | builder | M3-10a | 2026-11-11 | no .env |
+| b-m3-12a | w1:p34 | build2 | builder | M3-12a | 2026-11-11 | no .env |
+| agy | w1:p32 | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-7 r1). Warns "Sign-in update needed" but works |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-2 | review | w1:p2Y | t/M3-2 | agy r1 pending | DONE 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
-| M3-7 | active | w1:p2Z | t/M3-7 | — | dispatched 2026-11-11: writer/, ynab/ |
-| M3-9 | review | w1:p20 | t/M3-9 | agy r1 pending | DONE 2026-11-11: human-lock detection in the sync tx. **Out of Touches**: store/ (migration 0009, Tx helpers) and cmd/app.go wiring; asked agy to judge. Renumber 0009 if another branch adds one |
+| M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
+| M3-10a | active | w1:p33 | t/M3-10a | — | dispatched 2026-11-11: slack/, go.mod |
+| M3-12a | active | w1:p34 | t/M3-12a | — | dispatched 2026-11-11: alerts/ |
+| M3-7 | review | w1:p2Z | t/M3-7 | agy r1 pending | DONE 2026-11-11: writer/ gate+log+serialize+reconcile, ynab PatchTransactions, NotApplied |
+| M3-9 | merged | — | — | agy PASS (1 low: with a done write only rule (a) runs) | merged 2026-11-11 (01d7f39): human-lock detection in the sync tx; also store/ migration 0009 + Tx helpers and cmd/app.go wiring (agy: justified, Tx has no exported query path) |
 | M3-1c | merged | — | — | agy PASS r2 (r1 FIX: CurrentHumanCategory lock time + label filter; alert lookup/re-arm; PayeeCharge import id) | merged 2026-11-11 (ac85784): migration 0008 questions/users/slack_events/alerts/import_state/alert_cursor. Follow-ups: PruneSlackEvents caller (M3-15); docs (0006-0008 in CLAUDE.md, §2 questions fields) → M3-docs |
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
 | M3-0b | merged | — | — | agy PASS | merged 2026-11-08: cutover/rollback/rehearse scripts removed. Follow-up: flaky TestServe_MCPEndToEnd (freePort race, cmd/serve_test.go:88) |
