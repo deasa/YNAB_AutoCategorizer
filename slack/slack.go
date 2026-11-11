@@ -59,8 +59,9 @@ type Message struct {
 	Subtype  string // "" or "thread_broadcast"
 }
 
-// Click is a Block Kit button click by an allowed user on a message in the
-// configured channel.
+// Click is a Block Kit button click or select choice by an allowed user on a
+// message in the configured channel. Value is the button's value, or the
+// chosen option's value for a static_select.
 type Click struct {
 	User      store.User
 	Channel   string
@@ -205,6 +206,31 @@ func (c *Client) Update(ctx context.Context, ts string, opts ...slackapi.MsgOpti
 		return fmt.Errorf("slack: update: %s", c.redact(err))
 	}
 	return nil
+}
+
+// PostBlocks posts text (the notification fallback) and blocks, in the thread
+// under threadTS if it's set, and returns the new message's ts.
+func (c *Client) PostBlocks(ctx context.Context, threadTS, text string, blocks []slackapi.Block) (string, error) {
+	return c.Post(ctx, blockOptions(threadTS, text, blocks)...)
+}
+
+// UpdateBlocks replaces the message at ts with text and blocks.
+func (c *Client) UpdateBlocks(ctx context.Context, ts, text string, blocks []slackapi.Block) error {
+	return c.Update(ctx, ts, blockOptions("", text, blocks)...)
+}
+
+// blockOptions builds a message whose fallback text is escaped and whose
+// top-level text isn't parsed as mrkdwn, so text from YNAB can't format, link
+// or mention anyone.
+func blockOptions(threadTS, text string, blocks []slackapi.Block) []slackapi.MsgOption {
+	opts := []slackapi.MsgOption{slackapi.MsgOptionText(text, true), slackapi.MsgOptionDisableMarkdown()}
+	if len(blocks) > 0 {
+		opts = append(opts, slackapi.MsgOptionBlocks(blocks...))
+	}
+	if threadTS != "" {
+		opts = append(opts, slackapi.MsgOptionTS(threadTS))
+	}
+	return opts
 }
 
 // Run connects and dispatches events until ctx ends, then waits for running
@@ -406,9 +432,14 @@ func (c *Client) click(ctx context.Context, data any) (Click, string) {
 	if reason != "" {
 		return Click{}, reason
 	}
+	// A select carries its choice in selected_option, not value.
+	value := a.Value
+	if a.Type == slackapi.ActionType(slackapi.OptTypeStatic) {
+		value = a.SelectedOption.Value
+	}
 	return Click{
 		User: u, Channel: ch, MessageTS: cb.Container.MessageTs, ActionTS: actionTS,
-		ActionID: a.ActionID, BlockID: a.BlockID, Value: a.Value,
+		ActionID: a.ActionID, BlockID: a.BlockID, Value: value,
 	}, ""
 }
 

@@ -433,3 +433,24 @@ func TestNewFromTokensValidates(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A static_select carries its choice in selected_option.value; Click.Value
+// must hold it (M3-10a review).
+func TestSelectClickValue(t *testing.T) {
+	db, _ := newStore(t)
+	var k Click
+	c := newClient(t, db, newFakeSocket(), Handlers{Click: func(_ context.Context, got Click) { k = got }})
+	payload := []byte(`{"type":"block_actions","user":{"id":"` + userBrendan + `"},` +
+		`"container":{"type":"message","message_ts":"100.1","channel_id":"` + testChannelID + `"},` +
+		`"channel":{"id":"` + testChannelID + `"},` +
+		`"actions":[{"type":"static_select","action_id":"q_select","block_id":"q",` +
+		`"selected_option":{"text":{"type":"plain_text","text":"Gas"},"value":"7:4"},"action_ts":"401.1"}]}`)
+	var cb slackapi.InteractionCallback
+	if err := json.Unmarshal(payload, &cb); err != nil {
+		t.Fatal(err)
+	}
+	c.handle(context.Background(), socketmode.Event{Type: socketmode.EventTypeInteractive, Data: cb})
+	if k.ActionID != "q_select" || k.Value != "7:4" {
+		t.Fatalf("click = %+v", k)
+	}
+}
