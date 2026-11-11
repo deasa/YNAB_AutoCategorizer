@@ -123,3 +123,62 @@ func TestLabelPlansDedupes(t *testing.T) {
 		t.Errorf("plans = %v", got)
 	}
 }
+
+// The P2P guard reads payee casing, and the model sees the payee as written,
+// so calibration must see display names, not LabeledHistory's normalized ones.
+func TestInputsRestoresDisplayPayees(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "finbot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	p2p := func(id, date, payee string) store.Transaction {
+		x := txn(id, date, payee, "dine")
+		x.Memo = sp("🍕")
+		return x
+	}
+	seed(t, db, "active", []store.Category{
+		{ID: "dine", CategoryGroupID: "g1", Name: "Dining"},
+		{ID: "fuel", CategoryGroupID: "g1", Name: "Fuel"},
+	}, []store.Transaction{
+		p2p("t1", "2026-10-01", "Jane Doe"),
+		p2p("t2", "2026-10-02", "JANE DOE"),
+		p2p("t3", "2026-10-03", "JANE DOE"),
+		txn("t4", "2026-10-04", "Corner Cafe", "dine"),
+		txn("t5", "2026-10-05", "Bob's Gas", "fuel"),
+		txn("t6", "2026-10-06", "Bobs Gas", "fuel"),
+	})
+	p, err := classify.LoadPolicy([]byte(`{"version":1,"set_aside_keywords":[],"descriptions":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, set, err := Inputs(ctx, db, "active", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, h := range history {
+		got = append(got, h.Payee)
+	}
+	sort.Strings(got)
+	// The most common spelling wins; a tie goes to the first in byte order.
+	want := "Bob's Gas,Bob's Gas,Corner Cafe,JANE DOE,JANE DOE,JANE DOE"
+	if strings.Join(got, ",") != want {
+		t.Errorf("payees = %v, want %s", got, want)
+	}
+
+	m := &fakeModel{answers: map[string]answer{}}
+	c, err := Run(ctx, history, Options{Model: m, Policy: p, Candidates: set.Candidates})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := c.Report.Sources[SourceGuard]; g != 3 {
+		t.Errorf("guarded = %d, want 3 (the person-shaped P2P rows)", g)
+	}
+	for _, s := range m.seen {
+		if s.Payee != "Corner Cafe" && s.Payee != "Bob's Gas" {
+			t.Errorf("model saw payee %q", s.Payee)
+		}
+	}
+}
