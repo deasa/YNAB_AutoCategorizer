@@ -234,7 +234,6 @@ func TestSyncJob_CategorizeBoundCancelsAndNextSyncRuns(t *testing.T) {
 	}
 }
 
-
 // slackApplier starts Slack on a fake socket and returns the Applier serve
 // gave Slack's questions.
 func slackApplier(t *testing.T, a *app) slack.Applier {
