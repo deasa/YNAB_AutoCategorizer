@@ -28,8 +28,8 @@ Updated: 2026-11-11 by sup (fifth session)
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
-| M3-10a | active | w1:p33 | t/M3-10a | — | dispatched 2026-11-11: slack/, go.mod |
-| M3-12a | active | w1:p34 | t/M3-12a | — | dispatched 2026-11-11: alerts/ |
+| M3-10a | review-queued | w1:p33 | t/M3-10a | after M3-7 | DONE 2026-11-11: Socket Mode client, ack-first, filter, auth, dedupe; slack-go bumps websocket 1.5.3, testify 1.12.1 (indirect) |
+| M3-12a | review-queued | w1:p34 | t/M3-12a | after M3-10a | DONE 2026-11-11: freshness alerts + budget; works from mirror state, not LinkEvents (retryable) |
 | M3-7 | review | w1:p2Z | t/M3-7 | agy r1 pending | DONE 2026-11-11: writer/ gate+log+serialize+reconcile, ynab PatchTransactions, NotApplied |
 | M3-9 | merged | — | — | agy PASS (1 low: with a done write only rule (a) runs) | merged 2026-11-11 (01d7f39): human-lock detection in the sync tx; also store/ migration 0009 + Tx helpers and cmd/app.go wiring (agy: justified, Tx has no exported query path) |
 | M3-1c | merged | — | — | agy PASS r2 (r1 FIX: CurrentHumanCategory lock time + label filter; alert lookup/re-arm; PayeeCharge import id) | merged 2026-11-11 (ac85784): migration 0008 questions/users/slack_events/alerts/import_state/alert_cursor. Follow-ups: PruneSlackEvents caller (M3-15); docs (0006-0008 in CLAUDE.md, §2 questions fields) → M3-docs |
