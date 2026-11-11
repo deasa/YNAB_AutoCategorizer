@@ -426,3 +426,36 @@ func TestClient_NoErrorPathLeaksIDs(t *testing.T) {
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestNotApplied(t *testing.T) {
+	cases := []struct {
+		status int
+		id     string
+		want   bool
+	}{
+		{http.StatusBadRequest, "400", true},
+		{http.StatusNotFound, "404.2", true},
+		{http.StatusConflict, "409", true},
+		{http.StatusTooManyRequests, "429", true},
+		{http.StatusInternalServerError, "500", false},
+		{http.StatusServiceUnavailable, "503", false},
+	}
+	for _, tc := range cases {
+		c := NewClient(testToken, testPlanID, log.New(io.Discard, "", 0), WithGovernor(fullGovernor()),
+			WithBaseTransport(roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Header: http.Header{"Retry-After": {"3600"}},
+					Body: io.NopCloser(strings.NewReader(`{"error":{"id":"` + tc.id + `","name":"x","detail":"x"}}`)), Request: r}, nil
+			})), func(o *options) { o.retry = &ynabapi.RetryPolicy{MaxAttempts: 1} })
+		yes := true
+		_, err := c.PatchTransactions(context.Background(), []TransactionChange{{ID: "t1", Approved: &yes}})
+		if err == nil || NotApplied(err) != tc.want {
+			t.Errorf("%d: err %v, NotApplied = %v, want %v", tc.status, err, NotApplied(err), tc.want)
+		}
+	}
+	if !NotApplied(fmt.Errorf("x: %w", ErrBudgetExhausted)) {
+		t.Error("budget exhausted: want NotApplied")
+	}
+	if NotApplied(errors.New("connection reset")) {
+		t.Error("transport error: want unknown")
+	}
+}
