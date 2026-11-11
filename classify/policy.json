@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "set_aside_keywords": ["Birthday", "Christmas", "Gift", "Giving", "Holiday", "Trip", "Vacation"],
+  "descriptions": {
+    "Discretionary": "Everyday spending: dining out, restaurants, groceries, Amazon orders and general shopping. Spending for an event (a birthday, trip, Christmas or gift) goes here too."
+  }
+}
