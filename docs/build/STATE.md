@@ -20,14 +20,12 @@ Updated: 2026-11-11 by sup (fifth session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
 | b-m3-1c | w1:p2W | build (w1:t15) | builder | M3-1c | 2026-11-11 | worktree ../YNAB_AutoCategorizer.wt/M3-1c, no .env |
-| agy | w1:p2V | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-1b r1, r2), replace before next review |
-| coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
-| (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
+| agy | w1:p2X | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-1c r1). Old p2V gone by 2026-11-11; agy warns "Sign-in update needed" (may need /logout + re-auth) |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-1c | active | w1:p2W | t/M3-1c | — | dispatched 2026-11-11: questions, users, alerts, import state (0008) |
+| M3-1c | review | w1:p2W | t/M3-1c | agy r1 pending | DONE 2026-11-11: migration 0008 questions/users/slack_events/alerts/import_state/alert_cursor; 2 commits, 8 files |
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
 | M3-0b | merged | — | — | agy PASS | merged 2026-11-08: cutover/rollback/rehearse scripts removed. Follow-up: flaky TestServe_MCPEndToEnd (freePort race, cmd/serve_test.go:88) |
 | M3-1b | merged | — | — | agy PASS r2 (r1 FIX: LabeledHistory counted system writes as labels; Lock deadlocked inside a sync tx) | merged 2026-11-08: write_log + human_locks (0007) |
