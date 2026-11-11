@@ -22,13 +22,13 @@ Updated: 2026-11-11 by sup (fifth session)
 | b-m3-10b | w1:p37 | build | builder | M3-10b | 2026-11-11 | no .env |
 | b-m3-3 | w1:p36 | build | builder | M3-3 | 2026-11-11 | .env copied for JEV_LIVE test |
 | b-m3-8 | w1:p38 | build2 | builder | M3-8 | 2026-11-11 | .env copied (sandbox writes) |
-| agy | w1:p35 | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-7 r2, M3-12a r1) → replace before next review. Warns "Sign-in update needed" but works |
+| agy | w1:p39 | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-3 r1). Warns "Sign-in update needed" but works |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
-| M3-3 | active | w1:p36 | t/M3-3 | — | dispatched 2026-11-11: classify/jev/ |
+| M3-3 | review | w1:p36 | t/M3-3 | agy r1 pending | DONE 2026-11-11: Jev client pinned jev-1.14.0; JEV_LIVE pass (3 synthetic txns, key grep 0) |
 | M3-10a | merged | — | — | agy PASS (1 low: static_select value → noted in M3-10b brief) | merged 2026-11-11 (99b4b5f): Socket Mode client, ack-first, filter, auth, dedupe |
 | M3-8 | active | w1:p38 | t/M3-8 | — | dispatched 2026-11-11: writer/ sandbox_live_test.go; sandbox writes only |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
