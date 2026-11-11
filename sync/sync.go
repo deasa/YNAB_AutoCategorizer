@@ -44,6 +44,10 @@ type Syncer struct {
 	log    *log.Logger
 	now    func() time.Time
 
+	// lockPlan is the plan whose ticks run human-edit detection (DetectLocks);
+	// empty turns it off.
+	lockPlan string
+
 	// beforeCursor, if set, runs inside the write transaction after the rows
 	// are upserted and before the cursor is saved. Tests use it to simulate
 	// a crash at that point.
@@ -79,6 +83,9 @@ type Result struct {
 	// neither the payload nor the mirror.
 	Orphans    int
 	LinkEvents []LinkEvent
+	// Locks is the tick's human-edit detection; zero unless planID is the
+	// DetectLocks plan.
+	Locks LockCounts
 }
 
 // skippable reports whether err means "no budget now, try next tick".
@@ -130,6 +137,12 @@ func (s *Syncer) SyncPlan(ctx context.Context, planID string) (Result, error) {
 		if err := upsertBatch(tx, planID, b, syncedAt); err != nil {
 			return err
 		}
+		if planID == s.lockPlan {
+			var err error
+			if res.Locks, err = detectLocks(tx, planID, b, syncedAt); err != nil {
+				return err
+			}
+		}
 		if s.beforeCursor != nil {
 			if err := s.beforeCursor(); err != nil {
 				return err
@@ -147,6 +160,11 @@ func (s *Syncer) SyncPlan(ctx context.Context, planID string) (Result, error) {
 		kind = "full export"
 	}
 	s.log.Printf("sync: %s applied: %v; %d link events", kind, res.Rows, len(res.LinkEvents))
+	if planID == s.lockPlan {
+		l := res.Locks
+		s.log.Printf("sync: human locks: backfill=%t judged=%d ynab_edit=%d first_touch=%d skipped_intent=%d",
+			l.Backfill, l.Judged, l.Edit, l.FirstTouch, l.SkippedIntent)
+	}
 	if res.Orphans > 0 {
 		s.log.Printf("sync: dropped %d orphan subtransactions (parent in neither payload nor mirror)", res.Orphans)
 	}
