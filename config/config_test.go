@@ -39,6 +39,7 @@ func TestLoadFrom_Defaults(t *testing.T) {
 		SlackStatusChannel: "finbot-finances",
 		Backup:             Backup{AtHour: 3, AtMinute: 17, Keep: 14, DBPath: "/data/finbot.db"},
 		MCP:                MCP{ListenAddr: ":8080"},
+		Classify:           Classify{Mode: ClassifyOff, BacklogDays: 45, MaxOpenQuestions: 5},
 	}
 	if !reflect.DeepEqual(*cfg, want) {
 		t.Errorf("got %+v\nwant %+v", *cfg, want)
@@ -113,6 +114,14 @@ func TestLoadFrom_Errors(t *testing.T) {
 		{"bad import interval", required(map[string]string{"IMPORT_INTERVAL": "6 hours"}), "IMPORT_INTERVAL"},
 		{"bad import flag", required(map[string]string{"IMPORT_ENABLED": secret}), "IMPORT_ENABLED"},
 		{"bad log level", required(map[string]string{"LOG_LEVEL": secret}), "LOG_LEVEL"},
+		{"bad classify mode", required(map[string]string{"CLASSIFY_MODE": secret}), "CLASSIFY_MODE"},
+		{"auto without since", required(map[string]string{"CLASSIFY_MODE": "auto", "JEV_API_KEY": "k"}), "CLASSIFY_AUTO_SINCE"},
+		{"bad auto since", required(map[string]string{"CLASSIFY_AUTO_SINCE": secret}), "CLASSIFY_AUTO_SINCE"},
+		{"dry_run without jev", required(map[string]string{"CLASSIFY_MODE": "dry_run"}), "JEV_API_KEY"},
+		{"relative claude bin", required(map[string]string{"CLAUDE_BIN": secret}), "CLAUDE_BIN"},
+		{"relative claude config", required(map[string]string{"CLAUDE_CONFIG_DIR": secret}), "CLAUDE_CONFIG_DIR"},
+		{"bad backlog", required(map[string]string{"CLASSIFY_BACKLOG_DAYS": secret}), "CLASSIFY_BACKLOG_DAYS"},
+		{"zero open questions", required(map[string]string{"CLASSIFY_MAX_OPEN_QUESTIONS": "0"}), "CLASSIFY_MAX_OPEN_QUESTIONS"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := LoadFrom(env(tc.env))
@@ -327,5 +336,32 @@ func TestLoadFrom_SlackErrors(t *testing.T) {
 				t.Errorf("error echoes the value: %q", err)
 			}
 		})
+	}
+}
+
+func TestClassifySettings(t *testing.T) {
+	cfg, err := LoadFrom(env(required(map[string]string{
+		"CLASSIFY_MODE": "auto", "JEV_API_KEY": "jk", "CLASSIFY_AUTO_SINCE": "2026-11-15",
+		"CLAUDE_CODE_OAUTH_TOKEN": "ct", "CLAUDE_BIN": "/opt/claude", "CLAUDE_CONFIG_DIR": "/data/claude",
+		"CLASSIFY_BACKLOG_DAYS": "30", "CLASSIFY_MAX_OPEN_QUESTIONS": "3",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Classify{Mode: ClassifyAuto, JevAPIKey: "jk", ClaudeToken: "ct", ClaudeBin: "/opt/claude",
+		ClaudeConfigDir: "/data/claude", BacklogDays: 30, MaxOpenQuestions: 3, AutoSince: "2026-11-15"}
+	if cfg.Classify != want {
+		t.Errorf("got %+v\nwant %+v", cfg.Classify, want)
+	}
+	if !cfg.Classify.Claude() {
+		t.Error("Claude() false with token and binary set")
+	}
+	// dry_run needs no AutoSince; claude is optional.
+	cfg, err = LoadFrom(env(required(map[string]string{"CLASSIFY_MODE": "dry_run", "JEV_API_KEY": "jk"})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Classify.Mode != ClassifyDryRun || cfg.Classify.Claude() {
+		t.Errorf("got %+v", cfg.Classify)
 	}
 }

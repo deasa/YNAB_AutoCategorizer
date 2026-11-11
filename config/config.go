@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -62,8 +63,87 @@ type Config struct {
 	// "<name>:<slack id>,..."). The ids are personal data: never log them.
 	SlackUsers []SlackUser
 
-	Backup Backup
-	MCP    MCP
+	Backup   Backup
+	MCP      MCP
+	Classify Classify
+}
+
+// Classify modes. Only deploy/compose.yaml sets anything but off.
+const (
+	ClassifyOff    = "off"
+	ClassifyDryRun = "dry_run"
+	ClassifyAuto   = "auto"
+)
+
+// Classify configures categorization in serve.
+type Classify struct {
+	Mode string // CLASSIFY_MODE: off (default), dry_run or auto
+
+	JevAPIKey string // JEV_API_KEY, required unless Mode is off
+
+	// The claude second opinion and its daily auth probe run only when both
+	// ClaudeToken and ClaudeBin are set.
+	ClaudeToken     string // CLAUDE_CODE_OAUTH_TOKEN
+	ClaudeBin       string // CLAUDE_BIN, absolute path to the pinned claude binary
+	ClaudeConfigDir string // CLAUDE_CONFIG_DIR, absolute; passed to the child
+
+	BacklogDays      int    // CLASSIFY_BACKLOG_DAYS, default 45
+	MaxOpenQuestions int    // CLASSIFY_MAX_OPEN_QUESTIONS, default 5
+	AutoSince        string // CLASSIFY_AUTO_SINCE (YYYY-MM-DD), required for auto
+}
+
+// Claude reports whether the claude second opinion and probe are configured.
+func (c Classify) Claude() bool { return c.ClaudeToken != "" && c.ClaudeBin != "" }
+
+// classifyFrom reads the Classify settings. Errors name the variable, never
+// the value.
+func classifyFrom(getenv func(string) string) (Classify, error) {
+	c := Classify{
+		Mode:             getenv("CLASSIFY_MODE"),
+		JevAPIKey:        getenv("JEV_API_KEY"),
+		ClaudeToken:      getenv("CLAUDE_CODE_OAUTH_TOKEN"),
+		ClaudeBin:        getenv("CLAUDE_BIN"),
+		ClaudeConfigDir:  getenv("CLAUDE_CONFIG_DIR"),
+		AutoSince:        getenv("CLASSIFY_AUTO_SINCE"),
+		BacklogDays:      45,
+		MaxOpenQuestions: 5,
+	}
+	switch c.Mode {
+	case "":
+		c.Mode = ClassifyOff
+	case ClassifyOff, ClassifyDryRun, ClassifyAuto:
+	default:
+		return Classify{}, fmt.Errorf("config: CLASSIFY_MODE must be off, dry_run or auto")
+	}
+	if c.AutoSince != "" {
+		if _, err := time.Parse(time.DateOnly, c.AutoSince); err != nil {
+			return Classify{}, fmt.Errorf("config: CLASSIFY_AUTO_SINCE must be a date such as 2026-11-15")
+		}
+	}
+	if c.Mode == ClassifyAuto && c.AutoSince == "" {
+		return Classify{}, fmt.Errorf("config: CLASSIFY_AUTO_SINCE is required when CLASSIFY_MODE is auto")
+	}
+	if c.Mode != ClassifyOff && c.JevAPIKey == "" {
+		return Classify{}, fmt.Errorf("config: JEV_API_KEY is required unless CLASSIFY_MODE is off")
+	}
+	for _, v := range []struct{ key, val string }{{"CLAUDE_BIN", c.ClaudeBin}, {"CLAUDE_CONFIG_DIR", c.ClaudeConfigDir}} {
+		if v.val != "" && !filepath.IsAbs(v.val) {
+			return Classify{}, fmt.Errorf("config: %s must be an absolute path", v.key)
+		}
+	}
+	for _, v := range []struct {
+		key string
+		dst *int
+	}{{"CLASSIFY_BACKLOG_DAYS", &c.BacklogDays}, {"CLASSIFY_MAX_OPEN_QUESTIONS", &c.MaxOpenQuestions}} {
+		if s := getenv(v.key); s != "" {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 {
+				return Classify{}, fmt.Errorf("config: %s must be a positive integer", v.key)
+			}
+			*v.dst = n
+		}
+	}
+	return c, nil
 }
 
 // SlackUser maps a Slack user id to its store label (store.UserBrendan or
@@ -343,6 +423,9 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		return nil, err
 	}
 	if cfg.MCP, err = mcpFrom(getenv); err != nil {
+		return nil, err
+	}
+	if cfg.Classify, err = classifyFrom(getenv); err != nil {
 		return nil, err
 	}
 	if cfg.SyncInterval, err = duration(get, "SYNC_INTERVAL", "15m"); err != nil {

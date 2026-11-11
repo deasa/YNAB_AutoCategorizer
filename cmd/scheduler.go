@@ -34,6 +34,8 @@ type Scheduler struct {
 	BackupDelay func() time.Duration            // time until the next backup; must be positive
 	Prune       func(ctx context.Context) error // nil: MCP disabled, nothing to prune
 	PruneEvery  time.Duration
+	Probe       func(ctx context.Context) error // nil: no claude, nothing to probe
+	ProbeEvery  time.Duration
 
 	// Health, if set, records each sync's outcome.
 	Health *Health
@@ -81,8 +83,19 @@ func (s *Scheduler) Run(ctx context.Context) {
 		drain(pruneC)
 	}
 
+	var probeC <-chan time.Time // nil (never fires) when there's nothing to probe
+	if s.Probe != nil {
+		probeT := newTicker(s.ProbeEvery)
+		defer probeT.Stop()
+		probeC = probeT.C()
+	}
+
 	s.runSync(ctx)
 	drain(syncT.C())
+	if s.Probe != nil && ctx.Err() == nil {
+		_ = s.Probe(ctx) // the job logs and alerts its own outcome
+		drain(probeC)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -99,6 +112,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 		case <-pruneC:
 			_ = s.Prune(ctx) // the job logs its own outcome
 			drain(pruneC)
+		case <-probeC:
+			_ = s.Probe(ctx) // the job logs and alerts its own outcome
+			drain(probeC)
 		}
 	}
 }

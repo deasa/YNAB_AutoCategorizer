@@ -342,11 +342,34 @@ func hasCategoryLock(ls []store.HumanLock) bool {
 	return false
 }
 
+// Reasons the classify pipeline closes a question (classify.ReasonSuperseded
+// and classify.ReasonSupersededByAuto), named here so slack needn't import
+// classify.
+const (
+	reasonSuperseded       = "superseded"
+	reasonSupersededByAuto = "superseded_by_auto"
+)
+
+// Closed edits the message of a question the pipeline closed with reason to
+// its final state. It does nothing for a question that was never posted.
+// classify.Asker.
+func (q *Questions) Closed(ctx context.Context, qu store.Question, reason string) error {
+	text := "Closed: no answer is needed any more."
+	switch reason {
+	case reasonSuperseded:
+		text = "Closed: replaced by a newer question about this transaction."
+	case reasonSupersededByAuto:
+		text = "Closed: finbot now categorizes these automatically."
+	}
+	return q.finish(ctx, qu, text, nil)
+}
+
 // finish edits a question's message to its final state: the transaction (if
-// the mirror still has it), the result and who answered. Errors are logged.
-func (q *Questions) finish(ctx context.Context, qu store.Question, result string, by *store.User) {
+// the mirror still has it), the result and who answered. Errors are logged
+// and returned.
+func (q *Questions) finish(ctx context.Context, qu store.Question, result string, by *store.User) error {
 	if qu.MessageTS == nil {
-		return
+		return nil
 	}
 	var blocks []slackapi.Block
 	if txn, ok, err := q.st.TransactionByID(ctx, qu.PlanID, qu.SubjectID); err == nil && ok {
@@ -361,6 +384,7 @@ func (q *Questions) finish(ctx context.Context, qu store.Question, result string
 	if err != nil {
 		q.log.Error("slack question update failed", "err", err)
 	}
+	return err
 }
 
 var slackUserID = regexp.MustCompile(`^[UW][A-Z0-9]+$`)

@@ -57,6 +57,14 @@ type fakeSocket struct {
 	checks     int
 	runs       int
 	posts      []string
+	apply      slack.Applier // the Applier serve gave Slack's questions
+	questions  questionAsker
+}
+
+func (f *fakeSocket) Questions() questionAsker {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.questions
 }
 
 func (f *fakeSocket) SelfCheck(context.Context) error {
@@ -103,7 +111,10 @@ func prepareSlackServe(t *testing.T, sock *fakeSocket) *serveRun {
 		w.Write([]byte(`{"ok":false,"error":"invalid_auth"}`))
 	}))
 	oldNew, oldURL, oldMin := newSocketClient, slackBaseURL, socketRetryMin
-	newSocketClient = func(*config.Config, slack.Store, *slog.Logger, func(string) string) (socketClient, error) {
+	newSocketClient = func(_ *config.Config, _ *store.DB, apply slack.Applier, _ *slog.Logger, _ func(string) string) (socketClient, error) {
+		sock.mu.Lock()
+		sock.apply = apply
+		sock.mu.Unlock()
 		return sock, nil
 	}
 	slackBaseURL, socketRetryMin = refuse.URL, 10*time.Millisecond

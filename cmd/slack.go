@@ -26,34 +26,47 @@ type socketClient interface {
 	Run(ctx context.Context) error
 	// PostAlert posts text to the channel. Its error is safe to log.
 	PostAlert(ctx context.Context, text string) error
+	// Questions posts and closes categorization questions.
+	Questions() questionAsker
 }
 
 // newSocketClient builds the Socket Mode client (tests replace it, so a serve
 // test never reaches Slack).
-var newSocketClient = func(cfg *config.Config, st slack.Store, log *slog.Logger, redact func(string) string) (socketClient, error) {
+// apply is serve's one writer: an answer goes through the same Gate as the
+// pipeline.
+var newSocketClient = func(cfg *config.Config, db *store.DB, apply slack.Applier, log *slog.Logger, redact func(string) string) (socketClient, error) {
+	s := &slackSocket{api: slackapi.New(cfg.SlackBotToken), channel: cfg.SlackStatusChannel, redact: redact}
+	// s is the questions' Messenger; its Client is set before any event runs.
+	s.questions = slack.NewQuestions(db, apply, s, log)
 	c, err := slack.NewFromTokens(cfg.SlackAppToken, cfg.SlackBotToken, slack.Config{Channel: cfg.SlackStatusChannel},
-		st, slack.Handlers{}, log)
+		db, s.questions.Handlers(), log)
 	if err != nil {
 		return nil, err
 	}
-	return &slackSocket{Client: c, api: slackapi.New(cfg.SlackBotToken), channel: cfg.SlackStatusChannel, redact: redact}, nil
+	s.Client = c
+	return s, nil
 }
 
 // slackSocket is the real socketClient.
 type slackSocket struct {
 	*slack.Client
-	api     *slackapi.Client
-	channel string
-	redact  func(string) string
+	api       *slackapi.Client
+	channel   string
+	redact    func(string) string
+	questions *slack.Questions
 }
+
+func (s *slackSocket) Questions() questionAsker { return s.questions }
 
 // PostAlert posts through the client once its channel is resolved. Before
 // that (the self-check failed) it posts by channel name, so an alert can still
 // get through when only the lookup is broken, such as a missing scope.
 func (s *slackSocket) PostAlert(ctx context.Context, text string) error {
 	if s.ChannelID() != "" {
-		_, err := s.PostBlocks(ctx, "", text, nil)
-		return err
+		if _, err := s.PostBlocks(ctx, "", text, nil); err != nil {
+			return errors.New(s.redact(err.Error()))
+		}
+		return nil
 	}
 	_, _, err := s.api.PostMessageContext(ctx, s.channel,
 		slackapi.MsgOptionText(text, true), slackapi.MsgOptionDisableMarkdown())
@@ -144,7 +157,7 @@ func (a *app) startSlack(ctx context.Context) (<-chan struct{}, error) {
 	if err := a.db.UpsertUsers(ctx, users, time.Now()); err != nil {
 		return nil, err
 	}
-	sock, err := newSocketClient(cfg, a.db, a.log, a.redact)
+	sock, err := newSocketClient(cfg, a.db, a.classifyWriter(), a.log, a.redact)
 	if err != nil {
 		// The mirror matters more than Slack: log it and carry on without.
 		a.log.Error("slack socket mode disabled: bad config", "err", a.redact(err.Error()))

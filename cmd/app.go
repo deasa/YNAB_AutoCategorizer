@@ -24,6 +24,7 @@ import (
 	"github.com/deasa/YNAB_AutoCategorizer/config"
 	"github.com/deasa/YNAB_AutoCategorizer/store"
 	finsync "github.com/deasa/YNAB_AutoCategorizer/sync"
+	"github.com/deasa/YNAB_AutoCategorizer/writer"
 	"github.com/deasa/YNAB_AutoCategorizer/ynab"
 )
 
@@ -106,6 +107,18 @@ type app struct {
 	// Set by startSlack when Socket Mode is on; nil otherwise.
 	socket  socketClient
 	alerter alerter
+
+	// Categorization (serve). writer and gate are shared by the pipeline and
+	// Slack's answers; cat is set by serve; claude only when configured and
+	// CLASSIFY_MODE isn't off.
+	writer *writer.Writer
+	gate   *writer.Gate
+	cat    *categorizer
+	claude claudeRunner
+
+	// syncMu serializes syncs: the writer's Resync (from a Slack answer) can
+	// run alongside the scheduler.
+	syncMu sync.Mutex
 }
 
 func withApp(args []string, name string, stderr io.Writer, run func(context.Context, *app, *flag.FlagSet) error, flags ...func(*flag.FlagSet)) int {
@@ -177,7 +190,9 @@ var errSkipped = errors.New("sync skipped: rate budget exhausted")
 
 // syncPlan runs one tick for planID and logs it.
 func (a *app) syncPlan(ctx context.Context, planID, label string) (finsync.Result, error) {
+	a.syncMu.Lock()
 	res, err := a.syncer.SyncPlan(ctx, planID)
+	a.syncMu.Unlock()
 	if err != nil {
 		a.log.Error("sync tick failed", "plan", label, "err", a.redact(err.Error()))
 		return res, err
@@ -283,18 +298,15 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 	pinger := &Pinger{URL: cfg.HealthcheckPingURL, Log: a.log}
 	a.log.Info("healthcheck ping", "enabled", pinger.URL != "")
 	sched := &Scheduler{
-		Sync: func(ctx context.Context) error {
-			res, err := a.syncPlan(ctx, cfg.YNABBudgetID, "active")
-			if ctx.Err() == nil {
-				pinger.After(ctx, err)
-			}
-			if err == nil && ctx.Err() == nil {
-				a.feedAlerts(ctx, res)
-			}
-			return err
-		},
+		Sync: a.syncJob(func(ctx context.Context) (finsync.Result, error) {
+			return a.syncPlan(ctx, cfg.YNABBudgetID, "active")
+		}, pinger),
 		SyncEvery: cfg.SyncInterval,
 		Health:    health,
+	}
+	if a.claude != nil {
+		sched.Probe, sched.ProbeEvery = a.probeClaude, probeEvery
+		a.log.Info("claude probe enabled", "every", probeEvery.String())
 	}
 	if cfg.ImportEnabled {
 		sched.ImportEvery = cfg.ImportInterval
@@ -317,8 +329,33 @@ func (a *app) newScheduler() (*Scheduler, *Health) {
 	return sched, health
 }
 
+// syncJob is serve's sync job over sync: the ping, then, after a successful
+// sync only (not a failed or budget-skipped one), the alerts and the
+// categorization pass.
+func (a *app) syncJob(sync func(context.Context) (finsync.Result, error), pinger *Pinger) func(context.Context) error {
+	return func(ctx context.Context) error {
+		start := time.Now()
+		res, err := sync(ctx)
+		if ctx.Err() == nil {
+			pinger.After(ctx, err)
+		}
+		if err == nil && ctx.Err() == nil {
+			a.feedAlerts(ctx, res)
+			if a.cat != nil {
+				a.cat.After(ctx, start)
+			}
+		}
+		return err
+	}
+}
+
 func (a *app) serve(ctx context.Context) error {
 	cfg := a.cfg
+	cat, err := a.newCategorizer()
+	if err != nil {
+		return err
+	}
+	a.cat = cat
 	sched, health := a.newScheduler()
 
 	mux := http.NewServeMux()
@@ -435,5 +472,6 @@ func secrets(cfg *config.Config) []string {
 		cfg.SlackBotToken, cfg.SlackAppToken,
 		cfg.Backup.TursoToken, cfg.Backup.TursoURL,
 		cfg.MCP.GoogleClientSecret,
+		cfg.Classify.JevAPIKey, cfg.Classify.ClaudeToken,
 	}, append(cfg.MCP.Emails(), cfg.SlackIDs()...)...)
 }
