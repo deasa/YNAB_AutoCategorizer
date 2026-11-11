@@ -6,7 +6,8 @@ Updated: 2026-11-11 by sup (fifth session)
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
 - 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
-- Next actions: merged 23 of 28 (main e85c8db). **M3-17 is built and waiting for review; blocked on BA-21 (agy quota).** Once it passes: sup deploys to hoid in dry_run plus smoke, then M3-docs, M3-acceptance, M3-dryrun, M3-golive.
+- 2026-11-11 (Brendan, BA-21): while agy is out of quota, reviews use a fresh Claude Opus 5.5 pane (`rev`) following REVIEWER.md; switch back to agy when its quota resets (~2026-11-15).
+- Next actions: merged 23 of 28 (main e85c8db). **M3-17 in review with rev (Claude stand-in, BA-21).** Then sup deploys to hoid in dry_run plus smoke, then M3-docs, M3-acceptance, M3-dryrun, M3-golive.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -22,6 +23,7 @@ Updated: 2026-11-11 by sup (fifth session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
 | agy | w1:p3R | control (w1:t7) | reviewer (Antigravity): **quota exhausted 2026-11-11 15:05, resets in ~92h (BA-21)**. M3-17 review incomplete, no verdict |
+| rev | w1:p3T | control (w1:t7) | stand-in reviewer (Claude Opus 5.5, per REVIEWER.md) while agy is out of quota (BA-21); fresh pane per review | M3-17 r1 | 2026-11-11 | |
 | b-m3-17 | w1:p3S | build | builder | M3-17 | 2026-11-11 | no .env (builder never deploys) |
 
 ## Tasks
@@ -36,7 +38,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-17 | review | w1:p3S | t/M3-17 | **blocked: agy quota (BA-21)** | DONE 2026-11-11 (claude --version 2.1.312 as uid 10001 with /data volume; rehearse-docker 30/0; preflight test 26/0): Dockerfile (pinned claude 2.1.312 outside /data), compose CLASSIFY_MODE dry_run, deploy.sh keys. Deploy: yes (sup). Main .env has all 5 keys, no ANTHROPIC_API_KEY (checked) |
+| M3-17 | review | w1:p3S | t/M3-17 | rev (Claude) r1 pending | DONE 2026-11-11 (claude --version 2.1.312 as uid 10001 with /data volume; rehearse-docker 30/0; preflight test 26/0): Dockerfile (pinned claude 2.1.312 outside /data), compose CLASSIFY_MODE dry_run, deploy.sh keys. Deploy: yes (sup). Main .env has all 5 keys, no ANTHROPIC_API_KEY (checked) |
 | M3-16 | merged | — | — | agy PASS (1 low: report resolves dry_run_check answer names from q.Options only) | merged 2026-11-11 (e85c8db): finbot dry-run-report; fail-closed gate on LabelPlans error |
 | M3-15 | merged | — | — | agy PASS (1 low: gate not failed closed on LabelPlans error; lastMode → M3-16 note) | merged 2026-11-11 (23eaec0): import outcomes persisted, import timer resumes across restarts, status import/classifier lines |
 | M3-14b | merged | — | — | agy PASS r2 (r1 FIX: flaky bound test; HistoryPlanIDs = calibration plans; CloseStale reserve; pipeline log redaction) | merged 2026-11-11 (944ecbc): categorize after sync, CLASSIFY_MODE, shared writer+gate, daily claude probe |
@@ -106,7 +108,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | BA-19 | Pick finbot's active plan given M2-inv1: keep "Trying auto-categorizer" (link current cards, add categories in YNAB) or switch to "Make Money Work" (linked card, 35 Oct txns, grocery category). Import follows the active plan | M2 gate | done 2026-11-08: **keep \"Trying auto-categorizer\"** (Brendan); he links current cards / adds categories in YNAB |
 | BA-17 | Say which tax bucket each account belongs to (or run `finbot tag-account` once M2-4 lands). Untagged accounts show as `untagged` | after M2-4 | done 2026-11-08 by sup at Brendan's request: 18 open accounts tagged on hoid (6 checking/savings cash, HSA hsa, 10 cards + mortgage none); 6 closed accounts left untagged; no investment accounts in this plan |
 | BA-20 | Calibration (M3-6) found no safe τ: "Trying auto-categorizer" has 0 human labels (its categorized rows are unapproved), so it calibrated on the old May 2025 plan and no threshold reached 0.85 precision. Auto-apply stays off; dry-run, rules and Slack questions still work. Options: approve categorized txns in the active plan and rerun calibrate later, or accept ask-only. Also: policy set-aside keywords "Gift" and "Vacation" match no category | before M3-golive (not blocking the build) | open |
-| BA-21 | agy (Antigravity) hit its account quota mid-review of M3-17 on 2026-11-11 15:05 MST: "Individual quota reached… Resets in 92h29m". All reviews blocked until ~2026-11-15. Options: (a) wait for the reset, (b) upgrade the plan, (c) let sup use a fresh Claude Opus 5.5 reviewer pane following REVIEWER.md until agy is back | M3-17 deploy and all remaining M3 reviews | open |
+| BA-21 | agy (Antigravity) hit its account quota mid-review of M3-17 on 2026-11-11 15:05 MST: "Individual quota reached… Resets in 92h29m". All reviews blocked until ~2026-11-15. Options: (a) wait for the reset, (b) upgrade the plan, (c) let sup use a fresh Claude Opus 5.5 reviewer pane following REVIEWER.md until agy is back | M3-17 deploy and all remaining M3 reviews | done 2026-11-11: **Brendan: "you can use Claude for reviews"** → option (c) |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
 - 2026-10-27: Build workflow approved by Brendan: Opus 5.5 builders, agy review/testing, herdr orchestration, 40% context cap, supervisor restarted from these docs. sup may commit to main.
