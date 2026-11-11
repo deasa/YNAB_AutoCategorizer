@@ -32,7 +32,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-10a | merged | — | — | agy PASS (1 low: static_select value → noted in M3-10b brief) | merged 2026-11-11 (99b4b5f): Socket Mode client, ack-first, filter, auth, dedupe |
 | M3-8 | review | w1:p38 | t/M3-8 | agy r1 queued | DONE 2026-11-11: sandbox write test passed twice (11 requests, live-plan guard); each run leaves 2 payees in finbot-sandbox (API cannot delete) |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-10b | active | w1:p37 | t/M3-10b | — | dispatched 2026-11-11: slack/ (incl. static_select fix) |
+| M3-10b | review-queued | w1:p37 | t/M3-10b | next fresh agy (after M3-3, M3-8) | DONE 2026-11-11: questions Block Kit, clicks, thread replies, CloseStale; static_select fix |
 | M3-7 | merged | — | — | agy PASS r2 (r1 FIX: one-field change; Slack done+lock atomic; empty CategoryID) | merged 2026-11-11 (01339b4): writer/ gate+log+serialize+reconcile, ynab PatchTransactions |
 | M3-9 | merged | — | — | agy PASS (1 low: with a done write only rule (a) runs) | merged 2026-11-11 (01d7f39): human-lock detection in the sync tx; also store/ migration 0009 + Tx helpers and cmd/app.go wiring (agy: justified, Tx has no exported query path) |
 | M3-1c | merged | — | — | agy PASS r2 (r1 FIX: CurrentHumanCategory lock time + label filter; alert lookup/re-arm; PayeeCharge import id) | merged 2026-11-11 (ac85784): migration 0008 questions/users/slack_events/alerts/import_state/alert_cursor. Follow-ups: PruneSlackEvents caller (M3-15); docs (0006-0008 in CLAUDE.md, §2 questions fields) → M3-docs |
