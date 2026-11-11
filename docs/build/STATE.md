@@ -4,6 +4,7 @@ Updated: 2026-11-11 by sup (fifth session)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
+- 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
 - Next actions: merged M3-0a, 0b, 1a, 1b, 1c, 2, 3, 7, 8, 9, 10a, 12a, 13 (main 05e7c3d). **In review: M3-10b. Active: M3-5, M3-4.** Ready next: M3-12b (alerts/).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
@@ -21,17 +22,17 @@ Updated: 2026-11-11 by sup (fifth session)
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
 | b-m3-10b | w1:p37 | build | builder | M3-10b | 2026-11-11 | no .env |
 | b-m3-5 | w1:p3A | build | builder | M3-5 | 2026-11-11 | no .env |
-| b-m3-4 | w1:p3C | build2 | builder | M3-4 | 2026-11-11 | no .env |
-| agy | w1:p3B | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-10b r1). Warns "Sign-in update needed" but works |
+| b-m3-4 | w1:p3C | build2 | builder | M3-4 | 2026-11-11 | .env copied (CLAUDE_LIVE test) |
+| agy | w1:p3B | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-10b r1, M3-5 r1 queued) → replace before next review. Warns "Sign-in update needed" but works |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
-| M3-5 | active | w1:p3A | t/M3-5 | — | dispatched 2026-11-11: calibrate/, cmd/calibrate.go |
+| M3-5 | review | w1:p3A | t/M3-5 | agy r1 queued | DONE 2026-11-11: calibrate/ fits τ on labelled history; finbot calibrate subcommand |
 | M3-3 | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (5ee01df): Jev client pinned jev-1.14.0 |
 | M3-10a | merged | — | — | agy PASS (1 low: static_select value → noted in M3-10b brief) | merged 2026-11-11 (99b4b5f): Socket Mode client, ack-first, filter, auth, dedupe |
-| M3-4 | active | w1:p3C | t/M3-4 | — | dispatched 2026-11-11: llm/ |
+| M3-4 | active | w1:p3C | t/M3-4 | — | DONE 2026-11-11 (llm/ runner, second opinion, auth probe); now running CLAUDE_LIVE test. .env copied (has CLAUDE_CODE_OAUTH_TOKEN) |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
 | M3-10b | review | w1:p37 | t/M3-10b | agy r1 pending | DONE 2026-11-11: questions Block Kit, clicks, thread replies, CloseStale; static_select fix |
