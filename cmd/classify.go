@@ -135,6 +135,19 @@ type categorizer struct {
 	CloseStale func(ctx context.Context) (int, error)
 	Timeout    time.Duration
 	a          *app
+
+	// lastMode is the mode the last successful pipeline run ran as. Only the
+	// scheduler's goroutine reads or writes it.
+	lastMode string
+}
+
+// LastMode is what the last pipeline run ran as ("" before one succeeds). A
+// nil categorizer reports "".
+func (c *categorizer) LastMode() string {
+	if c == nil {
+		return ""
+	}
+	return c.lastMode
 }
 
 // newCategorizer wires categorization for serve. Mode off builds no pipeline
@@ -282,6 +295,9 @@ func (c *categorizer) logRun(res classify.Result, err error) {
 			"pending": res.Pending,
 		},
 		"warnings", warnings}
+	if err == nil {
+		c.lastMode = string(res.Mode)
+	}
 	switch {
 	case err != nil:
 		a.log.Error("categorize run failed", append(attrs, "err", a.redact(err.Error()))...)

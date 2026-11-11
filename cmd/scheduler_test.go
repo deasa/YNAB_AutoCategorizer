@@ -470,3 +470,117 @@ func waitHealthOK(t *testing.T, h *Health) {
 	}
 	t.Fatal("health never went OK")
 }
+
+func TestScheduler_ImportRestartMidIntervalFiresAtRemainingDelay(t *testing.T) {
+	var inflight, maxSeen atomic.Int32
+	sj, ij := newJob(&inflight, &maxSeen), newJob(&inflight, &maxSeen)
+	var tk tickers
+	remaining := 2 * time.Hour
+	stop := start(t, &Scheduler{Sync: sj.run, SyncEvery: syncEvery, Import: ij.run, ImportEvery: importEvery,
+		ImportDelay: func() time.Duration { return remaining }, NewTicker: tk.new})
+	defer stop()
+
+	expectStart(t, sj, "first sync")
+	expectNoStart(t, ij, "import before the remaining delay")
+	waitFor(t, func() bool { return tk.get(remaining) != nil })
+	if tk.get(importEvery) != nil {
+		t.Fatal("full-interval import ticker armed before the first import")
+	}
+	first := tk.get(remaining)
+	first.tick()
+	expectStart(t, ij, "import at the remaining delay")
+	// Then every ImportEvery, and the one-shot timer is gone.
+	waitFor(t, func() bool { return tk.get(importEvery) != nil })
+	if !first.stopped.Load() {
+		t.Error("first-import timer not stopped")
+	}
+	tk.get(importEvery).tick()
+	expectStart(t, ij, "import on its interval")
+}
+
+func TestScheduler_ImportOverdueFiresPromptly(t *testing.T) {
+	var inflight, maxSeen atomic.Int32
+	sj, ij := newJob(&inflight, &maxSeen), newJob(&inflight, &maxSeen)
+	var tk tickers
+	stop := start(t, &Scheduler{Sync: sj.run, SyncEvery: syncEvery, Import: ij.run, ImportEvery: importEvery,
+		ImportDelay: func() time.Duration { return 0 }, NewTicker: tk.new})
+	defer stop()
+
+	expectStart(t, sj, "first sync")
+	expectStart(t, ij, "overdue import right after the first sync")
+	expectNoStart(t, ij, "a second import")
+	tk.get(importEvery).tick()
+	expectStart(t, ij, "import on its interval")
+}
+
+// Restarts every 10 minutes for two intervals: the import job records its
+// attempt time, and each start computes its delay from it, as serve does.
+func TestScheduler_RepeatedRestartsImportOncePerInterval(t *testing.T) {
+	clk := &clock{t: time.Date(2026, 11, 1, 16, 0, 0, 0, time.UTC)}
+	var last time.Time // import_state.last_attempt_at
+	var imports []time.Time
+	importJob := func(context.Context) error {
+		last = clk.now()
+		imports = append(imports, last)
+		return errors.New("import failed") // a failure counts too
+	}
+	delay := func() time.Duration {
+		if last.IsZero() {
+			return 0 // first ever start: run soon, so the test sees one
+		}
+		return firstImportDelay(last, clk.now(), importEvery)
+	}
+
+	end := clk.now().Add(2 * importEvery)
+	for clk.now().Before(end) {
+		var tk tickers
+		var inflight, maxSeen atomic.Int32
+		sj := newJob(&inflight, &maxSeen)
+		d := delay()
+		stop := start(t, &Scheduler{Sync: sj.run, SyncEvery: syncEvery, Import: importJob, ImportEvery: importEvery,
+			ImportDelay: func() time.Duration { return d }, NewTicker: tk.new})
+		expectStart(t, sj, "first sync")
+		// The first-import timer fires if its delay elapses before the next
+		// restart, 10 minutes on.
+		if d > 0 && d <= 10*time.Minute {
+			clk.add(d)
+			waitFor(t, func() bool { return tk.get(d) != nil })
+			tk.get(d).tick()
+			waitFor(t, func() bool { return tk.get(importEvery) != nil })
+			stop()
+			clk.add(10*time.Minute - d)
+			continue
+		}
+		time.Sleep(quiet)
+		stop()
+		clk.add(10 * time.Minute)
+	}
+
+	// One at the first start, then one per interval: at 0, 6h and 12h.
+	if len(imports) != 3 {
+		t.Fatalf("imports over two intervals of restarts = %d, want 3 (%v)", len(imports), imports)
+	}
+	for i := 1; i < len(imports); i++ {
+		if gap := imports[i].Sub(imports[i-1]); gap != importEvery {
+			t.Errorf("imports %d and %d are %v apart, want %v", i-1, i, gap, importEvery)
+		}
+	}
+}
+
+func TestScheduler_ImportDisabledIgnoresDelay(t *testing.T) {
+	var inflight, maxSeen atomic.Int32
+	sj := newJob(&inflight, &maxSeen)
+	var tk tickers
+	var asked atomic.Bool
+	stop := start(t, &Scheduler{Sync: sj.run, SyncEvery: syncEvery, ImportEvery: importEvery,
+		ImportDelay: func() time.Duration { asked.Store(true); return 0 }, NewTicker: tk.new})
+	expectStart(t, sj, "first sync")
+	time.Sleep(quiet)
+	stop()
+	if asked.Load() {
+		t.Error("ImportDelay read while import is disabled")
+	}
+	if len(tk.by) != 1 {
+		t.Errorf("tickers = %d, want only the sync ticker", len(tk.by))
+	}
+}

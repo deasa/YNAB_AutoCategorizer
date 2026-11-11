@@ -37,6 +37,7 @@ type Store interface {
 	SetStatusPostAttempt(ctx context.Context, at time.Time) error
 	GetSyncState(ctx context.Context, planID string) (store.SyncState, bool, error)
 	AccountImports(ctx context.Context, planID string) ([]store.AccountImport, error)
+	GetImportState(ctx context.Context, planID string) (store.ImportState, bool, error)
 }
 
 // Config sets up an Updater.
@@ -51,7 +52,12 @@ type Config struct {
 
 	Version       string
 	ImportEnabled bool
-	BackupEnabled bool
+	// ClassifyMode is CLASSIFY_MODE; empty is off. ClassifyEffective, if set,
+	// is the mode the last categorization run actually ran as ("" before the
+	// first run or after a failed one).
+	ClassifyMode      string
+	ClassifyEffective func() string
+	BackupEnabled     bool
 	// StaleAfter is how old the last successful sync may get before the state
 	// is failing.
 	StaleAfter time.Duration
@@ -140,6 +146,18 @@ func (u *Updater) BackupDone(ctx context.Context, err error) {
 	if e := u.cfg.Store.SetStatusBackup(ctx, u.stored.BackupAt, u.stored.BackupOK); e != nil {
 		u.warn("status: store backup result failed", e)
 	}
+	u.update(ctx)
+}
+
+// ImportDone updates the message after an import run. The outcome itself is
+// read from import_state, which the import job writes.
+func (u *Updater) ImportDone(ctx context.Context) {
+	if u == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, u.cfg.RunTimeout)
+	defer cancel()
+	u.load(ctx)
 	u.update(ctx)
 }
 
@@ -262,14 +280,17 @@ func (u *Updater) render(ctx context.Context) string {
 	if err != nil {
 		u.warn("status: read accounts failed", err)
 	}
+	imp, impFailed := u.importLine(ctx)
+	cls, downgraded := u.classify()
 	now := u.cfg.Now()
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", u.state(now, accounts))
+	fmt.Fprintf(&b, "%s\n", u.state(now, accounts, impFailed || downgraded))
 	fmt.Fprintf(&b, "*Updated:* %s\n", now.In(u.loc).Format("Mon Jan 2, 3:04:05 PM MST"))
 	fmt.Fprintf(&b, "*Last successful sync:* %s\n", u.when(u.lastSyncOK))
 	fmt.Fprintf(&b, "*Last error:* %s\n", u.lastError())
 	fmt.Fprintf(&b, "*Last backup:* %s\n", u.backup())
-	fmt.Fprintf(&b, "*Import:* %s\n", onOff(u.cfg.ImportEnabled))
+	fmt.Fprintf(&b, "*Last import:* %s\n", imp)
+	fmt.Fprintf(&b, "*Classifier:* %s\n", cls)
 	fmt.Fprintf(&b, "*Version:* %s\n", escape(u.cfg.Version))
 	switch {
 	case err != nil:
@@ -294,11 +315,11 @@ func (u *Updater) render(ctx context.Context) string {
 
 // state is failing once the last success is older than StaleAfter (what makes
 // /healthz answer 503), and degraded while anything else needs attention.
-func (u *Updater) state(now time.Time, accounts []store.AccountImport) string {
+func (u *Updater) state(now time.Time, accounts []store.AccountImport, warn bool) string {
 	if u.lastSyncOK.IsZero() || now.Sub(u.lastSyncOK) > u.cfg.StaleAfter {
 		return ":red_circle: *finbot: failing*"
 	}
-	degraded := u.lastSyncErr != "" || (!u.stored.BackupAt.IsZero() && !u.stored.BackupOK)
+	degraded := warn || u.lastSyncErr != "" || (!u.stored.BackupAt.IsZero() && !u.stored.BackupOK)
 	for _, a := range accounts {
 		degraded = degraded || a.InError
 	}
@@ -337,11 +358,44 @@ func (u *Updater) backup() string {
 	return u.when(u.stored.BackupAt) + ", failed"
 }
 
-func onOff(on bool) string {
-	if on {
-		return "on"
+// importLine is the last import's time and result; failed is true when the
+// last attempt failed.
+func (u *Updater) importLine(ctx context.Context) (line string, failed bool) {
+	if !u.cfg.ImportEnabled {
+		return "disabled", false
 	}
-	return "off"
+	st, ok, err := u.cfg.Store.GetImportState(ctx, u.cfg.PlanID)
+	switch {
+	case err != nil:
+		u.warn("status: read import state failed", err)
+		return "unavailable", false
+	case !ok:
+		return "none yet", false
+	case st.LastError == nil:
+		return u.when(st.LastAttemptAt) + ", ok", false
+	}
+	line = u.when(st.LastAttemptAt) + ", failed: " + escape(u.oneLine(*st.LastError))
+	if st.LastOKAt != nil {
+		line += " (last ok " + u.when(*st.LastOKAt) + ")"
+	}
+	return line, true
+}
+
+// classify is the configured mode, with a warning when the last run of a
+// configured auto ran as anything else.
+func (u *Updater) classify() (line string, downgraded bool) {
+	mode := u.cfg.ClassifyMode
+	if mode == "" {
+		mode = "off"
+	}
+	line = escape(mode)
+	if mode != "auto" || u.cfg.ClassifyEffective == nil {
+		return line, false
+	}
+	if eff := u.cfg.ClassifyEffective(); eff != "" && eff != "auto" {
+		return line + " :warning: last run downgraded to " + escape(eff), true
+	}
+	return line, false
 }
 
 func (u *Updater) warn(msg string, err error) {

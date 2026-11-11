@@ -167,6 +167,7 @@ func TestDisabledWithoutToken(t *testing.T) {
 	}
 	u.SyncDone(context.Background(), nil) // a nil Updater does nothing
 	u.BackupDone(context.Background(), nil)
+	u.ImportDone(context.Background())
 }
 
 func TestFirstRunPostsThenUpdatesSameMessage(t *testing.T) {
@@ -394,7 +395,7 @@ func TestContent(t *testing.T) {
 	text := lastText(t, h.fake)
 	checkClean(t, text)
 	wantAll(t, text, "finbot: failing", "*Last successful sync:* never",
-		"fetch &lt;id&gt;: bad second line", "*Last backup:* none yet", "*Import:* on", "*Version:* abc1234",
+		"fetch &lt;id&gt;: bad second line", "*Last backup:* none yet", "*Last import:* none yet", "*Version:* abc1234",
 		"• Checking: 2026-10-31", "• Card &lt;!channel&gt; &amp; co: no imports :warning: link error")
 
 	// Success, with times in Denver (16:00 UTC is 9:00 MST on this date). A
@@ -413,7 +414,8 @@ func TestOverallState(t *testing.T) {
 
 	u.SyncDone(ctx, nil)
 	text := lastText(t, h.fake)
-	wantAll(t, text, "finbot: OK", "*Accounts:* none linked", "*Import:* off")
+	wantAll(t, text, "finbot: OK", "*Accounts:* none linked", "*Last import:* disabled",
+		"*Classifier:* off")
 
 	// A failed or skipped tick with a fresh success is degraded...
 	h.now = h.now.Add(15 * time.Minute)
@@ -454,6 +456,73 @@ func TestBackupOutcome(t *testing.T) {
 	h.cfg.BackupEnabled = false
 	New(h.cfg).SyncDone(ctx, nil)
 	wantAll(t, lastText(t, h.fake), "*Last backup:* disabled")
+}
+
+func TestImportOutcome(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.cfg.ImportEnabled = true
+	h.cfg.Redact = func(s string) string { return strings.ReplaceAll(s, planID, "<id>") }
+	u := New(h.cfg)
+	u.SyncDone(ctx, nil)
+	wantAll(t, lastText(t, h.fake), "finbot: OK", "*Last import:* none yet")
+
+	okAt := h.now.Add(-time.Hour)
+	if err := h.db.RecordImport(ctx, planID, okAt, nil); err != nil {
+		t.Fatal(err)
+	}
+	u.ImportDone(ctx)
+	wantAll(t, lastText(t, h.fake), "finbot: OK", "*Last import:* Sun Nov 1, 8:00 AM MST, ok")
+
+	// A failure shows its text, scrubbed again here (the job redacts first), one
+	// line, escaped, and the last success; it makes the state degraded.
+	msg := fmt.Sprintf("import %s: 500\n<@channel> amount=-45670 %s", planID, testToken)
+	if err := h.db.RecordImport(ctx, planID, h.now, &msg); err != nil {
+		t.Fatal(err)
+	}
+	h.fake.take()
+	u.ImportDone(ctx)
+	calls := h.fake.take()
+	if methods(calls) != "chat.update" {
+		t.Fatalf("one update per import run, got %s", methods(calls))
+	}
+	text := calls[0].body["text"]
+	checkClean(t, text)
+	wantAll(t, text, "finbot: degraded",
+		"*Last import:* Sun Nov 1, 9:00 AM MST, failed: import &lt;id&gt;: 500 &lt;@\u200bchannel&gt; &lt;amount&gt; &lt;secret&gt;",
+		"(last ok Sun Nov 1, 8:00 AM MST)")
+	if strings.Contains(text, "45670") {
+		t.Fatalf("amount leaked: %q", text)
+	}
+
+	// Import disabled shows nothing of import_state.
+	h.cfg.ImportEnabled = false
+	New(h.cfg).SyncDone(ctx, nil)
+	wantAll(t, lastText(t, h.fake), "finbot: OK", "*Last import:* disabled")
+}
+
+func TestClassifierLine(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	eff := ""
+	h.cfg.ClassifyMode = "auto"
+	h.cfg.ClassifyEffective = func() string { return eff }
+	u := New(h.cfg)
+	u.SyncDone(ctx, nil)
+	wantAll(t, lastText(t, h.fake), "finbot: OK", "*Classifier:* auto\n")
+
+	eff = "dry_run"
+	u.SyncDone(ctx, nil)
+	wantAll(t, lastText(t, h.fake), "finbot: degraded", "*Classifier:* auto :warning: last run downgraded to dry_run")
+
+	eff = "auto"
+	u.SyncDone(ctx, nil)
+	wantAll(t, lastText(t, h.fake), "finbot: OK", "*Classifier:* auto\n")
+
+	// dry_run as configured is not a downgrade.
+	h.cfg.ClassifyMode, eff = "dry_run", "dry_run"
+	New(h.cfg).SyncDone(ctx, nil)
+	wantAll(t, lastText(t, h.fake), "finbot: OK", "*Classifier:* dry_run\n")
 }
 
 // After a restart the last success comes from the mirror, so a tick that fails
