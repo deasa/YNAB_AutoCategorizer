@@ -81,3 +81,20 @@ type redactedError struct {
 func (e *redactedError) Error() string { return e.msg }
 
 func (e *redactedError) Is(target error) bool { return errors.Is(e.orig, target) }
+
+// NotApplied reports whether err proves a write request changed nothing in
+// YNAB: the local budget refused it before sending, or YNAB answered with a 4xx
+// (bad request, auth, forbidden, not found, conflict, rate limited). Any other
+// failure (a transport error, a timeout, a 5xx, an undecodable answer) leaves it
+// unknown whether the write landed.
+func NotApplied(err error) bool {
+	for _, target := range []error{
+		ErrBudgetExhausted, ErrRateLimited,
+		ynabapi.ErrBadRequest, ynabapi.ErrNotAuthorized, ynabapi.ErrForbidden, ynabapi.ErrNotFound, ynabapi.ErrConflict,
+	} {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}

@@ -6,6 +6,7 @@ package ynab
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 
@@ -187,4 +188,61 @@ func (c *Client) ImportTransactions(ctx context.Context) ([]string, error) {
 		return nil, c.red.wrap(op, err)
 	}
 	return ids, nil
+}
+
+// TransactionChange is one transaction's part of a PatchTransactions call. Only
+// the fields set are sent; a nil field is left as YNAB has it.
+type TransactionChange struct {
+	ID         string
+	CategoryID *string
+	Approved   *bool
+}
+
+// PatchedTransaction is YNAB's answer for one transaction of a
+// PatchTransactions call: its state after the write.
+type PatchedTransaction struct {
+	ID         string
+	CategoryID *string
+	Approved   bool
+}
+
+// PatchTransactions updates several transactions in one bulk PATCH, sending
+// only each change's set fields (category_id, approved). It is a write: it may
+// spend the write reserve. YNAB answers with the transactions it updated; one
+// missing from the answer was not updated. A change with no fields set is an
+// error, as is an empty batch.
+func (c *Client) PatchTransactions(ctx context.Context, changes []TransactionChange) ([]PatchedTransaction, error) {
+	const op = "patch transactions"
+	if len(changes) == 0 {
+		return nil, errors.New(op + ": empty batch")
+	}
+	patches := make([]ynabapi.TransactionPatch, len(changes))
+	for i, ch := range changes {
+		if ch.ID == "" {
+			return nil, errors.New(op + ": change has no transaction id")
+		}
+		var u ynabapi.TransactionUpdate
+		if ch.CategoryID != nil {
+			u.CategoryID = ynabapi.Set(*ch.CategoryID)
+		}
+		if ch.Approved != nil {
+			u.Approved = ynabapi.Set(*ch.Approved)
+		}
+		if ch.CategoryID == nil && ch.Approved == nil {
+			return nil, errors.New(op + ": change sets no field")
+		}
+		patches[i] = ynabapi.PatchByID(ch.ID, u)
+	}
+	if err := c.preflight(op, true); err != nil {
+		return nil, err
+	}
+	res, err := c.plan.Transactions.UpdateBatch(asWrite(ctx), patches)
+	if err != nil {
+		return nil, c.red.wrap(op, err)
+	}
+	out := make([]PatchedTransaction, 0, len(res.Transactions))
+	for _, t := range res.Transactions {
+		out = append(out, PatchedTransaction{ID: t.ID, CategoryID: t.CategoryID, Approved: t.Approved})
+	}
+	return out, nil
 }

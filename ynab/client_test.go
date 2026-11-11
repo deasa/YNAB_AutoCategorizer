@@ -2,12 +2,15 @@ package ynab
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -254,6 +257,62 @@ func TestClient_ImportUsesWriteReserve(t *testing.T) {
 	}
 }
 
+// PatchTransactions sends one bulk PATCH holding only the fields each change
+// sets, spends the write reserve, and returns YNAB's per-transaction answer.
+func TestClient_PatchTransactionsSendsOnlyChangedFields(t *testing.T) {
+	var method, path string
+	var body map[string][]map[string]json.RawMessage
+	gov := NewGovernor(1, 1, (&fakeClock{t: time.Unix(0, 0)}).Now) // reads refused, one write left
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		io.WriteString(w, `{"data":{"transaction_ids":["t1"],"server_knowledge":7,"transactions":[
+ {"id":"t1","date":"2026-10-28","amount":-5000,"cleared":"cleared","approved":true,"account_id":"a1","category_id":"c1","deleted":false}]}}`)
+	}, gov)
+
+	cat, yes := "c1", true
+	got, err := c.PatchTransactions(context.Background(), []TransactionChange{
+		{ID: "t1", CategoryID: &cat, Approved: &yes},
+		{ID: "t2", Approved: &yes},
+	})
+	if err != nil {
+		t.Fatalf("PatchTransactions: %v", err)
+	}
+	if want := "/v1/plans/" + testPlanID + "/transactions"; method != http.MethodPatch || path != want {
+		t.Errorf("sent %s %s, want PATCH %s", method, path, want)
+	}
+	txns := body["transactions"]
+	if len(body) != 1 || len(txns) != 2 {
+		t.Fatalf("body = %v, want only transactions with 2 entries", body)
+	}
+	wantKeys := [][]string{{"approved", "category_id", "id"}, {"approved", "id"}}
+	for i, tx := range txns {
+		var keys []string
+		for k := range tx {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		if !reflect.DeepEqual(keys, wantKeys[i]) {
+			t.Errorf("patch %d sends %v, want %v", i, keys, wantKeys[i])
+		}
+	}
+	if len(got) != 1 || got[0].ID != "t1" || got[0].CategoryID == nil || *got[0].CategoryID != "c1" || !got[0].Approved {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestClient_PatchTransactionsRejectsEmpty(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) { t.Error("request sent") }, fullGovernor())
+	if _, err := c.PatchTransactions(context.Background(), nil); err == nil {
+		t.Error("empty batch: want error")
+	}
+	if _, err := c.PatchTransactions(context.Background(), []TransactionChange{{ID: "t1"}}); err == nil {
+		t.Error("no field set: want error")
+	}
+}
+
 // Every client method on every way a call can fail: the error must carry
 // neither the plan id nor a transaction id. Each failure puts both ids where
 // that path would pick them up, so a pass means they were scrubbed.
@@ -323,6 +382,11 @@ func TestClient_NoErrorPathLeaksIDs(t *testing.T) {
 		{"GetUncategorizedTransactions", func(c *Client) error { _, err := c.GetUncategorizedTransactions(); return err }},
 		{"GetCategories", func(c *Client) error { _, err := c.GetCategories(context.Background()); return err }},
 		{"ImportTransactions", func(c *Client) error { _, err := c.ImportTransactions(context.Background()); return err }},
+		{"PatchTransactions", func(c *Client) error {
+			cat := testTxnID
+			_, err := c.PatchTransactions(context.Background(), []TransactionChange{{ID: testTxnID, CategoryID: &cat}})
+			return err
+		}},
 	}
 
 	for _, f := range failures {
@@ -362,3 +426,36 @@ func TestClient_NoErrorPathLeaksIDs(t *testing.T) {
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestNotApplied(t *testing.T) {
+	cases := []struct {
+		status int
+		id     string
+		want   bool
+	}{
+		{http.StatusBadRequest, "400", true},
+		{http.StatusNotFound, "404.2", true},
+		{http.StatusConflict, "409", true},
+		{http.StatusTooManyRequests, "429", true},
+		{http.StatusInternalServerError, "500", false},
+		{http.StatusServiceUnavailable, "503", false},
+	}
+	for _, tc := range cases {
+		c := NewClient(testToken, testPlanID, log.New(io.Discard, "", 0), WithGovernor(fullGovernor()),
+			WithBaseTransport(roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Header: http.Header{"Retry-After": {"3600"}},
+					Body: io.NopCloser(strings.NewReader(`{"error":{"id":"` + tc.id + `","name":"x","detail":"x"}}`)), Request: r}, nil
+			})), func(o *options) { o.retry = &ynabapi.RetryPolicy{MaxAttempts: 1} })
+		yes := true
+		_, err := c.PatchTransactions(context.Background(), []TransactionChange{{ID: "t1", Approved: &yes}})
+		if err == nil || NotApplied(err) != tc.want {
+			t.Errorf("%d: err %v, NotApplied = %v, want %v", tc.status, err, NotApplied(err), tc.want)
+		}
+	}
+	if !NotApplied(fmt.Errorf("x: %w", ErrBudgetExhausted)) {
+		t.Error("budget exhausted: want NotApplied")
+	}
+	if NotApplied(errors.New("connection reset")) {
+		t.Error("transport error: want unknown")
+	}
+}
