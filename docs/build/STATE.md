@@ -22,15 +22,15 @@ Updated: 2026-11-11 by sup (fifth session)
 | b-m3-7 | w1:p2Z | build | builder | M3-7 | 2026-11-11 | no .env |
 | b-m3-10a | w1:p33 | build | builder | M3-10a | 2026-11-11 | no .env |
 | b-m3-12a | w1:p34 | build2 | builder | M3-12a | 2026-11-11 | no .env |
-| agy | w1:p32 | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-7 r1). Warns "Sign-in update needed" but works |
+| agy | w1:p32 | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-7 r1, M3-10a r1) → replace before next review. Warns "Sign-in update needed" but works |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
-| M3-10a | review-queued | w1:p33 | t/M3-10a | after M3-7 | DONE 2026-11-11: Socket Mode client, ack-first, filter, auth, dedupe; slack-go bumps websocket 1.5.3, testify 1.12.1 (indirect) |
+| M3-10a | review | w1:p33 | t/M3-10a | agy r1 pending | DONE 2026-11-11: Socket Mode client, ack-first, filter, auth, dedupe; slack-go bumps websocket 1.5.3, testify 1.12.1 (indirect) |
 | M3-12a | review-queued | w1:p34 | t/M3-12a | after M3-10a | DONE 2026-11-11: freshness alerts + budget; works from mirror state, not LinkEvents (retryable) |
-| M3-7 | review | w1:p2Z | t/M3-7 | agy r1 pending | DONE 2026-11-11: writer/ gate+log+serialize+reconcile, ynab PatchTransactions, NotApplied |
+| M3-7 | fix | w1:p2Z | t/M3-7 | agy r1 FIX (high: one-field change sends/judges wrong; med: Slack done+lock not atomic; low: empty CategoryID) | DONE 2026-11-11: writer/ gate+log+serialize+reconcile, ynab PatchTransactions, NotApplied |
 | M3-9 | merged | — | — | agy PASS (1 low: with a done write only rule (a) runs) | merged 2026-11-11 (01d7f39): human-lock detection in the sync tx; also store/ migration 0009 + Tx helpers and cmd/app.go wiring (agy: justified, Tx has no exported query path) |
 | M3-1c | merged | — | — | agy PASS r2 (r1 FIX: CurrentHumanCategory lock time + label filter; alert lookup/re-arm; PayeeCharge import id) | merged 2026-11-11 (ac85784): migration 0008 questions/users/slack_events/alerts/import_state/alert_cursor. Follow-ups: PruneSlackEvents caller (M3-15); docs (0006-0008 in CLAUDE.md, §2 questions fields) → M3-docs |
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
