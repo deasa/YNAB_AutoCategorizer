@@ -1,10 +1,10 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-09 by sup (first live import checked; handoff docs/build/handoffs/sup-2026-11-08-2330.md)
+Updated: 2026-11-11 by sup (fifth session)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
-- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-13 merged (main ff3fd25). Nothing in flight. **Dispatch M3-1c next** (store/; the only unblocked task), then M3-2, M3-7, M3-9. See handoff sup-2026-11-08-2330.md.
+- Next actions: M3-0a, M3-0b, M3-1a, M3-1b, M3-13 merged (main ff3fd25). **M3-1c active** (dispatched 2026-11-11). After it: M3-2, M3-7, M3-9 in parallel (also M3-10a, M3-12a unblock).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -18,7 +18,8 @@ Updated: 2026-11-09 by sup (first live import checked; handoff docs/build/handof
 ## Panes
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
-| sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | |
+| sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
+| b-m3-1c | w1:p2W | build (w1:t15) | builder | M3-1c | 2026-11-11 | worktree ../YNAB_AutoCategorizer.wt/M3-1c, no .env |
 | agy | w1:p2V | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-1b r1, r2), replace before next review |
 | coordinator | w1:pR | 1 (planning tab) | planning session (not part of the build loop) | — | — | ignore its state changes |
 | (unnamed) | w1:p18 | — | Brendan's own session (Cloudflare passkey recovery), not part of the build loop | — | — | leave alone; ignore its state changes |
@@ -26,6 +27,7 @@ Updated: 2026-11-09 by sup (first live import checked; handoff docs/build/handof
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
+| M3-1c | active | w1:p2W | t/M3-1c | — | dispatched 2026-11-11: questions, users, alerts, import state (0008) |
 | M3-0a | merged | — | — | agy PASS (no findings) | merged 2026-11-08: ScanDiscretionary keeps a failed plan with a true verdict; ynab no-id-leak test (M3-7 adds its write calls to it) |
 | M3-0b | merged | — | — | agy PASS | merged 2026-11-08: cutover/rollback/rehearse scripts removed. Follow-up: flaky TestServe_MCPEndToEnd (freePort race, cmd/serve_test.go:88) |
 | M3-1b | merged | — | — | agy PASS r2 (r1 FIX: LabeledHistory counted system writes as labels; Lock deadlocked inside a sync tx) | merged 2026-11-08: write_log + human_locks (0007) |
