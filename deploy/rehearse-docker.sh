@@ -20,6 +20,7 @@ YNAB_BUDGET_ID=00000000-0000-4000-8000-000000000000
 GOOGLE_OAUTH_CLIENT_ID=rehearsal-dummy
 GOOGLE_OAUTH_CLIENT_SECRET=rehearsal-dummy
 MCP_ALLOWED_EMAILS=rehearsal@example.invalid
+JEV_API_KEY=rehearsal-dummy
 EOF
 # A well-formed but dummy token, so cloudflared gets past parsing and fails only on the network.
 fake=$(printf '{"a":"00000000000000000000000000000000","t":"11111111-1111-4111-8111-111111111111","s":"c2VjcmV0"}' | base64 | tr -d '\n')
@@ -49,6 +50,7 @@ expect "cap_drop ALL on both" "$(grep -c -- '- ALL' <<<"$cfg")" 2
 expect "no-new-privileges on both" "$(grep -c 'no-new-privileges:true' <<<"$cfg")" 2
 expect "bounded logs on both" "$(grep -c 'max-size: 10m' <<<"$cfg")" 2
 expect "cloudflared runs as nonroot" "$(grep -c 'user: 65532:65532' <<<"$cfg")" 1
+expect "finbot runs in dry_run" "$(grep -c 'CLASSIFY_MODE: dry_run' <<<"$cfg")" 1
 noprofile=$(docker compose -p "$project" -f compose.yaml config --services)
 expect "without the profile only finbot exists" "$noprofile" finbot
 absentfile=$(FINBOT_ENV_FILE=$tmp/finbot.env TUNNEL_ENV_FILE=/dev/null docker compose -p "$project" -f compose.yaml config --services 2>&1)
@@ -80,6 +82,18 @@ if grep -q 503 <<<"$msg"; then ok "health got the server's 503 (no sync possible
 expect "tunnel token absent from finbot's env" "$(docker exec "$cid" env | grep -c TUNNEL_TOKEN)" 0
 expect "MCP keys present in finbot's env" "$(docker exec "$cid" env | grep -cE '^(GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_SECRET|MCP_ALLOWED_EMAILS)=')" 3
 expect "healthz not bound on the container interface" "$(docker run --rm --network "${project}_default" "$curl_image" -s -o /dev/null -m 5 -w '%{http_code}' http://finbot:8081/healthz 2>/dev/null)" 000
+
+echo "== pinned claude CLI, with the finbot-data volume over /data and a read-only root"
+expect "classify mode in finbot's env" "$(docker exec "$cid" printenv CLASSIFY_MODE)" dry_run
+expect "finbot logged categorize enabled in dry_run" "$(docker logs "$cid" 2>&1 | grep '"categorize enabled"' | grep -c '"mode":"dry_run"')" 1
+expect "ANTHROPIC_API_KEY absent from finbot's env" "$(docker exec "$cid" env | grep -c '^ANTHROPIC_API_KEY=')" 0
+expect "claude --version in the running container" "$(docker exec "$cid" claude --version 2>&1 | cut -d' ' -f1)" 2.1.312
+expect "CLAUDE_BIN is the pinned binary" "$(docker exec "$cid" sh -c 'readlink -f "$CLAUDE_BIN"')" /opt/claude/versions/2.1.312
+expect "updates disabled in the image" "$(docker exec "$cid" printenv DISABLE_UPDATES)" 1
+docker volume create "${project}-claude-check" >/dev/null
+v=$(docker run --rm -v "${project}-claude-check:/data" --read-only --cap-drop ALL --security-opt no-new-privileges:true --entrypoint claude finbot:latest --version 2>&1)
+docker volume rm "${project}-claude-check" >/dev/null
+expect "claude --version with a fresh named volume at /data" "$(cut -d' ' -f1 <<<"$v")" 2.1.312
 
 echo "== real cloudflared with the real flags and hardening"
 dc down -v --remove-orphans >/dev/null 2>&1
