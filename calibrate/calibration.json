@@ -1,12 +1,141 @@
 {
   "version": 1,
-  "model": "",
-  "policy_hash": "",
-  "candidates_hash": "",
+  "model": "jev-1.14.0",
+  "policy_hash": "0071fb897b9a4f061fbfa506c1bad470b1816268a65f098e9cbe762cb56ad460",
+  "candidates_hash": "6a4e4a8a545837599a2918b23792744d6f7d81ee28f5d06eca5b8a805ab0c168",
   "tau": null,
   "precision": 0,
   "coverage": 0,
-  "n": 0,
+  "n": 1056,
   "auto_eligible": false,
-  "created_at": "0001-01-01T00:00:00Z"
+  "created_at": "2026-11-11T17:32:35Z",
+  "report": {
+    "tune_rows": 742,
+    "holdout_rows": 314,
+    "tune_model_rows": 523,
+    "holdout_model_rows": 174,
+    "sources": {
+      "guard": 15,
+      "model": 697,
+      "rule": 344
+    },
+    "guard_skips": {
+      "p2p": 15
+    },
+    "rule_applied": 344,
+    "rule_correct": 343,
+    "rule_precision": 0.9971,
+    "tune_applied": 0,
+    "tune_correct": 0,
+    "tune_wilson_lower": 0,
+    "holdout_applied": 0,
+    "holdout_correct": 0,
+    "top3_hit_rate": 0.7819,
+    "hard_negatives": 123,
+    "hard_negatives_auto_applied": 0,
+    "per_category": [
+      {
+        "category": "Auto - Repairs and Expenses",
+        "applied": 5,
+        "correct": 5,
+        "precision": 1
+      },
+      {
+        "category": "Discretionary",
+        "applied": 244,
+        "correct": 243,
+        "precision": 0.9959
+      },
+      {
+        "category": "Google One",
+        "applied": 3,
+        "correct": 3,
+        "precision": 1
+      },
+      {
+        "category": "Home - Electric",
+        "applied": 5,
+        "correct": 5,
+        "precision": 1
+      },
+      {
+        "category": "Home - Highland City Utilities",
+        "applied": 6,
+        "correct": 6,
+        "precision": 1
+      },
+      {
+        "category": "Home - Improvement / Maintenance",
+        "applied": 22,
+        "correct": 22,
+        "precision": 1
+      },
+      {
+        "category": "Home - Internet",
+        "applied": 4,
+        "correct": 4,
+        "precision": 1
+      },
+      {
+        "category": "Home - Kids Classes \u0026 Education",
+        "applied": 3,
+        "correct": 3,
+        "precision": 1
+      },
+      {
+        "category": "Home - Mortgage",
+        "applied": 3,
+        "correct": 3,
+        "precision": 1
+      },
+      {
+        "category": "Home - Natural Gas",
+        "applied": 6,
+        "correct": 6,
+        "precision": 1
+      },
+      {
+        "category": "Stock Investments",
+        "applied": 5,
+        "correct": 5,
+        "precision": 1
+      },
+      {
+        "category": "Subs - Canva",
+        "applied": 6,
+        "correct": 6,
+        "precision": 1
+      },
+      {
+        "category": "Subs - Lawn",
+        "applied": 2,
+        "correct": 2,
+        "precision": 1
+      },
+      {
+        "category": "Subs - Spotify",
+        "applied": 5,
+        "correct": 5,
+        "precision": 1
+      },
+      {
+        "category": "Subs - YNAB",
+        "applied": 8,
+        "correct": 8,
+        "precision": 1
+      },
+      {
+        "category": "Talk About",
+        "applied": 2,
+        "correct": 2,
+        "precision": 1
+      },
+      {
+        "category": "Wise - Medical \u0026 Dental",
+        "applied": 15,
+        "correct": 15,
+        "precision": 1
+      }
+    ]
+  }
 }
