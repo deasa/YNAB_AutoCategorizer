@@ -6,7 +6,7 @@ Updated: 2026-11-11 by sup (fifth session)
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
 - 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
-- Next actions: merged 22 of 28 (main 23eaec0). **Active: M3-16.** Then M3-17 (deploy to hoid, dry_run), M3-docs, M3-acceptance, M3-dryrun (1 week), M3-golive (Brendan).
+- Next actions: merged 23 of 28 (main e85c8db). **Active: M3-17** (then sup deploys to hoid in dry_run and runs the smoke). Then M3-docs, M3-acceptance, M3-dryrun (1 week), M3-golive (Brendan).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -22,7 +22,7 @@ Updated: 2026-11-11 by sup (fifth session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
 | agy | w1:p3R | control (w1:t7) | reviewer (Antigravity); counter 1 (M3-16 r1). Warns "Sign-in update needed" but works |
-| b-m3-16 | w1:p3Q | build | builder | M3-16 | 2026-11-11 | no .env |
+| b-m3-17 | w1:p3S | build | builder | M3-17 | 2026-11-11 | no .env (builder never deploys) |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
@@ -36,7 +36,8 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-16 | review | w1:p3Q | t/M3-16 | agy r1 pending | DONE 2026-11-11: finbot dry-run-report (precision + Wilson CI, top-3, questions, model errors, writes); fail-closed gate fix; also store/ ReportPlans read query |
+| M3-17 | active | w1:p3S | t/M3-17 | — | dispatched 2026-11-11: Dockerfile (pinned claude 2.1.312 outside /data), compose CLASSIFY_MODE dry_run, deploy.sh keys. Deploy: yes (sup). Main .env has all 5 keys, no ANTHROPIC_API_KEY (checked) |
+| M3-16 | merged | — | — | agy PASS (1 low: report resolves dry_run_check answer names from q.Options only) | merged 2026-11-11 (e85c8db): finbot dry-run-report; fail-closed gate on LabelPlans error |
 | M3-15 | merged | — | — | agy PASS (1 low: gate not failed closed on LabelPlans error; lastMode → M3-16 note) | merged 2026-11-11 (23eaec0): import outcomes persisted, import timer resumes across restarts, status import/classifier lines |
 | M3-14b | merged | — | — | agy PASS r2 (r1 FIX: flaky bound test; HistoryPlanIDs = calibration plans; CloseStale reserve; pipeline log redaction) | merged 2026-11-11 (944ecbc): categorize after sync, CLASSIFY_MODE, shared writer+gate, daily claude probe |
 | M3-14a | merged | — | — | agy PASS (2 low: 40s startup self-check wait ok; redact PostBlocks errors → M3-14b note) | merged 2026-11-11 (5e48e4f): serve wiring, config, SLACK_USERS hilarie→wife |
