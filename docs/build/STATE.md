@@ -20,7 +20,7 @@ Updated: 2026-11-11 by sup (fifth session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
 | b-m3-10b | w1:p37 | build | builder | M3-10b | 2026-11-11 | no .env |
-| b-m3-3 | w1:p36 | build | builder | M3-3 | 2026-11-11 | no .env |
+| b-m3-3 | w1:p36 | build | builder | M3-3 | 2026-11-11 | .env copied for JEV_LIVE test |
 | b-m3-8 | w1:p38 | build2 | builder | M3-8 | 2026-11-11 | .env copied (sandbox writes) |
 | agy | w1:p35 | control (w1:t7) | reviewer (Antigravity); counter 2 (M3-7 r2, M3-12a r1) → replace before next review. Warns "Sign-in update needed" but works |
 
