@@ -619,3 +619,28 @@ func TestWhoMentionsOnlyARealSlackID(t *testing.T) {
 		t.Fatalf("who = %q", got)
 	}
 }
+
+func TestClosedEditsPostedQuestion(t *testing.T) {
+	e, id := newQEnv(t, store.QuestionCategorize, "Costco")
+	ctx := context.Background()
+	for reason, want := range map[string]string{
+		"superseded":         "replaced by a newer question",
+		"superseded_by_auto": "categorizes these automatically",
+		"other":              "no answer is needed",
+	} {
+		if err := e.q.Closed(ctx, e.question(t, id), reason); err != nil {
+			t.Fatal(err)
+		}
+		if u := e.msg.lastUpdate(t); !strings.Contains(u.text, want) || u.ts != "501.1" {
+			t.Errorf("%s: update %q at %q", reason, u.text, u.ts)
+		}
+	}
+	// Never posted: no edit.
+	before := len(e.msg.updates)
+	if err := e.q.Closed(ctx, store.Question{PlanID: qPlan, SubjectID: qTxn}, "superseded"); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.msg.updates) != before {
+		t.Error("edited a question that was never posted")
+	}
+}
