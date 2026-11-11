@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "",
+  "policy_hash": "",
+  "candidates_hash": "",
+  "tau": null,
+  "precision": 0,
+  "coverage": 0,
+  "n": 0,
+  "auto_eligible": false,
+  "created_at": "0001-01-01T00:00:00Z"
+}
