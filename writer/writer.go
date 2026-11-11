@@ -55,6 +55,7 @@ const (
 	ReasonCategoryChanged = "category changed since the decision"
 	ReasonNoChange        = "already as intended"
 	ReasonDuplicate       = "duplicate in batch"
+	ReasonInvalid         = "no transaction or category id"
 
 	FailNotInResponse  = "not in YNAB's response"
 	FailResponseDiffer = "YNAB's response differs from the write"
@@ -143,9 +144,14 @@ type fields struct {
 }
 
 type pending struct {
-	idx     int
-	before  map[string]any // the sent fields' prior values; JSON null for no category
+	idx int
+	// before and after hold both fields, sent or not (before's category is
+	// JSON null when uncategorized), so write_log always records the whole
+	// state human-edit detection compares against. send holds only the
+	// fields that change: the wire body.
+	before  map[string]any
 	after   fields
+	send    fields
 	writeID int64
 }
 
@@ -214,7 +220,7 @@ func (w *Writer) Apply(ctx context.Context, batch Batch, actor, via string) ([]O
 
 	changes := make([]ynab.TransactionChange, len(todo))
 	for i, p := range todo {
-		changes[i] = ynab.TransactionChange{ID: batch.Writes[p.idx].TxnID, CategoryID: p.after.CategoryID, Approved: p.after.Approved}
+		changes[i] = ynab.TransactionChange{ID: batch.Writes[p.idx].TxnID, CategoryID: p.send.CategoryID, Approved: p.send.Approved}
 	}
 	resp, err := w.cfg.API.PatchTransactions(ctx, changes)
 	// Finish the rows even if ctx ends now: the PATCH has been answered.
@@ -257,16 +263,20 @@ func (w *Writer) Apply(ctx context.Context, batch Batch, actor, via string) ([]O
 			}
 			continue
 		}
-		// YNAB's answer matches after_json, so it stays as written.
+		// Lock before done: if the lock fails or the process dies between
+		// the two, the row stays an intent and Reconcile retries both (Lock
+		// is idempotent). YNAB's answer matches after_json, so it stays.
+		if err := w.lockIfSlack(fctx, via, wr.TxnID); err != nil {
+			out[p.idx].Status = StatusUnknown
+			errs = append(errs, err)
+			continue
+		}
 		if err := w.cfg.DB.MarkWriteDone(fctx, p.writeID, nil); err != nil {
 			out[p.idx].Status = StatusUnknown
 			errs = append(errs, fmt.Errorf("writer: mark done: %w", err))
 			continue
 		}
 		out[p.idx].Status = StatusDone
-		if err := w.lockIfSlack(fctx, via, wr.TxnID); err != nil {
-			errs = append(errs, err)
-		}
 	}
 	errs = append(errs, autoSinceErr)
 	return out, errors.Join(errs...)
@@ -287,6 +297,10 @@ func (w *Writer) screen(ctx context.Context, batch Batch, out []Outcome) (todo [
 	for i, wr := range batch.Writes {
 		out[i].TxnID = wr.TxnID
 		skip := func(reason string) { out[i].Status, out[i].Reason = StatusSkipped, reason }
+		if wr.TxnID == "" || wr.CategoryID == "" {
+			skip(ReasonInvalid)
+			continue
+		}
 		if seen[wr.TxnID] {
 			skip(ReasonDuplicate)
 			continue
@@ -319,16 +333,19 @@ func (w *Writer) screen(ctx context.Context, batch Batch, out []Outcome) (todo [
 			skip(ReasonCategoryChanged)
 			continue
 		}
-		p := pending{idx: i, before: map[string]any{}}
-		if !sameID(row.CategoryID, &wr.CategoryID) {
-			cat := wr.CategoryID
-			p.before["category_id"], p.after.CategoryID = row.CategoryID, &cat
+		cat, approved := wr.CategoryID, row.Approved || wr.Approve
+		p := pending{
+			idx:    i,
+			before: map[string]any{"category_id": row.CategoryID, "approved": row.Approved},
+			after:  fields{CategoryID: &cat, Approved: &approved},
 		}
-		if wr.Approve && !row.Approved {
-			t := true
-			p.before["approved"], p.after.Approved = false, &t
+		if !sameID(row.CategoryID, &cat) {
+			p.send.CategoryID = &cat
 		}
-		if p.after.CategoryID == nil && p.after.Approved == nil {
+		if approved != row.Approved {
+			p.send.Approved = &approved
+		}
+		if p.send.CategoryID == nil && p.send.Approved == nil {
 			skip(ReasonNoChange)
 			continue
 		}
@@ -371,8 +388,9 @@ func (w *Writer) reconcileLocked(ctx context.Context, syncStartedAt time.Time) e
 		case !matches(after, row.CategoryID, row.Approved):
 			err = w.cfg.DB.MarkWriteFailed(ctx, e.ID, FailMirrorDiffer)
 		default:
-			if err = w.cfg.DB.MarkWriteDone(ctx, e.ID, nil); err == nil {
-				err = w.lockIfSlack(ctx, e.Via, *e.TxnID)
+			// Lock before done, as in Apply.
+			if err = w.lockIfSlack(ctx, e.Via, *e.TxnID); err == nil {
+				err = w.cfg.DB.MarkWriteDone(ctx, e.ID, nil)
 			}
 		}
 		if err != nil {

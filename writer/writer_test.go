@@ -103,6 +103,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(func() { db.Close() })
 	e := &env{t: t, db: db, api: &fakeAPI{}, gate: NewGate(), clock: &clock{t: time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)}}
 	e.gate.Set(ModeAuto)
+	e.api.resp = e.echoMirror
 	e.w = New(Config{
 		PlanID: planID, AutoSince: autoSince, Gate: e.gate, API: e.api, DB: db, Now: e.clock.Now,
 		Resync: func(ctx context.Context) error {
@@ -117,6 +118,26 @@ func newEnv(t *testing.T) *env {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// echoMirror answers like YNAB: each transaction's whole state, the mirror row
+// with the change applied.
+func (e *env) echoMirror(ch []ynab.TransactionChange) []ynab.PatchedTransaction {
+	out := make([]ynab.PatchedTransaction, len(ch))
+	for i, c := range ch {
+		row, _, err := e.db.TransactionByID(context.Background(), planID, c.ID)
+		if err != nil {
+			e.t.Error(err)
+		}
+		out[i] = ynab.PatchedTransaction{ID: c.ID, CategoryID: row.CategoryID, Approved: row.Approved}
+		if c.CategoryID != nil {
+			out[i].CategoryID = c.CategoryID
+		}
+		if c.Approved != nil {
+			out[i].Approved = *c.Approved
+		}
+	}
+	return out
+}
 
 // put upserts a transaction into the mirror.
 func (e *env) put(id, date string, cat *string, approved bool) {
@@ -595,5 +616,101 @@ func TestApply_Serializes(t *testing.T) {
 	}
 	if n := e.api.nCalls(); n != len(ids) {
 		t.Errorf("%d PATCH calls, want %d", n, len(ids))
+	}
+}
+
+func (e *env) loggedJSON(id string) (before, after string) {
+	e.t.Helper()
+	if err := e.db.Reader().QueryRow(`SELECT before_json, after_json FROM write_log WHERE txn_id = ?`, id).Scan(&before, &after); err != nil {
+		e.t.Fatal(err)
+	}
+	return before, after
+}
+
+// write_log records both fields even when only one goes on the wire, so a later
+// human edit to the other is still detected against after_json.
+func TestApply_LogsWholeStateForSingleFieldWrites(t *testing.T) {
+	e := newEnv(t)
+	e.put(txn1, "2026-11-05", ptr(catGroc), false) // payee-memory guess we agree with: approve only
+	e.put(txn2, "2026-11-05", ptr(catGroc), true)  // approved: recategorize only
+	e.put(txn3, "2026-11-05", nil, false)          // categorize without approving
+	_, err := e.w.Apply(context.Background(), batch(
+		Write{TxnID: txn1, CategoryID: catGroc, Approve: true, DecidedCategoryID: ptr(catGroc)},
+		Write{TxnID: txn2, CategoryID: catFun, Approve: true, DecidedCategoryID: ptr(catGroc)},
+		Write{TxnID: txn3, CategoryID: catFun},
+	), store.ActorSystem, store.ViaScheduler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ id, before, after string }{
+		{txn1, `{"approved":false,"category_id":"` + catGroc + `"}`, `{"category_id":"` + catGroc + `","approved":true}`},
+		{txn2, `{"approved":true,"category_id":"` + catGroc + `"}`, `{"category_id":"` + catFun + `","approved":true}`},
+		{txn3, `{"approved":false,"category_id":null}`, `{"category_id":"` + catFun + `","approved":false}`},
+	} {
+		before, after := e.loggedJSON(tc.id)
+		if before != tc.before || after != tc.after {
+			t.Errorf("logged before %s after %s, want %s %s", before, after, tc.before, tc.after)
+		}
+		if e.status(tc.id) != store.WriteDone {
+			t.Errorf("status %s, want done", e.status(tc.id))
+		}
+	}
+	ch := e.api.calls[0]
+	if ch[0].CategoryID != nil || ch[1].Approved != nil || ch[2].Approved != nil {
+		t.Errorf("wire carries unchanged fields: %+v", ch)
+	}
+}
+
+// The slack lock is stored before the row is done: if it fails, the row stays
+// an intent and Reconcile stores both later.
+func TestApply_SlackLockBeforeDone(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	e.put(txn1, "2026-11-05", nil, false)
+	if _, err := e.db.Writer().Exec(`CREATE TRIGGER no_locks BEFORE INSERT ON human_locks BEGIN SELECT RAISE(ABORT, 'locks down'); END`); err != nil {
+		t.Fatal(err)
+	}
+	outs, err := e.w.Apply(ctx, batch(categorize(txn1, catGroc)), store.ActorBrendan, store.ViaSlack)
+	if err == nil || outs[0].Status != StatusUnknown {
+		t.Fatalf("lock failure: %+v %v", outs, err)
+	}
+	assertNoIDs(t, err.Error())
+	if got := e.status(txn1); got != store.WriteIntent {
+		t.Fatalf("status %s, want intent", got)
+	}
+	if _, err := e.db.Writer().Exec(`DROP TRIGGER no_locks`); err != nil {
+		t.Fatal(err)
+	}
+	syncStart := e.clock.Now()
+	e.put(txn1, "2026-11-05", ptr(catGroc), true) // the sync brings the echo
+	if err := e.w.Reconcile(ctx, syncStart); err != nil {
+		t.Fatal(err)
+	}
+	locks, err := e.db.Locks(ctx, planID, []string{txn1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.status(txn1) != store.WriteDone || len(locks[txn1]) != 1 || locks[txn1][0].Source != store.LockSlack {
+		t.Errorf("after reconcile: status %s, locks %+v", e.status(txn1), locks)
+	}
+	if e.api.nCalls() != 1 {
+		t.Errorf("%d PATCH calls, want 1", e.api.nCalls())
+	}
+}
+
+func TestApply_SkipsEmptyIDs(t *testing.T) {
+	e := newEnv(t)
+	e.put(txn1, "2026-11-05", nil, false)
+	outs, err := e.w.Apply(context.Background(), batch(categorize(txn1, ""), categorize("", catGroc)), store.ActorSystem, store.ViaScheduler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range outs {
+		if o.Status != StatusSkipped || o.Reason != ReasonInvalid {
+			t.Errorf("outcome %+v", o)
+		}
+	}
+	if e.api.nCalls() != 0 || len(e.writes(txn1)) != 0 {
+		t.Error("an empty id was logged or sent")
 	}
 }
