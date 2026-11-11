@@ -11,8 +11,9 @@ services:
         GIT_SHA: ${GIT_SHA:-dev} # deploy.sh sets it; finbot shows it in the Slack status message
     image: finbot:latest
     command: ["serve"]
-    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, GOOGLE_OAUTH_*, MCP_ALLOWED_EMAILS, optional
-    # HEALTHCHECK_PING_URL, BACKUP_* and SLACK_* only. Never the tunnel token.
+    # YNAB_ACCESS_TOKEN, YNAB_BUDGET_ID, GOOGLE_OAUTH_*, MCP_ALLOWED_EMAILS, SLACK_*,
+    # JEV_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, optional HEALTHCHECK_PING_URL and BACKUP_* only.
+    # Never the tunnel token, never ANTHROPIC_API_KEY (it would override the OAuth token).
     # deploy.sh points FINBOT_ENV_FILE at ~/finbot/finbot.env (0600).
     env_file: ${FINBOT_ENV_FILE:-finbot.env}
     environment:
@@ -22,6 +23,13 @@ services:
       MCP_PUBLIC_URL: https://finance.hoidlabs.site
       HTTP_ADDR: "127.0.0.1:8081" # /healthz stays off the port the tunnel forwards; finbot health reads this too
       TZ: America/Denver # hoid's zone, so BACKUP_AT is local time
+      # Set here, never forwarded from .env. auto is M3-golive.
+      CLASSIFY_MODE: "dry_run"
+      # The pinned CLI baked into the image, outside /data (the volume would hide it).
+      CLAUDE_BIN: /usr/local/bin/claude
+      # .claude/ and .claude.json both live here, on the volume, so --resume survives restarts.
+      # The CLI's cwd is /data/claude-work, an empty directory finbot creates (0700) beside the DB.
+      CLAUDE_CONFIG_DIR: /data/claude
     volumes:
       - finbot-data:/data
     tmpfs:
