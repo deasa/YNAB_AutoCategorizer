@@ -143,7 +143,7 @@ func withApp(args []string, name string, stderr io.Writer, run func(context.Cont
 		clients: clients,
 		gov:     gov,
 		ynabLog: ynabLog,
-		syncer:  finsync.New(db, clients, ynabLog),
+		syncer:  finsync.New(db, clients, ynabLog).DetectLocks(cfg.YNABBudgetID),
 	}
 	if err := run(ctx, a, fs); err != nil {
 		logger.Error("finbot "+name+" failed", "err", scrub(err.Error(), secrets(cfg)...))
@@ -174,11 +174,18 @@ func (a *app) syncPlan(ctx context.Context, planID, label string) (finsync.Resul
 		links = append(links, map[string]any{"account": e.AccountName, "in_error": e.InError})
 	}
 	a.log.Info("sync tick", "plan", label, "kind", kind(res), "skipped", res.Skipped,
-		"rows", res.Rows, "orphans", res.Orphans, "link_events", links)
+		"rows", res.Rows, "orphans", res.Orphans, "link_events", links, "human_locks", lockCounts(res.Locks))
 	if res.Skipped {
 		return res, errSkipped
 	}
 	return res, nil
+}
+
+// lockCounts renders a tick's human-edit detection for the summary line: counts
+// only, never ids.
+func lockCounts(l finsync.LockCounts) map[string]any {
+	return map[string]any{"backfill": l.Backfill, "judged": l.Judged, "ynab_edit": l.Edit,
+		"first_touch": l.FirstTouch, "skipped_intent": l.SkippedIntent}
 }
 
 func kind(res finsync.Result) string {
