@@ -38,7 +38,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-docs | active | w1:p3V | t/M3-docs | — | dispatched 2026-11-11: CLAUDE.md, docs/plan (all M3 docs follow-ups) |
+| M3-docs | review | w1:p3V | t/M3-docs | rev (Claude) r1 pending | DONE 2026-11-11: CLAUDE.md, docs/plan (all M3 docs follow-ups) |
 | M3-17 | merged + deployed | — | — | rev (Claude) PASS (3 low: rehearsal has no claude token so runner untested there; /tmp/cc-socks left in image, hidden by tmpfs; ANTHROPIC_API_KEY refusal misses "KEY = x" spacing) | merged 2026-11-11 (c2762d3). sup's `./deploy/deploy.sh` was denied by Claude Code's auto-mode permission check → BA-22 (done); deployed 17:39 MST |
 | M3-16 | merged | — | — | agy PASS (1 low: report resolves dry_run_check answer names from q.Options only) | merged 2026-11-11 (e85c8db): finbot dry-run-report; fail-closed gate on LabelPlans error |
 | M3-15 | merged | — | — | agy PASS (1 low: gate not failed closed on LabelPlans error; lastMode → M3-16 note) | merged 2026-11-11 (23eaec0): import outcomes persisted, import timer resumes across restarts, status import/classifier lines |
