@@ -117,7 +117,9 @@ applying only above a calibrated threshold in `auto` and otherwise asking in Sla
 - `ynab/` — thin wrapper over `pkg.venceslau.dev/ynab` (V4) with a zone-normalizing, body-capping HTTP transport
   (`goal_snoozed_at`). A local rate governor (200/hr, write reserve) runs as the library's `Limiter`; write intent
   travels on ctx (`asWrite`). Every error has the token, plan id and other ids redacted. The only YNAB writes are
-  `ImportTransactions` and `PatchTransactions` (one bulk PATCH of `category_id`/`approved`, called only by `writer/`).
+  `ImportTransactions`, `PatchTransactions` (one bulk PATCH of `category_id`/`approved`, called only by `writer/`) and
+  the four category writes `CreateCategoryGroup`, `RenameCategoryGroup`, `CreateCategory` and `UpdateCategory` (name,
+  group, goal target and date), called only by the manual one-off `finbot restructure`, never by serve.
   `NotApplied(err)` says a write provably changed nothing.
 - `writer/` — the only path that categorizes transactions in YNAB. `Apply` holds one mutex for the whole call (the
   scheduler and Slack both call it), checks the hard gates (`Gate` mode must be `auto`, the plan, `CLASSIFY_AUTO_SINCE`)
@@ -206,8 +208,11 @@ events by account name, `human_locks` counts) → ping → on success: freshness
 
 ## Safety
 
-- YNAB writes go through two paths only: `ImportTransactions` (the bank import) and `writer/` (`PatchTransactions`, the
-  only path that categorizes). The `IMPORT_ENABLED` config default stays false; the hoid deploy pins it true in
+- YNAB writes go through three paths only: `ImportTransactions` (the bank import), `writer/` (`PatchTransactions`, the
+  only path that categorizes) and `finbot restructure` (the four category writes `CreateCategoryGroup`,
+  `RenameCategoryGroup`, `CreateCategory`, `UpdateCategory`; run by hand, never by serve). `restructure --apply` on the
+  live plan needs `--confirm-live` and Brendan's OK for the exact printed list; nothing else calls the category
+  writes. The `IMPORT_ENABLED` config default stays false; the hoid deploy pins it true in
   `deploy/compose.yaml` (Brendan approved, BA-13, 2026-11-08), so that deploy POSTs to the live plan every
   `IMPORT_INTERVAL`. Turning it on anywhere else against the live plan still needs Brendan's OK.
 - `CLASSIFY_MODE` defaults to `off`; the hoid deploy pins `dry_run`, which decides and asks but never writes. Setting
