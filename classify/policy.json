@@ -1,7 +1,20 @@
 {
-  "version": 1,
-  "set_aside_keywords": ["Birthday", "Christmas", "Gift", "Giving", "Holiday", "Trip", "Vacation"],
+  "version": 2,
+  "set_aside_keywords": [
+    "Birthday",
+    "Holiday",
+    "Trip",
+    "Giving",
+    "Retirement",
+    "Investment",
+    "Payoff"
+  ],
   "descriptions": {
-    "Discretionary": "Everyday spending: dining out, restaurants, groceries, Amazon orders and general shopping. Spending for an event (a birthday, trip, Christmas or gift) goes here too."
+    "Groceries": "Food and drink from grocery stores and supermarkets, for eating at home. Takeout, restaurants and coffee shops are Dining Out.",
+    "Dining Out": "Restaurants, fast food, takeout, food delivery, coffee shops and treats eaten out.",
+    "Shopping": "Amazon orders and general wants: electronics, hobbies, books, games and things for fun. A gift bought for a birthday, holiday or other event goes here too, unless a person picks the event's fund.",
+    "Household & Kids": "Running the home and caring for the kids: toiletries, cleaning supplies, clothing and shoes, diapers, and school and kids' supplies.",
+    "Gas & Transport": "Fuel, parking, tolls, rideshare and transit fares.",
+    "Reimbursement": "Work or other expenses that someone will pay back, such as work travel or purchases made on someone else's behalf."
   }
 }

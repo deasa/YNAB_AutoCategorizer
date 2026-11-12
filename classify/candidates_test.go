@@ -31,28 +31,38 @@ func names(cs []Candidate) []string {
 
 func TestDefaultPolicy(t *testing.T) {
 	p := testPolicy(t)
-	for _, k := range []string{"Birthday", "Trip", "Christmas", "Giving"} {
+	for _, k := range []string{"Birthday", "Holiday", "Trip", "Giving", "Retirement", "Investment", "Payoff"} {
 		if !p.IsSetAside("x " + k) {
 			t.Errorf("policy doesn't exclude %q", k)
 		}
 	}
-	if d, ok := p.description("discretionary"); !ok || !strings.Contains(d, "Amazon orders") {
-		t.Errorf("Discretionary policy missing: %q", d)
+	if d, ok := p.description("shopping"); !ok || !strings.Contains(d, "Amazon orders") {
+		t.Errorf("Shopping policy missing: %q", d)
+	}
+	if _, ok := p.description("Discretionary"); ok {
+		t.Error("policy still describes the retired Discretionary category")
 	}
 }
 
 func TestPolicy_SetAsideMatching(t *testing.T) {
 	p := testPolicy(t)
 	for name, want := range map[string]bool{
-		"Holiday - Christmas": true,
-		"Fun - Next Trip":     true,
-		"Giving - Generosity": true,
-		"Kids Birthdays":      true,
-		"Gifts":               true,
-		"Thanksgiving Dinner": false,
-		"Tripod Rental":       false,
-		"Discretionary":       false,
-		"Home - Electric":     false,
+		"Holiday - Christmas":     true,
+		"Fun - Next Trip":         true,
+		"Giving - Generosity":     true,
+		"Kids Birthdays":          true,
+		"Birthday - Benson Gifts": true,
+		"Stock Investments":       true,
+		"Mortgage Payoff":         true,
+		"Retirement":              true,
+		"Gifts":                   false,
+		"Home - Mortgage":         false,
+		"Church - Tithing":        false,
+		"Church - Fast Offerings": false,
+		"Thanksgiving Dinner":     false,
+		"Tripod Rental":           false,
+		"Discretionary":           false,
+		"Home - Electric":         false,
 	} {
 		if got := p.IsSetAside(name); got != want {
 			t.Errorf("IsSetAside(%q) = %v, want %v", name, got, want)
@@ -111,8 +121,8 @@ func TestCandidates_Exclusions(t *testing.T) {
 	if got := set.Candidates[1]; got.Group != "Home" || got.Description != "Power bill" {
 		t.Errorf("note not used as description: %+v", got)
 	}
-	if !strings.Contains(set.Candidates[0].Description, "Amazon orders") {
-		t.Errorf("Discretionary override not applied: %q", set.Candidates[0].Description)
+	if set.Candidates[0].Description != "" {
+		t.Errorf("Discretionary has no policy description now: %q", set.Candidates[0].Description)
 	}
 	wantSetAsides := []string{"Holiday - Christmas", "Fun - Next Trip", "Giving - Generosity", "Kids Birthdays"}
 	if !reflect.DeepEqual(set.SetAsides, wantSetAsides) {
@@ -122,7 +132,7 @@ func TestCandidates_Exclusions(t *testing.T) {
 
 func TestCandidates_OverrideBeatsNote(t *testing.T) {
 	note := "catch-all"
-	d := cat("Guilt-Free", "Discretionary")
+	d := cat("Guilt-Free", "Shopping")
 	d.Note = &note
 	set := Candidates([]store.CategoryWithGroup{d}, testPolicy(t))
 	if set.Candidates[0].Description == note {
