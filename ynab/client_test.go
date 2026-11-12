@@ -387,6 +387,17 @@ func TestClient_NoErrorPathLeaksIDs(t *testing.T) {
 			_, err := c.PatchTransactions(context.Background(), []TransactionChange{{ID: testTxnID, CategoryID: &cat}})
 			return err
 		}},
+		{"CreateCategoryGroup", func(c *Client) error { _, err := c.CreateCategoryGroup(context.Background(), "G"); return err }},
+		{"RenameCategoryGroup", func(c *Client) error {
+			_, err := c.RenameCategoryGroup(context.Background(), testTxnID, "G")
+			return err
+		}},
+		{"CreateCategory", func(c *Client) error { _, err := c.CreateCategory(context.Background(), testTxnID, "C"); return err }},
+		{"UpdateCategory", func(c *Client) error {
+			name := "C"
+			_, err := c.UpdateCategory(context.Background(), testTxnID, CategoryEdit{Name: &name, GroupID: &name})
+			return err
+		}},
 	}
 
 	for _, f := range failures {
@@ -457,5 +468,52 @@ func TestNotApplied(t *testing.T) {
 	}
 	if NotApplied(errors.New("connection reset")) {
 		t.Error("transport error: want unknown")
+	}
+}
+
+// The category writes send only the fields asked for, to the right endpoint,
+// and spend the write reserve.
+func TestClient_CategoryWrites(t *testing.T) {
+	const gid, cid = "g-1", "c-1"
+	type req struct{ method, path, body string }
+	var got []req
+	gov := NewGovernor(4, 4, (&fakeClock{t: time.Unix(0, 0)}).Now) // writes only
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = append(got, req{r.Method, strings.TrimPrefix(r.URL.Path, "/v1/plans/"+testPlanID), strings.TrimSpace(string(b))})
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusCreated)
+		}
+		if strings.Contains(r.URL.Path, "category_groups") {
+			io.WriteString(w, `{"data":{"category_group":{"id":"g-1","name":"N","categories":[]},"server_knowledge":1}}`)
+			return
+		}
+		io.WriteString(w, `{"data":{"category":{"id":"c-1","category_group_id":"g-1","name":"N"},"server_knowledge":1}}`)
+	}, gov)
+	ctx := context.Background()
+	if g, err := c.CreateCategoryGroup(ctx, "Giving"); err != nil || g.ID != gid {
+		t.Fatalf("CreateCategoryGroup: %v %v", g, err)
+	}
+	if _, err := c.RenameCategoryGroup(ctx, gid, "Fixed Costs"); err != nil {
+		t.Fatalf("RenameCategoryGroup: %v", err)
+	}
+	if cat, err := c.CreateCategory(ctx, gid, "Groceries"); err != nil || cat.ID != cid {
+		t.Fatalf("CreateCategory: %v %v", cat, err)
+	}
+	amt, date := Milliunits(150000), ynabapi.NewDate(2027, time.February, 6)
+	if _, err := c.UpdateCategory(ctx, cid, CategoryEdit{GoalTarget: &amt, GoalTargetDate: &date}); err != nil {
+		t.Fatalf("UpdateCategory: %v", err)
+	}
+	want := []req{
+		{"POST", "/category_groups", `{"category_group":{"name":"Giving"}}`},
+		{"PATCH", "/category_groups/g-1", `{"category_group":{"name":"Fixed Costs"}}`},
+		{"POST", "/categories", `{"category":{"name":"Groceries","category_group_id":"g-1"}}`},
+		{"PATCH", "/categories/c-1", `{"category":{"goal_target":150000,"goal_target_date":"2027-02-06"}}`},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("requests:\n got %v\nwant %v", got, want)
+	}
+	if _, err := c.UpdateCategory(ctx, cid, CategoryEdit{}); err == nil {
+		t.Error("empty edit: want error")
 	}
 }

@@ -26,6 +26,8 @@ type (
 	PlanSummary     = ynabapi.PlanSummary
 	SyncState       = ynabapi.SyncState
 	ServerKnowledge = ynabapi.ServerKnowledge
+	Milliunits      = ynabapi.Milliunits
+	Date            = ynabapi.Date
 )
 
 // Client wraps the YNAB API for one plan.
@@ -245,4 +247,95 @@ func (c *Client) PatchTransactions(ctx context.Context, changes []TransactionCha
 		out = append(out, PatchedTransaction{ID: t.ID, CategoryID: t.CategoryID, Approved: t.Approved})
 	}
 	return out, nil
+}
+
+// CategoryEdit is the part of a category UpdateCategory may change. Only the
+// fields set are sent; a nil field is left as YNAB has it. GoalTarget and
+// GoalTargetDate change an existing target; they don't clear one.
+type CategoryEdit struct {
+	Name           *string
+	GroupID        *string
+	GoalTarget     *Milliunits
+	GoalTargetDate *Date
+}
+
+// CreateCategoryGroup adds a category group named name. It is a write: it may
+// spend the write reserve.
+func (c *Client) CreateCategoryGroup(ctx context.Context, name string) (*CategoryGroup, error) {
+	const op = "create category group"
+	if err := c.preflight(op, true); err != nil {
+		return nil, err
+	}
+	g, _, err := c.plan.Categories.CreateGroup(asWrite(ctx), name)
+	if err != nil {
+		return nil, c.red.wrap(op, err)
+	}
+	return g, nil
+}
+
+// RenameCategoryGroup renames the category group groupID. It is a write.
+func (c *Client) RenameCategoryGroup(ctx context.Context, groupID, name string) (*CategoryGroup, error) {
+	const op = "rename category group"
+	if groupID == "" {
+		return nil, errors.New(op + ": no group id")
+	}
+	if err := c.preflight(op, true); err != nil {
+		return nil, err
+	}
+	g, _, err := c.plan.Categories.RenameGroup(asWrite(ctx), groupID, name)
+	if err != nil {
+		return nil, c.red.wrap(op, err)
+	}
+	return g, nil
+}
+
+// CreateCategory adds a category named name, with no target, to the group
+// groupID. It is a write.
+func (c *Client) CreateCategory(ctx context.Context, groupID, name string) (*Category, error) {
+	const op = "create category"
+	if groupID == "" {
+		return nil, errors.New(op + ": no group id")
+	}
+	if err := c.preflight(op, true); err != nil {
+		return nil, err
+	}
+	cat, _, err := c.plan.Categories.Create(asWrite(ctx), ynabapi.CategorySpec{Name: name, GroupID: groupID})
+	if err != nil {
+		return nil, c.red.wrap(op, err)
+	}
+	return cat, nil
+}
+
+// UpdateCategory changes the category categoryID's name, group, goal target
+// or target date, sending only the fields e sets. It is a write. An edit that
+// sets no field is an error.
+func (c *Client) UpdateCategory(ctx context.Context, categoryID string, e CategoryEdit) (*Category, error) {
+	const op = "update category"
+	if categoryID == "" {
+		return nil, errors.New(op + ": no category id")
+	}
+	var u ynabapi.CategoryUpdate
+	if e.Name != nil {
+		u.Name = ynabapi.Set(*e.Name)
+	}
+	if e.GroupID != nil {
+		u.GroupID = ynabapi.Set(*e.GroupID)
+	}
+	if e.GoalTarget != nil {
+		u.GoalTarget = ynabapi.Set(*e.GoalTarget)
+	}
+	if e.GoalTargetDate != nil {
+		u.GoalTargetDate = ynabapi.Set(*e.GoalTargetDate)
+	}
+	if e == (CategoryEdit{}) {
+		return nil, errors.New(op + ": edit sets no field")
+	}
+	if err := c.preflight(op, true); err != nil {
+		return nil, err
+	}
+	cat, _, err := c.plan.Categories.Update(asWrite(ctx), categoryID, u)
+	if err != nil {
+		return nil, c.red.wrap(op, err)
+	}
+	return cat, nil
 }
