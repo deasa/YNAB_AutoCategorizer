@@ -7,7 +7,7 @@ Updated: 2026-11-11 by sup (fifth session)
 - 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
 - 2026-11-11 (Brendan, BA-21): while agy is out of quota, reviews use a fresh Claude Opus 5.5 pane (`rev`) following REVIEWER.md; switch back to agy when its quota resets (~2026-11-15).
-- Next actions: merged 24 of 28; **M3-17 deployed in dry_run 2026-11-11 17:39 MST** (the dry-run week starts now: M3-dryrun reads it ~2026-11-18). M3-docs active. Then M3-acceptance, M3-dryrun, M3-golive (Brendan; BA-20 first).
+- Next actions: merged 25 of 28 (main). M3-17 deployed in dry_run 2026-11-11 17:39 MST. **Next: M3-acceptance** (needs .env; reviews via fresh Claude `rev` pane until agy resets ~2026-11-15, BA-21). Then M3-dryrun (~2026-11-18), M3-golive (Brendan; BA-20 first).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -24,7 +24,6 @@ Updated: 2026-11-11 by sup (fifth session)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | fifth session 2026-11-11 |
 | agy | w1:p3R | control (w1:t7) | reviewer (Antigravity): **quota exhausted 2026-11-11 15:05, resets in ~92h (BA-21)**. M3-17 review incomplete, no verdict |
-| b-m3-docs | w1:p3V | build | builder | M3-docs | 2026-11-11 | no .env |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
@@ -38,7 +37,7 @@ Updated: 2026-11-11 by sup (fifth session)
 | M3-4 | merged | — | — | agy PASS (1 low: ModelID hardcoded → M3-11 note) | merged 2026-11-11 (393ccbd): llm/ runner, second opinion, auth probe; CLAUDE_LIVE pass on Mac |
 | M3-8 | merged | — | — | agy PASS | merged 2026-11-11 (05e7c3d): sandbox write test (YNAB_SANDBOX_WRITE=1), live-plan guard. Docs follow-up → M3-docs |
 | M3-12a | merged | — | — | agy PASS (no findings) | merged 2026-11-11 (51cef23): freshness alerts + budget, from mirror state (retryable) |
-| M3-docs | review | w1:p3V | t/M3-docs | rev (Claude) r1 pending | DONE 2026-11-11: CLAUDE.md, docs/plan (all M3 docs follow-ups) |
+| M3-docs | merged | — | — | rev (Claude) PASS (2 low: CLAUDE.md wording on claude second opinion; calibrate defaults not shown) | merged 2026-11-11: CLAUDE.md, docs/plan decisions, .env.example Slack keys |
 | M3-17 | merged + deployed | — | — | rev (Claude) PASS (3 low: rehearsal has no claude token so runner untested there; /tmp/cc-socks left in image, hidden by tmpfs; ANTHROPIC_API_KEY refusal misses "KEY = x" spacing) | merged 2026-11-11 (c2762d3). sup's `./deploy/deploy.sh` was denied by Claude Code's auto-mode permission check → BA-22 (done); deployed 17:39 MST |
 | M3-16 | merged | — | — | agy PASS (1 low: report resolves dry_run_check answer names from q.Options only) | merged 2026-11-11 (e85c8db): finbot dry-run-report; fail-closed gate on LabelPlans error |
 | M3-15 | merged | — | — | agy PASS (1 low: gate not failed closed on LabelPlans error; lastMode → M3-16 note) | merged 2026-11-11 (23eaec0): import outcomes persisted, import timer resumes across restarts, status import/classifier lines |
