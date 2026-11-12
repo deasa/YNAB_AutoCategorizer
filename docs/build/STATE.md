@@ -30,7 +30,7 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-acceptance | review | w1:p3Y | t/M3-acceptance | rev (Claude, w1:p3Z) in progress | DONE 2026-11-11 (bb5f7ea): sandbox_check 102 PASS, hoid_check 40 PASS, dry-run-report writes: 0; own report _reviews/M3-acceptance.md PASS (3 low, 1 info). Lows → BA-24 (unapproved-but-categorized rows), backlog (WARN per run, "(would apply)" label). Docs follow-up: CLAUDE.md live-tests lines |
+| M3-acceptance | fix | w1:p3Y | t/M3-acceptance | rev r1 FIX (med: suite shares hoid token rate budget, rev re-run got 429; low: non-atomic hoid DB copy; serve not behind guard; ERROR spam with no Asker) | DONE 2026-11-11 (bb5f7ea): sandbox_check 102 PASS, hoid_check 40 PASS, dry-run-report writes: 0; own report _reviews/M3-acceptance.md PASS (3 low, 1 info). Lows → BA-24 (unapproved-but-categorized rows), backlog (WARN per run, "(would apply)" label). Docs follow-up: CLAUDE.md live-tests lines |
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
 | M3-6 | merged | — | — | agy PASS (2 low: display-name pick per plan; placeholder test assumes τ null) | merged 2026-11-11 (a7613c6): calibration.json τ=null, auto_eligible=false (BA-20); payee-casing fix |
 | M3-5 | merged | — | — | agy PASS (2 low: lowercased payee in calibration detail → M3-6 note; same-date split edge) | merged 2026-11-11 (08eb5c6): calibrate/ τ fit, finbot calibrate |
