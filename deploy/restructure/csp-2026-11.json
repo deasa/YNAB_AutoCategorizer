@@ -114,6 +114,26 @@
           "from_group": "Subscriptions"
         },
         {
+          "op": "move",
+          "name": "Reimbursement",
+          "from_group": "Budget Meeting"
+        },
+        {
+          "op": "move",
+          "name": "Subs - Bark",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - GoPro",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - Point.Me",
+          "from_group": "Subscriptions"
+        },
+        {
           "op": "create",
           "name": "Groceries"
         },
@@ -135,6 +155,10 @@
         {
           "op": "stay",
           "name": "Stock Investments"
+        },
+        {
+          "op": "stay",
+          "name": "Mortgage Payoff"
         },
         {
           "op": "create",
@@ -161,6 +185,11 @@
           "op": "move",
           "name": "Wise - Medical & Dental",
           "from_group": "Target Balance Goals"
+        },
+        {
+          "op": "move",
+          "name": "Buffer",
+          "from_group": "Budget Meeting"
         },
         {
           "op": "stay",
@@ -236,6 +265,10 @@
         {
           "op": "stay",
           "name": "Voice Lessons"
+        },
+        {
+          "op": "stay",
+          "name": "Business Bike "
         },
         {
           "op": "create",

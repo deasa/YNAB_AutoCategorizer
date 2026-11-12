@@ -170,7 +170,7 @@ func oldLayout() *fakeCatAPI {
 	f.addGroup("Mortgage & Utilities", "Home - Highland City Utilities", "Home - Internet", "Home - Mortgage", "Home - Electric", "Home - Natural Gas")
 	f.addGroup("Budget Meeting", "Buffer", "Reimbursement", "Talk About", "Needs a job!", "Discretionary")
 	f.addGroup("Fun Money", "Business Bike ", "Voice Lessons", "Fun - Brendan Under The Radar", "Fun - Hilarie Under The Radar", "Fun - Larks Dues", "Fun - Next Trip")
-	f.addGroup("Subscriptions", "Subs - Bark", "Subs - TrainerRoad", "Subs - Lawn", "Google One", "Subs - Amazon Prime", "Subs - Canva",
+	f.addGroup("Subscriptions", "Subs - Bark", "Subs - GoPro", "Subs - Point.Me", "Subs - TrainerRoad", "Subs - Lawn", "Google One", "Subs - Amazon Prime", "Subs - Canva",
 		"Subs - Disney+", "Subs - Google Domains Website", "Subs - Spotify", "Subs - YNAB")
 	f.addGroup("Monthly Variable Expenses", "Home - Kids Classes & Education", "Canva", "Home - Riverton City Utilities")
 	f.addGroup("Monthly Savings Funds", "Birthday - Marie Party", "Birthday - Elliott Party", "Birthday - Benson Party", "Birthday - Marie Gifts",
@@ -184,6 +184,7 @@ func oldLayout() *fakeCatAPI {
 	cc := f.addGroup("Credit Card Payments", "B Sapphire Preferred")
 	cc.Internal = true
 	f.cat("2019 Disneyland").Hidden = true
+	f.cat("Canva").Hidden = true
 	gone := f.addGroup("Old Deleted", "Ghost")
 	gone.Deleted = true
 	f.setTarget("Holiday - Christmas", 1500000, "2020-12-01")
@@ -240,9 +241,12 @@ func TestRestructure_DryRunDiff(t *testing.T) {
 		`roll stale target date of "Home - Insurance" forward from 2026-06-28 to 2027-06-28 (target $800.00 kept)`,
 		`roll stale target date of "Home - Cell Phone" forward from 2021-11-27 to 2026-11-27 (target $404.00 kept)`,
 		`move "Home - Riverton City Utilities" from "Monthly Variable Expenses" to "Retired"`,
-		`"Business Bike " in "Fun Money"`,
+		`no change: "Business Bike " in "Guilt-Free"`,
+		`move "Buffer" from "Budget Meeting" to "Savings Goals"`,
+		`move "Subs - Point.Me" from "Subscriptions" to "Fixed Costs"`,
+		`"Canva" in "Monthly Variable Expenses" (hidden)`,
 		`"2019 Disneyland" in "Target Balance Goals" (hidden)`,
-		`"Mortgage Payoff" in "Financial Independence"`,
+		`no change: "Mortgage Payoff" in "Investments"`,
 		"unresolved: 0\n",
 	} {
 		if !strings.Contains(out, want) {
@@ -254,7 +258,7 @@ func TestRestructure_DryRunDiff(t *testing.T) {
 			t.Errorf("output has %q", not)
 		}
 	}
-	if !strings.Contains(out, "Not in the spec (left where they are), 7:") {
+	if !strings.Contains(out, "Not in the spec (left where they are), 2:") {
 		t.Errorf("unmentioned count wrong:\n%s", out)
 	}
 }
