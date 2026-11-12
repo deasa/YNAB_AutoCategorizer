@@ -20,6 +20,11 @@ const (
 	catHidGrp  = "cat-hidgrp-uuid"  // visible category in a hidden group
 	catForeign = "cat-foreign-uuid" // a category of another plan
 	catNet     = "cat-net-uuid"     // "Subs - Netflix"
+	catRTA     = "cat-rta-uuid"     // "Inflow: Ready to Assign", internal
+	catUncat   = "cat-uncat-uuid"   // "Uncategorized", internal
+	catVisa    = "cat-visa-uuid"    // "Visa Card", in Credit Card Payments
+	qGroupInt  = "group-7777-uuid"
+	qGroupCCP  = "group-8888-uuid"
 	qGroup2    = "group-5555-uuid"
 	qGroupHid  = "group-6666-uuid"
 )
@@ -30,7 +35,9 @@ func addCats(t *testing.T, db *store.DB) {
 	t.Helper()
 	err := db.Update(context.Background(), func(tx *store.Tx) error {
 		if err := tx.UpsertCategoryGroups(qPlan, []store.CategoryGroup{{ID: qGroup2, Name: "Bills"},
-			{ID: qGroupHid, Name: "Old Stuff", Hidden: true}}); err != nil {
+			{ID: qGroupHid, Name: "Old Stuff", Hidden: true},
+			{ID: qGroupInt, Name: "Internal Master Category", Internal: true},
+			{ID: qGroupCCP, Name: "Credit Card Payments"}}); err != nil {
 			return err
 		}
 		if err := tx.UpsertCategories(qPlan, []store.Category{
@@ -39,6 +46,9 @@ func addCats(t *testing.T, db *store.DB) {
 			{ID: catHidden, CategoryGroupID: qGroup, Name: "Secret Hidden", Hidden: true},
 			{ID: catDeleted, CategoryGroupID: qGroup, Name: "Gone Deleted", Deleted: true},
 			{ID: catHidGrp, CategoryGroupID: qGroupHid, Name: "Buried Category"},
+			{ID: catRTA, CategoryGroupID: qGroupInt, Name: "Inflow: Ready to Assign", Internal: true},
+			{ID: catUncat, CategoryGroupID: qGroupInt, Name: "Uncategorized", Internal: true},
+			{ID: catVisa, CategoryGroupID: qGroupCCP, Name: "Visa Card"},
 		}); err != nil {
 			return err
 		}
@@ -124,14 +134,14 @@ func TestOneOptionStillOffersEveryVisibleCategory(t *testing.T) {
 	if !strings.Contains(u.blocks, hintText) || !strings.Contains(u.blocks, `"Suggested"`) || !strings.Contains(u.blocks, `"Bills"`) {
 		t.Fatalf("update = %s", u.blocks)
 	}
-	for _, yid := range append(allIDs, catRepair, catNet, catHidden, catDeleted, catHidGrp, catForeign) {
+	for _, yid := range append(allIDs, catRepair, catNet, catHidden, catDeleted, catHidGrp, catForeign, catRTA, catUncat, catVisa) {
 		if strings.Contains(u.blocks, yid) {
 			t.Fatalf("select carries YNAB id %q", yid)
 		}
 	}
 
 	// Forged values: hidden, deleted, hidden-group, foreign, junk, and a raw id.
-	for _, v := range []string{catHidden, catDeleted, catHidGrp, catForeign} {
+	for _, v := range []string{catHidden, catDeleted, catHidGrp, catForeign, catRTA, catUncat, catVisa} {
 		for _, val := range []string{qid + ":c:" + catKey(v), qid + ":c:" + v} {
 			e.q.HandleClick(context.Background(), click(brendan, "501.1", actionSelect, val))
 		}
@@ -266,5 +276,53 @@ func TestNormFolds(t *testing.T) {
 		if got := norm(in); got != want {
 			t.Errorf("norm(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestExcludedCategoriesNeverAnswer(t *testing.T) {
+	excluded := []string{"Inflow: Ready to Assign", "Uncategorized", "Visa Card", "visa", "ready to assign",
+		"Secret Hidden", "Buried Category"}
+	for _, text := range excluded {
+		db, path := newStore(t)
+		seedMirror(t, db, "Costco", "weekly shop")
+		addCats(t, db)
+		e := &qenv{db: db, path: path, msg: &recMessenger{t: t}, apply: &fakeApplier{}}
+		e.q = NewQuestions(db, e.apply, e.msg, nil)
+		id := e.ask(t, store.QuestionCategorize, qTxn)
+		e.q.HandleReply(context.Background(), Message{User: brendan, Channel: testChannelID, TS: "600.1",
+			ThreadTS: "501.1", Text: text})
+		if e.apply.calls.Load() != 0 {
+			t.Fatalf("%q: applied %+v", text, e.apply.got)
+		}
+		if q := e.question(t, id); q.Status != store.QuestionOpen {
+			t.Fatalf("%q: status = %s", text, q.Status)
+		}
+		if len(e.msg.posts) != 2 || !strings.Contains(e.msg.posts[1].text, "Reply with one of these, or use other…") {
+			t.Fatalf("%q: posts = %+v", text, e.msg.posts)
+		}
+		for _, name := range []string{"Ready to Assign", "Uncategorized", "Visa Card", "Secret Hidden", "Buried Category"} {
+			if strings.Contains(e.msg.posts[1].text, name) {
+				t.Fatalf("%q: suggested %q: %q", text, name, e.msg.posts[1].text)
+			}
+		}
+	}
+}
+
+func TestSelectKeepsSetAsides(t *testing.T) {
+	db, path := newStore(t)
+	seedMirror(t, db, "Costco", "weekly shop")
+	addCats(t, db)
+	e := &qenv{db: db, path: path, msg: &recMessenger{t: t}, apply: &fakeApplier{}}
+	e.q = NewQuestions(db, e.apply, e.msg, nil)
+	id := e.ask(t, store.QuestionCategorize, qTxn)
+	e.q.HandleClick(context.Background(), click(brendan, "501.1", actionOther, strconv.FormatInt(id, 10)))
+	texts, _ := selectOptions(t, e.msg.lastUpdate(t).blocks)
+	if !strings.Contains(fmt.Sprint(texts), "Gifts") { // a set-aside (policy keyword "Gift")
+		t.Fatalf("select = %v", texts)
+	}
+	e.q.HandleReply(context.Background(), Message{User: brendan, Channel: testChannelID, TS: "600.1",
+		ThreadTS: "501.1", Text: "gifts"})
+	if e.apply.calls.Load() != 1 || e.apply.got[0].Writes[0].CategoryID != catOther {
+		t.Fatalf("apply = %+v", e.apply.got)
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	slackapi "github.com/slack-go/slack"
 
+	"github.com/deasa/YNAB_AutoCategorizer/classify"
 	"github.com/deasa/YNAB_AutoCategorizer/store"
 )
 
@@ -19,26 +20,25 @@ const (
 	maxSuggestion = 3    // closest names offered after a reply that matches none or several
 )
 
-// visible reports whether c can be offered or answered: not deleted or hidden,
-// and neither is its group.
-func visible(c store.CategoryWithGroup) bool {
-	return !c.Deleted && !c.Hidden && !c.GroupDeleted && !c.GroupHidden
-}
+// answerable reports whether c can be offered or answered: the classifier's
+// eligibility (no hidden, deleted, internal or Credit Card Payments
+// categories), set-asides included.
+func answerable(c store.CategoryWithGroup) bool { return classify.Eligible(c) }
 
 // catKey is the opaque handle a select option carries for a plan category: a
 // short hash of its id, so the message carries no YNAB id. It resolves only
-// against the plan's visible categories at click time.
+// against the plan's answerable categories at click time.
 func catKey(id string) string {
 	sum := sha256.Sum256([]byte(id))
 	return hex.EncodeToString(sum[:8])
 }
 
-// resolveCatKey finds the one visible category in cats with key k.
+// resolveCatKey finds the one answerable category in cats with key k.
 func resolveCatKey(cats []store.CategoryWithGroup, k string) (store.CategoryWithGroup, bool) {
 	var hit store.CategoryWithGroup
 	n := 0
 	for _, c := range cats {
-		if visible(c) && catKey(c.ID) == k {
+		if answerable(c) && catKey(c.ID) == k {
 			hit = c
 			n++
 		}
@@ -47,8 +47,8 @@ func resolveCatKey(cats []store.CategoryWithGroup, k string) (store.CategoryWith
 }
 
 // selectGroups builds the "other…" select: the question's options first, then
-// every other visible category of the plan by group, at most maxSelect options
-// in all. It returns how many visible categories were left out.
+// every other answerable category of the plan by group, at most maxSelect options
+// in all. It returns how many answerable categories were left out.
 func selectGroups(qu store.Question, cats []store.CategoryWithGroup) ([]*slackapi.OptionGroupBlockObject, int) {
 	plain := func(s string) *slackapi.TextBlockObject {
 		return slackapi.NewTextBlockObject(slackapi.PlainTextType, clip(s), false, false)
@@ -76,7 +76,7 @@ func selectGroups(qu store.Question, cats []store.CategoryWithGroup) ([]*slackap
 	var cur *slackapi.OptionGroupBlockObject
 	curGroup := ""
 	for _, c := range cats {
-		if !visible(c) || seen[c.ID] {
+		if !answerable(c) || seen[c.ID] {
 			continue
 		}
 		seen[c.ID] = true
@@ -164,7 +164,7 @@ func entries(qu store.Question, cats []store.CategoryWithGroup) []entry {
 		out = append(out, newEntry(o.CategoryID, optionName(o), o.Label, o.CategoryName))
 	}
 	for _, c := range cats {
-		if !visible(c) {
+		if !answerable(c) {
 			continue
 		}
 		if _, ok := byID[c.ID]; ok {

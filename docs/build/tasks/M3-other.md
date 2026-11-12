@@ -56,7 +56,7 @@ shows "other…" with the full list.
 ## Result
 - Status: DONE
 - What changed:
-  - `slack/catmatch.go` (new): `visible`, `selectGroups` (Suggested group = the question's options, then every visible
+  - `slack/catmatch.go` (new): `visible`, `selectGroups` (Suggested group = the question's options, then every answerable
     plan category by group via `option_groups`; capped at 100 total, returns the dropped count), `catKey`/`resolveCatKey`
     (a select option for a plan category carries `<qid>:c:<first 16 hex of sha256(category id)>`, so no YNAB id is in
     the message; it resolves only against the question's plan's visible categories at click time), `norm`, `entries`,
@@ -78,13 +78,20 @@ shows "other…" with the full list.
     "netflix" for `Subs - Netflix`) each resolve to one category; "home" (Home & Garden vs Home - Repairs) gets a
     suggestions reply and stays open → pass (`go test ./slack -run 'TestLooseRepliesResolve|TestAmbiguousReply'`)
   - Hint on posted questions and the select re-render; logs checked for ids, keys and reply text → pass (same tests)
+  - (fix) The select and every reply stage use `classify.Eligible`: internal categories (Inflow: Ready to Assign,
+    Uncategorized) and the Credit Card Payments group never appear, and their forged keys are rejected. Exact and loose
+    replies naming them ("Inflow: Ready to Assign", "Uncategorized", "Visa Card", "visa", "ready to assign") get the
+    suggestions reply, never name them, and leave the question open. A set-aside (Gifts) is still listed and
+    answerable → pass (`go test ./slack -run 'TestExcludedCategoriesNeverAnswer|TestSelectKeepsSetAsides|TestOneOption'`).
+    With the old visible-only filter, those tests fail.
   - `go build ./... && go vet ./... && go test ./...` → pass
 - Deviations from brief: the select value is a hash key of the category id rather than an index into a rebuilt list,
   so a category added or renamed between render and click can't shift the answer to a different category. It is
-  still resolved server-side against the plan's visible categories, and the message carries no YNAB id.
-- Follow-ups for backlog: the "visible" set (same as `matchCategory`'s) includes internal categories (e.g. Inflow:
-  Ready to Assign) and Credit Card Payments categories, since `CategoryWithGroup` doesn't carry `Internal`. Consider
-  narrowing the select and loose matching to `classify.Candidates`-style eligibility.
+  still resolved server-side against the plan's answerable categories, and the message carries no YNAB id.
+  Also touched `classify/candidates.go` (sup's fix request): exported `classify.Eligible` (not deleted or hidden, group
+  neither, not internal, not in Credit Card Payments; set-asides allowed), which `Candidates` now uses too, so the
+  classifier and Slack share one eligibility rule. No store change was needed.
+- Follow-ups for backlog: none
 - Docs follow-ups: CLAUDE.md `slack/` bullet: "`Questions` renders a question (top-3 buttons, other… always, split, and
-  a hint line); other… opens a select of every visible plan category, options first; thread replies match a category
+  a hint line); other… opens a select of every answerable plan category (`classify.Eligible`), options first; thread replies match a category
   loosely (exact, folded, whole words, unique 4+ prefix), else suggest up to 3 names."

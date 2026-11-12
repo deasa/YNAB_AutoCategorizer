@@ -179,7 +179,7 @@ func (q *Questions) HandleClick(ctx context.Context, k Click) {
 }
 
 // HandleReply handles a thread reply under a question: a reply that names one
-// visible category (loosely, see matchCategory) answers it; anything else gets
+// answerable category (loosely, see matchCategory) answers it; anything else gets
 // the closest names and a pointer to "other…", and leaves it open.
 func (q *Questions) HandleReply(ctx context.Context, m Message) {
 	if m.ThreadTS == "" {
@@ -216,7 +216,7 @@ func (q *Questions) HandleReply(ctx context.Context, m Message) {
 }
 
 // matchCategory finds the one category a reply names, among the question's
-// options and the plan's visible categories. In order, stopping at the first
+// options and the plan's answerable categories. In order, stopping at the first
 // that gives exactly one: the exact name (ignoring case and surrounding
 // space; options first); the name folded (case, punctuation, "&"/"and" and a
 // "Group - " prefix ignored); a reply containing exactly one name as whole
@@ -238,7 +238,7 @@ func (q *Questions) matchCategory(ctx context.Context, qu store.Question, text s
 	}
 	n := 0
 	for _, c := range cats {
-		if !visible(c) || !strings.EqualFold(c.Name, want) {
+		if !answerable(c) || !strings.EqualFold(c.Name, want) {
 			continue
 		}
 		id, name = c.ID, c.Name
@@ -256,7 +256,7 @@ func (q *Questions) matchCategory(ctx context.Context, qu store.Question, text s
 }
 
 // answerCatKey answers qu with the plan category a select option's key names,
-// if it is still a visible category of qu's plan.
+// if it is still a answerable category of qu's plan.
 func (q *Questions) answerCatKey(ctx context.Context, qu store.Question, key string, user store.User) {
 	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
 	if err != nil {
@@ -265,7 +265,7 @@ func (q *Questions) answerCatKey(ctx context.Context, qu store.Question, key str
 	}
 	c, ok := resolveCatKey(cats, key)
 	if !ok {
-		q.log.Warn("slack click rejected: select names no visible category", "action", actionSelect)
+		q.log.Warn("slack click rejected: select names no answerable category", "action", actionSelect)
 		return
 	}
 	q.answer(ctx, qu, c.ID, c.Name, user)
@@ -459,7 +459,7 @@ func who(u store.User) string {
 const hintText = "Not listed? Use other…, or reply in the thread with the category name."
 
 // questionMessage renders an open question. With groups (from selectGroups) it
-// shows a select of every visible category in place of the "other…" button.
+// shows a select of every answerable category in place of the "other…" button.
 func questionMessage(qu store.Question, txn store.TransactionDetail, groups []*slackapi.OptionGroupBlockObject) (string, []slackapi.Block) {
 	prompt := "Which category is this?"
 	if qu.Kind == store.QuestionDryRunCheck {
