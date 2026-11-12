@@ -11,6 +11,7 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
+- hoid finbot: **16bc11a** deployed 2026-11-11 21:30 MST by sup (M3-other, standing deploy OK). Smoke: healthy, 0 restarts, dry_run, 0 ERROR, claude probe ok, writes: 0. Brendan to check a new question shows other… with the full list.
 - hoid finbot: **c2762d3** deployed 2026-11-11 17:39 MST by sup (M3-17, Brendan OK BA-22): classifier + Slack questions live in **CLASSIFY_MODE=dry_run**. Smoke: healthy; mode dry_run; `claude` 2.1.312; ANTHROPIC_API_KEY absent; 0 ERROR lines; 2 WARN (policy set-aside keywords "Gift", "Vacation" match no category, BA-20); `claude probe ok`; socket mode on (2 users); first categorize run: 50 eligible, 6 guarded, 27 would_apply (τ pass), 17 τ miss with 17 second opinions, 44 asked → **5 posted, 39 pending** (cap 5 open), 0 model failures; dry-run-report writes 0; public /mcp 401. Not yet checked: clicking a question reports YNAB unchanged (needs Brendan in Slack).
 - 2026-11-09 02:49 MST: **first live bank import OK** on "Trying auto-categorizer" (M2-6, BA-13), one 6h interval after the 20:49 MST container start: `import tick` imported=0 skipped=false, no `import tick failed`. 0 new means YNAB had nothing pending; checked by sup via `docker logs --since 09:30Z`.
 - hoid finbot: **beb943d** deployed 2026-11-08 20:28 MST by sup (M2-6, IMPORT_ENABLED=true, BA-13). Smoke: healthy, /mcp 401, cloudflared untouched, env IMPORT_ENABLED=true, log `import enabled` 6h0m0s. First import due ~2026-11-09 02:28 MST; check `docker logs finbot-finbot-1 2>&1` for `import tick` with skipped=false.
@@ -24,14 +25,13 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | sixth session 2026-11-11 |
 | b-m3-cats | w1:p42 | build (w1) | builder | M3-cats | 2026-11-11 | .env copied (sandbox writes; live dry run only) |
-| b-m3-other | w1:p43 | build (w1) | builder | M3-other | 2026-11-11 | no .env |
 | agy | — | — | reviewer (Antigravity): **out of quota until ~2026-11-15 (BA-21)**; pane w1:p3R gone (found 2026-11-11 sixth sup). Restart in tab control when quota resets |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
-| M3-other | review | w1:p43 | t/M3-other | rev r2 in progress; r1 FIX (med: stored options not re-checked for eligibility at answer time) | dispatched 2026-11-11 (Brendan request): "other…" on every question with every visible category, forgiving thread replies, hint line. Deploy: yes |
+| M3-other | merged + deployed | — | — | rev (Claude) PASS r2 (r1 FIX: stored options not re-checked at answer time) | merged 2026-11-11 (16bc11a), deployed 21:30 MST: other… on every question (classify.Eligible categories), forgiving thread replies, hint line. Docs follow-up: CLAUDE.md slack/ bullet (see brief Result) |
 | M3-cats | fix | w1:p42 | t/M3-cats | rev r1 FIX (med: live guard bypassable via plan alias last-used/default; lows: cap test, ledger errors, summary text, CLAUDE.md Safety — builder may edit CLAUDE.md Safety/ynab role, sup exception) | DONE 2026-11-11: live dry run 45 changes, 0 unresolved, 16 categories not in spec (7 visible → asked Brendan). Dispatched: `finbot restructure`, sandbox apply, live dry run only |
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
 | M3-6 | merged | — | — | agy PASS (2 low: display-name pick per plan; placeholder test assumes τ null) | merged 2026-11-11 (a7613c6): calibration.json τ=null, auto_eligible=false (BA-20); payee-casing fix |
