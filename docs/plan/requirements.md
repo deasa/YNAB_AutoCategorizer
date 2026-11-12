@@ -21,7 +21,7 @@ v3 = v2 + Brendan's answers (2026-10-27) + verification of YNAB API/library. v4 
 
 ### YNAB maintenance (the system owns the budget)
 - R5. Categorize every new transaction, and the fresh-start backlog (R8c), with minimal human effort.
-- R6. Auto-apply when classifier confidence is above a threshold calibrated on Brendan's previously-categorized history (mapped old→new categories) to achieve >= 85% precision (Brendan's choice: favor automation). Below threshold → ask in Slack (R9b).
+- R6. Auto-apply when classifier confidence is above a threshold calibrated on Brendan's previously-categorized history to achieve >= 85% precision (Brendan's choice: favor automation). Below threshold → ask in Slack (R9b). M3 calibrates on the existing categories as they are, with no old→new map (Brendan, 2026-11-08); the simplified PROPOSED list goes to M4, and M4's Fresh Start needs a fresh calibration (architecture §3.3).
 - R6c. Continuous audit: the AI can re-review any or all categorized transactions at any time (on demand via MCP, and on a schedule), with the reason/confidence for each past decision available, and correct its own mistakes. Never overrides human edits (R6b).
 - R6a. Explicit handling for ambiguous classes:
   - Amazon: v1 = ask in Slack when unsure. [v1.1] item-detail enrichment + split at first categorization (email receipts / order-page scraping / data export).
