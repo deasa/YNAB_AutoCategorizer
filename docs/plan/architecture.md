@@ -31,7 +31,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 | `sync/` | new | Delta sync of the active plan via `GET /plans/{id}?last_knowledge_of_server=N` (one call returns all changed entities; transactions arrive as `TransactionSummaryBase` with `subtransactions` as a separate top-level array — stitch by transaction_id, join names locally). Archived plan synced once / on demand. Triggers bank import. Detects human edits (R6b). |
 | `backup/` | new | Age-encrypted `VACUUM INTO` snapshots stored off-site in Turso, and restore with the private key (§6 N4). |
 | `status/` | new | The Slack status message, edited after every scheduled sync and backup (§6 N2). |
-| `classify/` | replaces `AI/`, `search/`, `datastore/`, absorbs `categorizer/` | Pipeline: guardrails (`classify/guardrails.go`, existing tests ported) → deterministic rules → model. Calibrated thresholds. Decision log. |
+| `classify/` | replaces `AI/`, `search/`, `datastore/`, absorbs `categorizer/` | Pipeline: guardrails (`classify/guard.go`) → deterministic rules → model (`classify/jev/`, with the `llm/` second opinion). Calibrated thresholds (`calibrate/`, M3). Decision log. |
 | `budget/` | new | CSP structure, fresh-start seeding, paycheck assignment rule (R7b), goals (R8b), tithing math (R12). |
 | `intents/` | new | Store conversational intents; deterministic matcher run after each sync (R8a). |
 | `audit/` | new | Re-review decisions (R6c). |
@@ -50,7 +50,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 - `write_log`: id, actor (system / brendan / wife), via (scheduler / mcp / slack), tier, endpoint, txn/category ids, before_json, after_json, request_id, reverted_by.
 - `human_locks`: (txn_id, field) diverged from our last write → never overwrite (R6b). Also emitted as labeled training examples.
 - `intents`: id, user, text, parsed hints (category, amount, merchant, date), status (pending/matched/asked/expired), matched_txn_ids.
-- `questions`: id, kind, subject id (e.g. txn id), slack `channel_id` + `message_ts` (lookup key for clicks and thread replies, survives restarts), options, status, answer, answered_by, answered_at. One table; no separate `slack_questions`.
+- `questions`: id, plan_id, kind (`categorize` / `dry_run_check`), subject id (e.g. txn id), slack `channel_id` + `message_ts` (lookup key for clicks and thread replies, survives restarts), options, status (`pending` → `open` → `answered` / `closed`), answer (a category id), answered_by, answered_at, close_reason, created_at. A question waits as `pending` while the open-question cap is reached. One table; no separate `slack_questions`.
 - `users`: brendan, wife — `slack_user_id` (Slack identity; no email), OAuth subject `u_<sha256(email)[:12]>`, display name, fun-money category id.
 - OAuth (M2, `auth/`): fosite storage tables (DCR clients, auth codes, access/refresh tokens, PKCE sessions) + `token_generations(user, generation)` for one-step revocation. The fosite HMAC secret is persisted, so a redeploy doesn't log everyone out.
 - `profile`: paycheck matcher, pre-tax deductions, retirement assumptions, assignment amounts (filled at first run, Q11).
@@ -77,7 +77,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 - Category targets: purpose/event categories (Birthday, Trip, Christmas, Giving, …) are savings set-asides only and are never classifier targets (excluded like Birthday/Gift today). Spending for an event is categorized `Discretionary`.
 
 ### 3.3 Classifier choice & calibration
-- Primary: **Jev** (`jev-1.14.0`, model id pinned, never `jev-latest`), run only with the rules layer and payee history in state plus the `Discretionary` policy. M0 (n=200): τ=0.8 on p_top → ~90% precision / ~73% coverage; the top-3 holds the right answer 91–93% of the time. Bare Jev (no history/policy) is rejected. **Headless `claude` CLI** (§5a) is the fallback/second opinion on the τ-miss band. Vertex/OpenAI code paths are removed.
+- Primary: **Jev** (`jev-1.14.0`, model id pinned, never `jev-latest`), run only with the rules layer and payee history in state plus the `Discretionary` policy. M0 (n=200): τ=0.8 on p_top → ~90% precision / ~73% coverage; the top-3 holds the right answer 91–93% of the time. Bare Jev (no history/policy) is rejected. **Headless `claude` CLI** (§5a) is the second opinion on the τ-miss band. It is **advisory only** (Plan question 1, answered 2026-11-08): logged in `decisions` and shown in the Slack question, never written, so it can never cause an auto-apply. Vertex/OpenAI code paths are removed.
 - Interface is batch-first (Jev and the claude CLI both want batches of ~10+):
   ```go
   type Txn struct {
@@ -96,7 +96,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
       Classify(ctx context.Context, txns []Txn, cands []Candidate) ([]Prediction, error)
   }
   ```
-- `finbot calibrate`: run candidates over the archived plan's labeled history mapped old→new categories (mapping table proposed by AI, approved by Brendan once), compute precision/coverage curves, pick model + τ. Model-reported confidence is never trusted raw — τ comes from the measured curve, re-derived on the whole archived history before the routine tier auto-approves, and re-measured whenever the policy text or category list changes. Older/archived plans that contain a `Discretionary` category reflect the current categorizing strategy and are valid labelled data (calibration, Jev re-measure, payee history); the approval gap since 2026-04 is a lapse, not a strategy change.
+- `finbot calibrate`: run candidates over the labeled history of the active plan and every plan with a `Discretionary` category (`calibrate.LabelPlans`), compute precision/coverage curves, pick model + τ. **No old→new category map in M3** (Brendan, 2026-11-08: the category mapping is fine as is): calibration uses the existing categories, labels outside the active plan's candidates count as hard negatives, and set-aside labels are dropped. The PROPOSED simplified list goes to M4. M4's Fresh Start changes the plan and the category list, so it needs a fresh calibration before `auto` runs on the new plan. M3 found no safe τ on the current labels (BA-20), so auto stays off until a recalibration finds one. Model-reported confidence is never trusted raw — τ comes from the measured curve, re-derived on the whole archived history before the routine tier auto-approves, and re-measured whenever the policy text or category list changes. Older/archived plans that contain a `Discretionary` category reflect the current categorizing strategy and are valid labelled data (calibration, Jev re-measure, payee history); the approval gap since 2026-04 is a lapse, not a strategy change.
 - Category list: Brendan finalizes it later. Until then builders work from a **PROPOSED** simplified set (his transaction history + Conscious Spending Plan buckets + stated wants: per-spouse fun money, travel, generosity, auto, event set-asides). Label it PROPOSED wherever it appears; nothing renames or creates live YNAB categories without Brendan.
 - Turso/vector double-hop is deleted once calibration shows constrained choice is ≥ as precise (expected).
 
@@ -116,7 +116,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 - Matcher after each sync: candidates = unlocked, uncategorized-or-auto-categorized txns within [intent date −1d, +5d], filtered by hints, excluding txns already claimed by another intent. Prefer the speaker's own cards when accounts have an owner tag. One candidate → apply + Slack FYI. Several (incl. both spouses' intents competing for similar charges) or zero after window → Slack question. Expire at 10 days.
 
 ### 3.7 Alerts & reports
-- Rules engine in Go, evaluated after sync: missing/short paycheck (vs. paycheck matcher cadence), recurring price change (same payee, >10% vs trailing median), duplicate (same payee+amount within 72h, different import ids), large vs same-payee history, tithing behind, link error/stale.
+- Rules engine in Go, evaluated after sync: missing/short paycheck (vs. paycheck matcher cadence), recurring price change (same payee, >10% vs trailing median), duplicate (same payee+amount within 72h, different import ids), large vs same-payee history, tithing behind, link error/stale. M3 ships link error, stale import, duplicate, price change and large charge; missing or short paycheck and tithing land in M4, which has the `profile` they need (Plan question 3, answered 2026-11-08).
 - Alert budget enforced in code: non-critical alerts beyond ~2/month roll into the monthly report.
 - Monthly check-in (1st of month) and December +1% nudge → Slack.
 
@@ -137,7 +137,7 @@ Deployed as a Docker Compose project on hoid like kids-ledger, data volume holds
 - One private channel (`#finbot-finances`) shared by both spouses + DMs. The app needs the bot event `message.groups` (without it, private-channel replies are silently dropped); Scopes: app-level token `connections:write`; bot `chat:write`, `groups:read`, `groups:history`, `users:read`; drop `groups:write` (and the `channels:*` scopes while finbot stays private-channel-only). DMs additionally need `im:history`, `im:write` and the `message.im` event (UNVERIFIED). Slack user id → `users` (no email lookup).
 - Handling rules: ack every envelope first, then handle async; ignore the bot's own messages (`bot_id` set) and any `subtype` other than none / `thread_broadcast`; make clicks and replies idempotent (key on `event_id`, or `container.message_ts` + `action_ts`), since redelivery after reconnect is plausible; route clicks and thread replies via `questions.(channel_id, message_ts)` and `chat.update` the question once answered.
 - Startup self-check: the configured channel must resolve via `users.conversations`, else alert.
-- Questions use Block Kit buttons (top-3 categories, "other…", "split") → deterministic handling, no LLM needed.
+- Questions use Block Kit buttons (top-3 categories, "other…", "split") → deterministic handling, no LLM needed. "Split" (Plan question 2, answered 2026-11-08) tells the user to split the transaction in YNAB and closes the question; the next sync locks the row.
 - Free-text replies/intents in Slack ("I bought discs with my fun money") go to the headless `claude` CLI (§5a), which acts through finbot's own MCP tools as the speaking user.
 
 ## 5a. Server-side LLM: headless `claude` CLI (Q15)
@@ -178,6 +178,7 @@ Order principle (agy): get read-only value and visibility BEFORE the irreversibl
 - Q16: public exposure = Cloudflare Tunnel (`cloudflared` sidecar) at `finance.hoidlabs.site`; Cloudflare rate-limit rules replace fail2ban (§4). Replaces the nginx-proxy-manager plan.
 - Q17: Google Sign-In, two accounts, via a fosite AS + go-sdk + go-oidc inside finbot (§4).
 - Classifier: Jev primary behind rules + payee history, τ starts at 0.8 (§3.3).
+- 2026-11-08 (Brendan): M3 classifies into the active plan's existing categories and calibrates on them; no old→new map. The PROPOSED list is an M4 input, and M4's Fresh Start needs a fresh calibration (§3.3). Plan questions 1 to 3 took the planner defaults: the claude second opinion is advisory only (§3.3), "split" closes the question and points to YNAB (§5), paycheck and tithing alerts wait for M4 (§3.7). `auto` writes new transactions only (dated on or after `CLASSIFY_AUTO_SINCE`), not the backlog, and turning it on is Brendan's call alone.
 - Categories: event set-asides are savings only, event spending → `Discretionary`, zeroing never automatic (§3.2, §3.5); the simplified category list is PROPOSED until Brendan finalizes it (§3.3).
 
 ## 9. Unverified
