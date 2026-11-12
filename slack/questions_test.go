@@ -230,6 +230,11 @@ func blockValues(t *testing.T, blocks string) []string {
 				vals = append(vals, v)
 			}
 			opts, _ := m["options"].([]any)
+			gs, _ := m["option_groups"].([]any)
+			for _, g := range gs {
+				more, _ := g.(map[string]any)["options"].([]any)
+				opts = append(opts, more...)
+			}
 			for _, o := range opts {
 				if v, ok := o.(map[string]any)["value"].(string); ok {
 					vals = append(vals, v)
@@ -425,15 +430,14 @@ func TestExactNameReplyAnswers(t *testing.T) {
 func TestNonMatchingReplyGetsPointer(t *testing.T) {
 	e, id := newQEnv(t, store.QuestionCategorize, "Costco")
 	e.q.HandleReply(context.Background(), Message{User: brendan, Channel: testChannelID, TS: "600.1",
-		ThreadTS: "501.1", Text: "groceries I think"})
+		ThreadTS: "501.1", Text: "something else entirely"})
 	if e.apply.calls.Load() != 0 {
 		t.Fatal("applied")
 	}
 	if q := e.question(t, id); q.Status != store.QuestionOpen {
 		t.Fatalf("status = %s", q.Status)
 	}
-	if len(e.msg.posts) != 2 || e.msg.posts[1].ts != "501.1" || !strings.Contains(e.msg.posts[1].text, "Use the buttons") ||
-		strings.Count(e.msg.posts[1].text, "\n") != 0 {
+	if len(e.msg.posts) != 2 || e.msg.posts[1].ts != "501.1" || !strings.Contains(e.msg.posts[1].text, "or use other…") {
 		t.Fatalf("posts = %+v", e.msg.posts)
 	}
 	// Top-level messages and replies to other threads are ignored.
