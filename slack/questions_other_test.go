@@ -326,3 +326,64 @@ func TestSelectKeepsSetAsides(t *testing.T) {
 		t.Fatalf("apply = %+v", e.apply.got)
 	}
 }
+
+func TestOptionInvalidatedAfterAskIsRejected(t *testing.T) {
+	for _, change := range []string{"hidden", "deleted"} {
+		e, id := newQEnv(t, store.QuestionCategorize, "Costco")
+		qid := strconv.FormatInt(id, 10)
+		// Groceries is option 0 (pick button 0); hide or delete it once the question is up.
+		gone := store.Category{ID: catGroc, CategoryGroupID: qGroup, Name: "Groceries",
+			Hidden: change == "hidden", Deleted: change == "deleted"}
+		if err := e.db.Update(context.Background(), func(tx *store.Tx) error {
+			return tx.UpsertCategories(qPlan, []store.Category{gone})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		e.q.HandleClick(context.Background(), click(brendan, "501.1", actionPick+"0", qid+":0"))
+		e.q.HandleClick(context.Background(), click(brendan, "501.1", actionSelect, qid+":0"))
+		e.q.HandleClick(context.Background(), click(brendan, "501.1", actionSelect, qid+":c:"+catKey(catGroc)))
+		for _, text := range []string{"Groceries", "groceries!", "this was groceries at costco", "groc"} {
+			e.q.HandleReply(context.Background(), Message{User: brendan, Channel: testChannelID, TS: "600.1",
+				ThreadTS: "501.1", Text: text})
+		}
+		if n := e.apply.calls.Load(); n != 0 {
+			t.Fatalf("%s: applied %d times: %+v", change, n, e.apply.got)
+		}
+		if q := e.question(t, id); q.Status != store.QuestionOpen {
+			t.Fatalf("%s: status = %s", change, q.Status)
+		}
+		replies := 0
+		for _, p := range e.msg.posts[1:] {
+			replies++
+			if strings.Contains(p.text, "Groceries") {
+				t.Fatalf("%s: suggested the gone option: %q", change, p.text)
+			}
+		}
+		if replies != 4 {
+			t.Fatalf("%s: suggestion replies = %d", change, replies)
+		}
+		// Re-rendering via other… drops it from the buttons and the Suggested group.
+		e.q.HandleClick(context.Background(), click(brendan, "501.1", actionOther, qid))
+		if u := e.msg.lastUpdate(t); strings.Contains(u.blocks, "Groceries") {
+			t.Fatalf("%s: re-render still offers it: %s", change, u.blocks)
+		}
+		// A still-live option keeps working.
+		e.q.HandleClick(context.Background(), click(brendan, "501.1", actionPick+"1", qid+":1"))
+		if e.apply.calls.Load() != 1 || e.apply.got[0].Writes[0].CategoryID != catGas {
+			t.Fatalf("%s: live option: %+v", change, e.apply.got)
+		}
+	}
+}
+
+func TestAskSkipsOptionsAlreadyIneligible(t *testing.T) {
+	db, path := newStore(t)
+	seedMirror(t, db, "Costco", "weekly shop")
+	addCats(t, db)
+	e := &qenv{db: db, path: path, msg: &recMessenger{t: t}, apply: &fakeApplier{}}
+	e.q = NewQuestions(db, e.apply, e.msg, nil)
+	e.askWith(t, []store.QuestionOption{{Label: "Secret Hidden", CategoryID: catHidden, CategoryName: "Secret Hidden"},
+		{Label: "Gas", CategoryID: catGas, CategoryName: "Gas"}})
+	if b := e.msg.posts[0].blocks; strings.Contains(b, "Secret Hidden") || !strings.Contains(b, "Gas") {
+		t.Fatalf("post = %s", b)
+	}
+}

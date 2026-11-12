@@ -25,6 +25,27 @@ const (
 // categories), set-asides included.
 func answerable(c store.CategoryWithGroup) bool { return classify.Eligible(c) }
 
+// liveOptions returns qu with every option whose category is no longer an
+// answerable category of qu's plan (cats) blanked, so no path offers or
+// accepts it. Indices are kept, so a button for a blanked option is rejected.
+func liveOptions(qu store.Question, cats []store.CategoryWithGroup) store.Question {
+	ok := map[string]bool{}
+	for _, c := range cats {
+		if answerable(c) {
+			ok[c.ID] = true
+		}
+	}
+	opts := make([]store.QuestionOption, len(qu.Options))
+	for i, o := range qu.Options {
+		if !ok[o.CategoryID] {
+			o.CategoryID = ""
+		}
+		opts[i] = o
+	}
+	qu.Options = opts
+	return qu
+}
+
 // catKey is the opaque handle a select option carries for a plan category: a
 // short hash of its id, so the message carries no YNAB id. It resolves only
 // against the plan's answerable categories at click time.

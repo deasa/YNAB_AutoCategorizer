@@ -104,7 +104,11 @@ func (q *Questions) Ask(ctx context.Context, id int64) error {
 	if !ok {
 		return errors.New("slack: ask: transaction not in mirror")
 	}
-	text, blocks := questionMessage(qu, txn, nil)
+	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
+	if err != nil {
+		return err
+	}
+	text, blocks := questionMessage(liveOptions(qu, cats), txn, nil)
 	ts, err := q.msg.PostBlocks(ctx, "", text, blocks)
 	if err != nil {
 		return err
@@ -123,9 +127,15 @@ func (q *Questions) HandleClick(ctx context.Context, k Click) {
 		q.log.Debug("slack click on a non-question message")
 		return
 	}
+	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
+	if err != nil {
+		q.log.Error("slack click: category lookup failed", "err", err)
+		return
+	}
+	qu = liveOptions(qu, cats)
 	switch {
 	case k.ActionID == actionSelect && strings.HasPrefix(k.Value, strconv.FormatInt(qu.ID, 10)+":"+choiceCat):
-		q.answerCatKey(ctx, qu, strings.TrimPrefix(k.Value, strconv.FormatInt(qu.ID, 10)+":"+choiceCat), k.User)
+		q.answerCatKey(ctx, qu, cats, strings.TrimPrefix(k.Value, strconv.FormatInt(qu.ID, 10)+":"+choiceCat), k.User)
 	case strings.HasPrefix(k.ActionID, actionPick), k.ActionID == actionSelect:
 		idx, ok := parseChoice(k.Value, qu)
 		if !ok {
@@ -144,11 +154,6 @@ func (q *Questions) HandleClick(ctx context.Context, k Click) {
 		txn, ok, err := q.st.TransactionByID(ctx, qu.PlanID, qu.SubjectID)
 		if err != nil || !ok {
 			q.log.Error("slack other: transaction lookup failed", "found", ok, "err", err)
-			return
-		}
-		cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
-		if err != nil {
-			q.log.Error("slack other: category lookup failed", "err", err)
 			return
 		}
 		groups, dropped := selectGroups(qu, cats)
@@ -227,14 +232,15 @@ func (q *Questions) matchCategory(ctx context.Context, qu store.Question, text s
 	if want == "" {
 		return "", "", nil, nil
 	}
+	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
+	if err != nil {
+		return "", "", nil, err
+	}
+	qu = liveOptions(qu, cats)
 	for _, o := range qu.Options {
 		if o.CategoryID != "" && (strings.EqualFold(o.CategoryName, want) || strings.EqualFold(o.Label, want)) {
 			return o.CategoryID, optionName(o), nil, nil
 		}
-	}
-	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
-	if err != nil {
-		return "", "", nil, err
 	}
 	n := 0
 	for _, c := range cats {
@@ -257,12 +263,7 @@ func (q *Questions) matchCategory(ctx context.Context, qu store.Question, text s
 
 // answerCatKey answers qu with the plan category a select option's key names,
 // if it is still a answerable category of qu's plan.
-func (q *Questions) answerCatKey(ctx context.Context, qu store.Question, key string, user store.User) {
-	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
-	if err != nil {
-		q.log.Error("slack select: category lookup failed", "err", err)
-		return
-	}
+func (q *Questions) answerCatKey(ctx context.Context, qu store.Question, cats []store.CategoryWithGroup, key string, user store.User) {
 	c, ok := resolveCatKey(cats, key)
 	if !ok {
 		q.log.Warn("slack click rejected: select names no answerable category", "action", actionSelect)

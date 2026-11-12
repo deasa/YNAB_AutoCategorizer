@@ -84,6 +84,13 @@ shows "other…" with the full list.
     suggestions reply, never name them, and leave the question open. A set-aside (Gifts) is still listed and
     answerable → pass (`go test ./slack -run 'TestExcludedCategoriesNeverAnswer|TestSelectKeepsSetAsides|TestOneOption'`).
     With the old visible-only filter, those tests fail.
+  - (review fix 1, 2) A question's stored options are re-checked against the plan's answerable categories on every
+    path: `liveOptions` blanks any option whose category is no longer `classify.Eligible` (hidden, deleted, moved to an
+    excluded group) before posting, on every click (pick buttons, index select values, `c:` keys), on the other…
+    re-render (buttons and Suggested group) and in `matchCategory` (exact options loop, loose stages, suggestions).
+    A rejected click is logged like a forged one (WARN, no id); a reply falls through to suggestions, which no longer
+    name the stale option → pass (`go test ./slack -run 'TestOptionInvalidatedAfterAskIsRejected|TestAskSkipsOptionsAlreadyIneligible'`;
+    both fail with `liveOptions` made a no-op).
   - `go build ./... && go vet ./... && go test ./...` → pass
 - Deviations from brief: the select value is a hash key of the category id rather than an index into a rebuilt list,
   so a category added or renamed between render and click can't shift the answer to a different category. It is
