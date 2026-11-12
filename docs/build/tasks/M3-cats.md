@@ -149,13 +149,38 @@ then the dry run again (expect 0 changes), and asks Brendan to hide the emptied 
     Savings Goals). Brendan should confirm that's fine when he reads the list.
   - "Fun - Larks Dues" rolls to 2026-11-18, one week out.
 - Docs follow-ups:
-  - CLAUDE.md Build & Run: add `./finbot restructure --spec <file> [--plan <id>] [--apply [--confirm-live] --used <n>
-    [--ledger path]]`.
-  - CLAUDE.md `ynab/` role and Safety: the YNAB writes are no longer only `ImportTransactions` and `PatchTransactions`;
-    add the four category writes, called only by `finbot restructure` (a manual one-off, never by serve).
+  - CLAUDE.md Build & Run: add `./finbot restructure --spec <file> [--plan <plan uuid>] [--apply [--confirm-live]
+    --used <n> [--ledger path [--ledger-create]]]`.
+  - (Done in r1, sup's exception: CLAUDE.md `ynab/` role and Safety now name the four category writes.)
 - Live apply command for sup (after Brendan approves; ~46 requests):
   ```
   hn=$(ssh hoid 'docker logs --since 60m finbot-finbot-1 2>&1' | grep -cE '"msg":"(sync tick|import tick|import failed|import done)"')
   ./finbot restructure --spec deploy/restructure/csp-2026-11.json --plan "$YNAB_BUDGET_ID" --apply --confirm-live \
     --used $((hn * 2)) --ledger ../_m3-acceptance-state/ynab-ledger
   ```
+
+### Review fixes (r1, `../_reviews/M3-cats.md`)
+1. Live guard (med) → fixed. `--plan` is trimmed; `last-used` and `default` (any case) are refused; anything that isn't a
+   UUID is refused; live = `strings.EqualFold` against the trimmed `YNAB_BUDGET_ID`. All before any request.
+   `TestRestructureCmd_PlanGuard` goes through `restructureCmd` flag parsing: omitted, upper-case and padded live ids
+   all hit the `--confirm-live` refusal; `last-used`, `Default` and a non-UUID are refused; stdout empty (no read).
+2. Run cap test → added `TestRestructure_RunCap`: 100 creates + the read → exit 1, 0 writes; 99 → applies; the counting
+   wrapper refuses the 101st request.
+3. Ledger → fixed. With `--ledger`, an unreadable file fails (exit 1, nothing read or written); a missing file is
+   allowed only with the new `--ledger-create` (first use). Checked whether or not `--apply` is set, so a typo can't
+   create a stray ledger either. `TestRsLedgerLastHour`.
+4. Partial summary → fixed: `done: 0 of 5 (none); failed: #1; not done: #2-#5` (no overlap). `TestRsPartial`.
+5. CLAUDE.md → done (sup's exception): only the `ynab/` role and the Safety bullet changed, naming the four category
+   writes, used only by `finbot restructure`, live apply only with `--confirm-live` and Brendan's OK.
+6. No-target → the dry run now checks it. A spec category marked `"no_target": true` (new spec field, validated against
+   `target`), or a `create` entry that already exists, prints either `no change: "X" has no target, as the spec wants`
+   or `WARNING: "X" should have no target but has one (...); remove it in YNAB by hand`; warnings are repeated under
+   "Check in YNAB:" and counted in a new `warnings: N` line. A no-target category's stale date is never rolled.
+   `TestRestructure_NoTarget`. Spec untouched, as asked (Retirement is a `create` entry, so it's covered already).
+- Live dry run re-run only (no `--apply`, 1 GET) → `../_reviews/M3-cats-live-dryrun.txt`: `unresolved: 0`,
+  `warnings: 0`, `changes: 45`, 16 not in the spec, and `"Retirement" has no target, as the spec wants`. UUID, token
+  and plan-id grep: 0 hits each. Sandbox not re-run.
+- `go build ./... && go vet ./... && go test ./...` → green (one run hit an unrelated port-in-use flake in
+  `TestServe_MCPPortTakenFailsAtOnce`; `go test -count=1 ./cmd` then passed in full).
+- Live apply command for sup, updated: `--plan` must be the UUID (it is: `"$YNAB_BUDGET_ID"`), and the ledger must
+  exist (it does), else add `--ledger-create`.

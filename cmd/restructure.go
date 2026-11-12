@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -55,6 +56,9 @@ type rsCat struct {
 	From      string    `json:"from,omitempty"`
 	FromGroup string    `json:"from_group,omitempty"`
 	Target    *rsTarget `json:"target,omitempty"`
+	// NoTarget says the category should have no target. The API can't clear
+	// one, so an existing target is reported for a hand fix, never changed.
+	NoTarget bool `json:"no_target,omitempty"`
 }
 
 type rsTarget struct {
@@ -139,7 +143,8 @@ func restructureCmd(args []string, stdout, stderr io.Writer) int {
 	apply := fs.Bool("apply", false, "make the changes (default: print them only)")
 	confirmLive := fs.Bool("confirm-live", false, "allow --apply on YNAB_BUDGET_ID, the live plan")
 	used := fs.Int("used", -1, "with --apply: YNAB requests already used on this token in the last hour (hoid's, doubled)")
-	ledger := fs.String("ledger", "", "optional hourly request ledger shared with tests/acceptance/M3 (read, then appended)")
+	ledger := fs.String("ledger", "", "optional hourly request ledger shared with tests/acceptance/M3 (read, then appended); must exist")
+	ledgerCreate := fs.Bool("ledger-create", false, "allow --ledger to name a file that doesn't exist yet (first use)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -158,28 +163,57 @@ func restructureCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "finbot restructure: YNAB_ACCESS_TOKEN and YNAB_BUDGET_ID must be set")
 		return 1
 	}
-	if *planID == "" {
-		*planID = live
+	plan, err := rsPlanID(*planID, live)
+	if err != nil {
+		fmt.Fprintf(stderr, "finbot restructure: %v; nothing was read or written\n", err)
+		return 1
 	}
-	o := rsOpts{spec: spec, live: *planID == live, apply: *apply, confirmLive: *confirmLive}
+	o := rsOpts{spec: spec, live: strings.EqualFold(plan, strings.TrimSpace(live)), apply: *apply, confirmLive: *confirmLive}
+	var ledgerUsed int
+	if *ledger != "" {
+		if ledgerUsed, err = rsLedgerLastHour(*ledger, *ledgerCreate); err != nil {
+			fmt.Fprintf(stderr, "finbot restructure: %v; nothing was read or written\n", err)
+			return 1
+		}
+	}
 	if *apply {
 		if *used < 0 {
 			fmt.Fprintln(stderr, "finbot restructure: --apply needs --used <n>: the token's requests in the last hour (hoid's, doubled)")
 			return 1
 		}
-		o.used = *used + rsLedgerLastHour(*ledger)
+		o.used = *used + ledgerUsed
 	}
 	// A frozen clock: the bucket never refills, so it caps the run's HTTP
 	// attempts (retries included) at rsRunCap.
 	t0 := time.Now()
 	gov := ynab.NewGovernor(rsRunCap, 0, func() time.Time { return t0 })
-	client := ynab.NewClient(token, *planID, log.New(io.Discard, "", 0), ynab.WithGovernor(gov))
+	client := ynab.NewClient(token, plan, log.New(io.Discard, "", 0), ynab.WithGovernor(gov))
 	code := runRestructure(context.Background(), client, o, stdout, stderr)
 	if _, left := gov.Remaining(); *ledger != "" && left < rsRunCap {
 		rsLedgerAppend(*ledger, rsRunCap-left, stderr)
 	}
 	return code
 }
+
+// rsPlanID returns the plan to act on: live (YNAB_BUDGET_ID) when flag is
+// empty, else flag, which must be a plan UUID. YNAB's aliases "last-used"
+// and "default" are refused: they can name the live plan without matching
+// YNAB_BUDGET_ID, which would slip past the --confirm-live guard.
+func rsPlanID(flag, live string) (string, error) {
+	p := strings.TrimSpace(flag)
+	if p == "" {
+		return strings.TrimSpace(live), nil
+	}
+	if strings.EqualFold(p, "last-used") || strings.EqualFold(p, "default") {
+		return "", fmt.Errorf("--plan %q is a YNAB alias; give the plan's id", p)
+	}
+	if !rsUUID.MatchString(p) {
+		return "", errors.New("--plan must be a plan id (a UUID)")
+	}
+	return p, nil
+}
+
+var rsUUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func loadRsSpec(path string) (rsSpec, error) {
 	var s rsSpec
@@ -242,6 +276,9 @@ func validateRsSpec(s rsSpec) error {
 			default:
 				bad("category %q: unknown op %q", c.Name, c.Op)
 			}
+			if c.NoTarget && c.Target != nil {
+				bad("category %q: no_target and target conflict", c.Name)
+			}
 			if t := c.Target; t != nil && t.Date != "" {
 				if _, err := ynab.ParseDate(t.Date); err != nil {
 					bad("category %q: target date %q is not YYYY-MM-DD", c.Name, t.Date)
@@ -272,6 +309,7 @@ type rsPlan struct {
 	changes     []rsChange
 	lineChange  []int // per line: index into changes, or -1
 	problems    []string
+	warnings    []string
 	unmentioned []string
 }
 
@@ -588,6 +626,21 @@ func targetChange(p *rsPlan, c rsCat, cur *ynab.Category, cref *rsCatRef, today 
 	if cur != nil {
 		curAmt, curDate = cur.GoalTarget, cur.GoalTargetDate
 	}
+	// A category marked no_target, or one the spec creates that already
+	// exists, should have no target: say whether it has one.
+	if c.NoTarget || (c.Op == "create" && cur != nil) {
+		if cur == nil {
+			return // created without a target
+		}
+		if has, desc := hasTarget(cur); has {
+			w := fmt.Sprintf("%q should have no target but has one (%s); remove it in YNAB by hand", c.Name, desc)
+			p.note("WARNING: " + w)
+			p.warnings = append(p.warnings, w)
+		} else {
+			p.note(fmt.Sprintf("no change: %q has no target, as the spec wants", c.Name))
+		}
+		return
+	}
 	if t := c.Target; t != nil {
 		amt := ynab.Milliunits(t.Milliunits)
 		date := curDate
@@ -625,6 +678,25 @@ func targetChange(p *rsPlan, c rsCat, cur *ynab.Category, cref *rsCatRef, today 
 			_, err := api.UpdateCategory(ctx, cref.id, e)
 			return err
 		})
+}
+
+// hasTarget reports whether c has a target (a goal type, a nonzero amount or
+// a target date), and describes it.
+func hasTarget(c *ynab.Category) (bool, string) {
+	if c.GoalType == nil && (c.GoalTarget == nil || *c.GoalTarget == 0) && c.GoalTargetDate == nil {
+		return false, ""
+	}
+	var parts []string
+	if c.GoalType != nil {
+		parts = append(parts, "type "+string(*c.GoalType))
+	}
+	if c.GoalTarget != nil && *c.GoalTarget != 0 {
+		parts = append(parts, money(*c.GoalTarget))
+	}
+	if c.GoalTargetDate != nil {
+		parts = append(parts, "by "+c.GoalTargetDate.String())
+	}
+	return true, strings.Join(parts, ", ")
 }
 
 func sameDate(a, b *ynab.Date) bool {
@@ -708,8 +780,14 @@ func runRestructure(ctx context.Context, raw categoryAPI, o rsOpts, stdout, stde
 			fmt.Fprintf(stdout, "     %s\n", pr)
 		}
 	}
+	if len(p.warnings) > 0 {
+		fmt.Fprintln(stdout, "\nCheck in YNAB:")
+		for _, w := range p.warnings {
+			fmt.Fprintf(stdout, "     %s\n", w)
+		}
+	}
 	fmt.Fprintln(stdout, "\nNote: the API can't order categories within a group or hide anything; do both in YNAB.")
-	fmt.Fprintf(stdout, "unresolved: %d\nchanges: %d\n", len(p.problems), len(p.changes))
+	fmt.Fprintf(stdout, "unresolved: %d\nwarnings: %d\nchanges: %d\n", len(p.problems), len(p.warnings), len(p.changes))
 	if len(p.problems) > 0 {
 		fmt.Fprintln(stderr, "finbot restructure: the spec doesn't resolve against this plan; nothing was written")
 		return 1
@@ -736,8 +814,7 @@ func runRestructure(ctx context.Context, raw categoryAPI, o rsOpts, stdout, stde
 	for i, ch := range p.changes {
 		if err := ch.do(ctx, api); err != nil {
 			fmt.Fprintf(stdout, "%3d. FAILED %s: %v\n", i+1, ch.text, err)
-			fmt.Fprintf(stdout, "\ndone: %d of %d (1-%d); failed: %d; not done: %d-%d. Run it again: done changes show as no change.\n",
-				i, len(p.changes), i, i+1, i+1, len(p.changes))
+			fmt.Fprintf(stdout, "\n%s\nRun it again: done changes show as no change.\n", rsPartial(i, len(p.changes)))
 			return 1
 		}
 		fmt.Fprintf(stdout, "%3d. done: %s\n", i+1, ch.text)
@@ -746,13 +823,32 @@ func runRestructure(ctx context.Context, raw categoryAPI, o rsOpts, stdout, stde
 	return 0
 }
 
-// rsLedgerLastHour sums the ledger's charges ("<unix> <n>" lines) from the
-// last 60 minutes; no path or no file is 0.
-func rsLedgerLastHour(path string) int {
-	if path == "" {
-		return 0
+// rsPartial summarizes an apply that stopped at change failed+1 (0-based
+// index failed) of n.
+func rsPartial(failed, n int) string {
+	span := func(a, b int) string {
+		switch {
+		case a > b:
+			return "none"
+		case a == b:
+			return fmt.Sprintf("#%d", a)
+		}
+		return fmt.Sprintf("#%d-#%d", a, b)
 	}
-	b, _ := os.ReadFile(path)
+	return fmt.Sprintf("done: %d of %d (%s); failed: #%d; not done: %s", failed, n, span(1, failed), failed+1, span(failed+2, n))
+}
+
+// rsLedgerLastHour sums the ledger's charges ("<unix> <n>" lines) from the
+// last 60 minutes. A file that can't be read is an error, so a mistyped path
+// can't make the estimate optimistic; a missing one is 0 only with create.
+func rsLedgerLastHour(path string, create bool) (int, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) && create {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read --ledger: %w (use --ledger-create for a new ledger)", err)
+	}
 	cut, sum := time.Now().Add(-time.Hour).Unix(), 0
 	for _, l := range strings.Split(string(b), "\n") {
 		var ts int64
@@ -761,7 +857,7 @@ func rsLedgerLastHour(path string) int {
 			sum += n
 		}
 	}
-	return sum
+	return sum, nil
 }
 
 func rsLedgerAppend(path string, n int, stderr io.Writer) {

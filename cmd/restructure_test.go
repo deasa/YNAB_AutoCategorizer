@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -395,5 +397,138 @@ func TestMoney(t *testing.T) {
 		if got := money(ynab.Milliunits(m)); got != want {
 			t.Errorf("money(%d) = %s, want %s", m, got, want)
 		}
+	}
+}
+
+// The live guard can't be bypassed through --plan: an omitted --plan, an
+// upper-case or padded live id each count as live, and YNAB's aliases and
+// anything that isn't a UUID are refused. All before any request.
+func TestRestructureCmd_PlanGuard(t *testing.T) {
+	const liveID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+	t.Setenv("YNAB_ACCESS_TOKEN", "tok-test")
+	t.Setenv("YNAB_BUDGET_ID", liveID)
+	spec := "../deploy/restructure/csp-2026-11.json"
+	for name, tc := range map[string]struct {
+		plan []string
+		want string
+	}{
+		"omitted":    {nil, "--confirm-live"},
+		"upper-case": {[]string{"--plan", strings.ToUpper(liveID)}, "--confirm-live"},
+		"padded":     {[]string{"--plan", " " + liveID + " "}, "--confirm-live"},
+		"last-used":  {[]string{"--plan", "last-used"}, "is a YNAB alias"},
+		"Default":    {[]string{"--plan", "Default"}, "is a YNAB alias"},
+		"not a uuid": {[]string{"--plan", "my-plan"}, "must be a plan id"},
+		"bad ledger": {[]string{"--ledger", t.TempDir() + "/typo"}, "use --ledger-create"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			args := append([]string{"--spec", spec, "--apply", "--used", "0"}, tc.plan...)
+			if code := restructureCmd(args, &out, &errb); code != 1 || !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("exit %d, stderr %q, want %q", code, errb.String(), tc.want)
+			}
+			if out.Len() != 0 {
+				t.Errorf("printed a plan, so it read YNAB: %q", out.String())
+			}
+		})
+	}
+}
+
+func TestRestructure_RunCap(t *testing.T) {
+	f := oldLayout()
+	g := rsGroup{Op: "keep-group", Name: "Fun Money"}
+	for i := 0; i < rsRunCap; i++ { // 100 creates + the read = 101 requests
+		g.Categories = append(g.Categories, rsCat{Op: "create", Name: fmt.Sprintf("New %03d", i)})
+	}
+	code, out := runRS(t, f, rsOpts{spec: rsSpec{Groups: []rsGroup{g}}, apply: true})
+	if code != 1 || f.writes != 0 || !strings.Contains(out, "run cap of 100") {
+		t.Errorf("exit %d, %d writes:\n%s", code, f.writes, out)
+	}
+	g.Categories = g.Categories[:rsRunCap-1] // 99 + 1 = 100: allowed
+	if code, out = runRS(t, f, rsOpts{spec: rsSpec{Groups: []rsGroup{g}}, apply: true}); code != 0 || f.writes != rsRunCap-1 {
+		t.Errorf("at the cap: exit %d, %d writes:\n%s", code, f.writes, out)
+	}
+	// The counting wrapper refuses request 101 even if the plan were wrong.
+	c := &countingAPI{api: f, n: rsRunCap}
+	if _, err := c.GetCategories(context.Background()); !errors.Is(err, errRunCap) {
+		t.Errorf("101st request: %v", err)
+	}
+}
+
+func TestRsLedgerLastHour(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := rsLedgerLastHour(dir+"/missing", false); err == nil {
+		t.Error("missing ledger without create: want error")
+	}
+	if n, err := rsLedgerLastHour(dir+"/missing", true); err != nil || n != 0 {
+		t.Errorf("missing with create: %d %v", n, err)
+	}
+	p := dir + "/ledger"
+	rsLedgerAppend(p, 7, io.Discard)
+	rsLedgerAppend(p, 5, io.Discard)
+	old := fmt.Sprintf("%d 100\n", time.Now().Add(-2*time.Hour).Unix())
+	f, _ := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(old)
+	f.Close()
+	if n, err := rsLedgerLastHour(p, false); err != nil || n != 12 {
+		t.Errorf("got %d %v, want 12", n, err)
+	}
+	if _, err := rsLedgerLastHour(dir, false); err == nil {
+		t.Error("unreadable ledger (a directory): want error")
+	}
+}
+
+func TestRsPartial(t *testing.T) {
+	for _, c := range []struct {
+		failed, n int
+		want      string
+	}{
+		{0, 5, "done: 0 of 5 (none); failed: #1; not done: #2-#5"},
+		{1, 5, "done: 1 of 5 (#1); failed: #2; not done: #3-#5"},
+		{3, 5, "done: 3 of 5 (#1-#3); failed: #4; not done: #5"},
+		{4, 5, "done: 4 of 5 (#1-#4); failed: #5; not done: none"},
+		{0, 1, "done: 0 of 1 (none); failed: #1; not done: none"},
+	} {
+		if got := rsPartial(c.failed, c.n); got != c.want {
+			t.Errorf("rsPartial(%d, %d) = %q, want %q", c.failed, c.n, got, c.want)
+		}
+	}
+}
+
+// A category that should have no target (marked no_target, or a create that
+// already exists) is reported when it has one, and never changed.
+func TestRestructure_NoTarget(t *testing.T) {
+	f := oldLayout()
+	code, out := runRS(t, f, rsOpts{spec: cspSpec(t)})
+	if code != 0 || !strings.Contains(out, `no change: "Retirement" has no target, as the spec wants`) || !strings.Contains(out, "warnings: 0\n") {
+		t.Errorf("no target: exit %d:\n%s", code, out)
+	}
+	f.setTarget("Retirement", 50000, "")
+	nt := ynab.GoalType("NEED")
+	f.cat("Retirement").GoalType = &nt
+	f.setTarget("Talk About", 0, "2020-01-01") // stale date, but marked no_target: no roll
+	spec := cspSpec(t)
+	for gi := range spec.Groups {
+		for ci := range spec.Groups[gi].Categories {
+			if spec.Groups[gi].Categories[ci].Name == "Talk About" {
+				spec.Groups[gi].Categories[ci].NoTarget = true
+			}
+		}
+	}
+	code, out = runRS(t, f, rsOpts{spec: spec})
+	for _, want := range []string{
+		`WARNING: "Retirement" should have no target but has one (type NEED, $50.00); remove it in YNAB by hand`,
+		`"Talk About" should have no target but has one (by 2020-01-01)`,
+		"Check in YNAB:", "warnings: 2\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	if code != 0 || strings.Contains(out, `target date of "Talk About"`) {
+		t.Errorf("exit %d or rolled a no-target date:\n%s", code, out)
+	}
+	if err := validateRsSpec(rsSpec{Groups: []rsGroup{{Op: "keep-group", Name: "A", Categories: []rsCat{
+		{Op: "stay", Name: "x", NoTarget: true, Target: &rsTarget{Milliunits: 1}}}}}}); err == nil {
+		t.Error("no_target with target: want error")
 	}
 }

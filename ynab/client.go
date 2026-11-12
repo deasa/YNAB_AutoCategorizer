@@ -28,6 +28,7 @@ type (
 	SyncState       = ynabapi.SyncState
 	ServerKnowledge = ynabapi.ServerKnowledge
 	Milliunits      = ynabapi.Milliunits
+	GoalType        = ynabapi.GoalType
 	Date            = ynabapi.Date
 )
 
