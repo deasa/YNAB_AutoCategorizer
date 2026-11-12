@@ -31,3 +31,40 @@ agy, black-box, confirms M3's safety properties on the running system before any
 - [ ] go build ./... && go vet ./... && go test ./... green
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Result
+- Status: DONE
+- What changed: `tests/acceptance/M3/`: `driver.go`, `phases.go` and `mcp.go` (sandbox-guarded driver: real store,
+  sync, writer, pipeline, Slack client and Questions; fake socket and model; phases writer, slack, mismatch,
+  transition, crash1/crash2 via real `finbot serve`, mcp, autobin), `sandbox_check.sh` (scopes 2–7 plus the secret
+  grep), `hoid_check.sh` (scope 1: `snapshot` and `check`, read-only), `slack_read.py` (read-only
+  conversations.history), `lib.sh`, `README.md`.
+- Acceptance:
+  - Each scope has a script and a recorded result → pass (`tests/acceptance/M3/sandbox_check.sh`: 102 PASS, 0 FAIL;
+    `tests/acceptance/M3/hoid_check.sh check`: 40 PASS, `HOID RESULT PASS` after Brendan's BA-23 clicks, 10 answered).
+  - Report `../_reviews/M3-acceptance.md` → VERDICT: PASS (3 low findings, 1 info).
+  - `ssh hoid 'docker exec finbot-finbot-1 finbot dry-run-report | tail -1'` → `writes: 0`.
+  - `go build ./... && go vet ./... && go test ./...` → green.
+- Review fixes (rev FIX): findings 1–3, in `e452c41` and the follow-up commit.
+  - Finding 1, rate budget: a shared ledger in `../_m3-acceptance-state/`, a preflight that refuses below 160 left
+    (YNAB sends no rate-limit header, so it's estimated from the ledger plus hoid's last-hour syncs), a 130-request cap
+    across the driver and serve processes, stop on the first 429, and a README warning that the suite shares hoid's
+    token.
+  - Finding 2, hoid DB copy: `.db` and `-wal` copied into a remote temp dir that a trap removes, and used only if
+    `quick_check` passes (the container has no sqlite3, so `.backup` isn't possible). The 17:55 local copy was deleted.
+  - Finding 3: the report and README now say the serve subprocesses are sandbox-only by configuration, not by the
+    guard.
+- Re-run once at 19:20 MST, after the preflight passed (181 left): every phase passed, 104 PASS and 0 failed checks.
+  The script printed `SANDBOX RESULT FAIL` only because the final cleanup hit the old 110 cap, after the reviewer's 15
+  leftover rows cost 17 requests at the start. The cap was raised to 130, and the 10 rows left were deleted with the
+  `cleanup` phase alone. There was no 429.
+- hoid re-check: 45 PASS, 15 answered, open questions refilled to 5, `writes: 0`.
+- Deviations from brief: Slack clicks are injected through a fake Socket Mode connection into the real client
+  (a second real socket would split events with hoid). The MCP check mints the OAuth code in SQLite in place of
+  Google sign-in, as M2 did. The scope 1 before-state came from a DB copy taken at 17:55 MST, before the clicks.
+- Follow-ups for backlog: confirm or change the auto-write of categorized-but-unapproved rows (finding 1); the
+  per-run policy WARN lines (finding 2); the "(would apply)" label in the Slack result text (finding 3). Review finding 4: with classify on and Slack blank, serve logs 8
+  `classify: posting a question failed` ERROR lines per run; skip or warn once when there's no Asker. Optional
+  (Brendan): a separate YNAB token for sandbox tests, so they can't use up hoid's rate budget.
+- Docs follow-ups: CLAUDE.md "Env-gated live tests": add `tests/acceptance/M3/sandbox_check.sh` (sandbox writes)
+  and `hoid_check.sh` (read-only) next to the existing sandbox test line.
