@@ -23,6 +23,8 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | sixth session 2026-11-11 |
+| b-m3-cats | w1:p42 | build (w1) | builder | M3-cats | 2026-11-11 | .env copied (sandbox writes; live dry run only) |
+| b-m3-other | w1:p43 | build (w1) | builder | M3-other | 2026-11-11 | no .env |
 | agy | — | — | reviewer (Antigravity): **out of quota until ~2026-11-15 (BA-21)**; pane w1:p3R gone (found 2026-11-11 sixth sup). Restart in tab control when quota resets |
 
 ## Tasks
