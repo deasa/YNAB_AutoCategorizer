@@ -29,6 +29,7 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
 | M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
+| M3-cats | active | (see Panes) | t/M3-cats | — | dispatched 2026-11-11: `finbot restructure`, sandbox apply, live dry run only |
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
 | M3-6 | merged | — | — | agy PASS (2 low: display-name pick per plan; placeholder test assumes τ null) | merged 2026-11-11 (a7613c6): calibration.json τ=null, auto_eligible=false (BA-20); payee-casing fix |
 | M3-5 | merged | — | — | agy PASS (2 low: lowercased payee in calibration detail → M3-6 note; same-date split edge) | merged 2026-11-11 (08eb5c6): calibrate/ τ fit, finbot calibrate |
@@ -115,6 +116,7 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 | BA-24 | Go-live decision (M3-acceptance finding 1): rows YNAB already categorized but **unapproved** (likely payee memory; 3 of the first 5 hoid questions) are eligible, so in `auto` finbot could overwrite that category. Confirm that is intended, or have finbot ask instead of auto-writing on those rows | M3-golive | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
+- 2026-11-11 (Brendan): restructure the active plan's categories into a conscious-spending layout **now**, before the dry-run evidence and calibration, instead of at M4. Layout approved in the Claude doc "finbot: proposed CSP category layout" (https://claude.ai/artifact/VtKPqaqB5sZ8atKZcjqA6j). New YNAB write kind: category/group create, rename, move and target, via a one-off `finbot restructure` command (M3-cats). Live `--apply` only by sup after Brendan approves the printed dry-run list. No transactions are recategorized.
 - 2026-10-27: Build workflow approved by Brendan: Opus 5.5 builders, agy review/testing, herdr orchestration, 40% context cap, supervisor restarted from these docs. sup may commit to main.
 - 2026-10-27: sup may push origin main and deploy to hoid at its discretion (Brendan).
 - 2026-10-27: sup must NOT self-restart; Brendan restarts sup by hand from README.md's bootstrap prompt.
