@@ -57,13 +57,21 @@ const (
 	brendanSlack   = "U0M3BRENDAN"
 	wifeSlack      = "U0M3WIFE"
 	strangerSlack  = "U0M3STRANGER"
-	maxRequests    = 400
+	// The suite shares YNAB_ACCESS_TOKEN (200 requests per rolling hour) with hoid.
+	suiteCap       = 110 // whole suite, every process; a full run uses about 95
+	minRemaining   = 160 // preflight refuses to start below this
+	floorRemaining = 40  // the guard stops every request below this
+	serveAllowance = 5   // charged per `finbot serve` run (one delta sync; not proxied)
+	tokenLimit     = 200 // YNAB's per-token hourly limit; YNAB sends no X-Rate-Limit header
+	otherMargin    = 10  // unledgered use of the token (other tools) assumed per hour
 )
 
 var (
-	uuidRE = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
-	fails  int
-	scrubs []string
+	hourLedgerPath string
+	hoidUsed       int
+	uuidRE         = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+	fails          int
+	scrubs         []string
 )
 
 func scrub(v any) string {
@@ -93,12 +101,74 @@ func fatal(what string, err error) {
 
 // ---- YNAB sandbox guard -------------------------------------------------
 
+// guard admits only sandbox requests, and protects the YNAB rate budget this
+// suite shares with hoid (same token, 200 requests per rolling hour):
+//   - a suite-wide cap: every driver process adds to one ledger file in -work,
+//     and each `finbot serve` run is charged serveAllowance up front;
+//   - a floor: once YNAB's X-Rate-Limit header (or a 429) shows fewer than
+//     floorRemaining left for the token, every later request is refused.
 type guard struct {
 	base          http.RoundTripper
 	sandbox, live string
+	ledger        string // this suite run's total, in -work
+	hourLedger    string // "<unix> <n>" per charge, shared by every M3 run under the .wt dir
 	mu            gosync.Mutex
-	n             int
+	n             int // this process
 	patches       int
+	used, limit   int // from the last X-Rate-Limit header; limit 0 = unknown
+	tripped       string
+}
+
+func (g *guard) total() int {
+	b, _ := os.ReadFile(g.ledger)
+	var t int
+	fmt.Sscan(strings.TrimSpace(string(b)), &t)
+	return t
+}
+
+// charge adds n requests to the suite ledger; it fails past suiteCap.
+func (g *guard) charge(n int) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.chargeLocked(n)
+}
+
+func (g *guard) chargeLocked(n int) error {
+	if g.tripped != "" {
+		return errors.New("sandbox guard: stopped to protect the shared rate budget: " + g.tripped)
+	}
+	t := g.total() + n
+	if t > suiteCap {
+		return fmt.Errorf("sandbox guard: suite request cap %d reached", suiteCap)
+	}
+	if err := os.WriteFile(g.ledger, []byte(fmt.Sprint(t)), 0o600); err != nil {
+		return err
+	}
+	return appendLine(g.hourLedger, fmt.Sprintf("%d %d", time.Now().Unix(), n))
+}
+
+func appendLine(path, line string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = fmt.Fprintln(f, line)
+	return err
+}
+
+// lastHour sums the hour ledger's charges made in the last 60 minutes.
+func lastHour(path string) int {
+	b, _ := os.ReadFile(path)
+	cut, sum := time.Now().Add(-time.Hour).Unix(), 0
+	for _, l := range strings.Split(string(b), "\n") {
+		var ts int64
+		var n int
+		if _, err := fmt.Sscan(l, &ts, &n); err == nil && ts > cut {
+			sum += n
+		}
+	}
+	return sum
 }
 
 func (g *guard) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -110,16 +180,33 @@ func (g *guard) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, errors.New("sandbox guard: request is not for the sandbox plan")
 	}
 	g.mu.Lock()
+	if err := g.chargeLocked(1); err != nil {
+		g.mu.Unlock()
+		return nil, err
+	}
 	g.n++
 	if r.Method == http.MethodPatch {
 		g.patches++
 	}
-	n := g.n
 	g.mu.Unlock()
-	if n > maxRequests {
-		return nil, fmt.Errorf("sandbox guard: more than %d requests", maxRequests)
+	resp, err := g.base.RoundTrip(r)
+	if resp != nil {
+		g.mu.Lock()
+		var u, l int
+		if _, e := fmt.Sscanf(resp.Header.Get("X-Rate-Limit"), "%d/%d", &u, &l); e == nil && l > 0 {
+			g.used, g.limit = u, l
+			if l-u < floorRemaining {
+				g.tripped = fmt.Sprintf("%d of %d left", l-u, l)
+			}
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			g.tripped = "HTTP 429"
+			// Record the token as exhausted for the next hour.
+			_ = appendLine(g.hourLedger, fmt.Sprintf("%d %d 429", time.Now().Unix(), tokenLimit))
+		}
+		g.mu.Unlock()
 	}
-	return g.base.RoundTrip(r)
+	return resp, err
 }
 
 func (g *guard) patchCount() int { g.mu.Lock(); defer g.mu.Unlock(); return g.patches }
@@ -285,7 +372,7 @@ func newHarness(ctx context.Context, work string) *harness {
 		fatal("env", errors.New("sandbox plan equals the live plan: refusing"))
 	}
 	scrubs = []string{tok, sb, live, os.Getenv("JEV_API_KEY"), os.Getenv("SLACK_BOT_TOKEN"), os.Getenv("SLACK_APP_TOKEN")}
-	g := &guard{base: http.DefaultTransport, sandbox: sb, live: live}
+	g := &guard{base: http.DefaultTransport, sandbox: sb, live: live, ledger: filepath.Join(work, "requests.count"), hourLedger: hourLedgerPath}
 	logf, err := os.OpenFile(filepath.Join(work, "driver-app.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		fatal("open log", err)
@@ -572,6 +659,27 @@ func (h *harness) cleanup() {
 	fmt.Printf("INFO cleanup: deleted %d fixture transactions\n", n)
 }
 
+// preflight refuses unless the shared token has at least minRemaining requests
+// left this hour by our accounting: YNAB sends no rate header, so the estimate
+// is this hour's ledger (every M3 run, plus any 429 recorded as the whole limit)
+// + hoid's own requests (from its logs) + a margin for other tools. It then
+// makes one cheap GET, which must not be a 429.
+func (h *harness) preflight() {
+	if hoidUsed < 0 {
+		check(false, "preflight: -hoid-used is required")
+		return
+	}
+	suite := lastHour(hourLedgerPath)
+	left := tokenLimit - suite - hoidUsed - otherMargin
+	check(left >= minRemaining, "preflight: estimated %d of %d left this hour (M3 ledger %d, hoid %d, margin %d; need >= %d)",
+		left, tokenLimit, suite, hoidUsed, otherMargin, minRemaining)
+	if left < minRemaining {
+		return
+	}
+	_, _, err := h.fx.Accounts.List(h.ctx)
+	check(err == nil, "preflight GET (%v)", err)
+}
+
 func today() string               { return time.Now().Format("2006-01-02") }
 func daysAgo(n int) string        { return time.Now().AddDate(0, 0, -n).Format("2006-01-02") }
 func catOK(got, want string) bool { return got != "" && got == want }
@@ -587,8 +695,10 @@ func main() {
 	phase := flag.String("phase", "", "phase to run")
 	work := flag.String("work", "", "work directory (holds the DB between phases)")
 	flag.StringVar(&finbotBin, "bin", "", "finbot binary (crash2, autobin, mcp)")
+	flag.StringVar(&hourLedgerPath, "ledger", "", "shared hourly YNAB request ledger (required)")
+	flag.IntVar(&hoidUsed, "hoid-used", -1, "preflight: hoid's YNAB requests in the last hour (from its logs)")
 	flag.Parse()
-	if *phase == "" || *work == "" {
+	if *phase == "" || *work == "" || hourLedgerPath == "" {
 		fmt.Fprintln(os.Stderr, "usage: M3 -phase <phase> -work <dir>")
 		os.Exit(2)
 	}
@@ -596,6 +706,8 @@ func main() {
 	defer cancel()
 	h := newHarness(ctx, *work)
 	switch *phase {
+	case "preflight":
+		h.preflight()
 	case "cleanup":
 		h.cleanup()
 	case "writer":
@@ -618,7 +730,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "unknown phase")
 		os.Exit(2)
 	}
-	fmt.Printf("INFO %s: %d YNAB requests (%d PATCH), all to the sandbox plan\n", *phase, h.g.n, h.g.patchCount())
+	fmt.Printf("INFO %s: %d YNAB requests (%d PATCH) from the driver, all through the sandbox guard; suite ledger %d/%d\n",
+		*phase, h.g.n, h.g.patchCount(), h.g.total(), suiteCap)
 	if fails > 0 {
 		fmt.Printf("RESULT %s FAIL (%d)\n", *phase, fails)
 		os.Exit(1)

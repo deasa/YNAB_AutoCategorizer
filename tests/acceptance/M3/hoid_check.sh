@@ -21,8 +21,20 @@ h() { printf '%s' "$1" | shasum -a 256 | cut -c1-16; }
 
 mkdir -p "$T/db"
 if [ "$mode" = snapshot ] && [ -n "${2:-}" ]; then cp "$2"/finbot.db* "$T/db/" || exit 1; echo "INFO snapshot from an earlier DB copy"; else
-ssh hoid 'set -e; umask 077; d=$(mktemp -d); for f in finbot.db finbot.db-wal finbot.db-shm; do docker cp -q finbot-finbot-1:/data/$f $d/$f; done; tar -C $d -cf - .; rm -rf $d' \
-  | tar -C "$T/db" -xf - || { echo "FAIL copy DB from hoid"; exit 1; }
+# One copy of finbot.db + finbot.db-wal (the -shm is a cache SQLite rebuilds). The container has no
+# sqlite3, so the copy isn't atomic: it is accepted only if PRAGMA quick_check is ok, else retried.
+# The remote temp dir (it holds the OAuth HMAC secret) is removed by a trap on every exit path.
+ok=0
+for try in 1 2 3; do
+  rm -f "$T"/db/finbot.db*
+  ssh hoid 'umask 077; d=$(mktemp -d) || exit 1; trap "rm -rf \"$d\"" EXIT
+    docker cp -q finbot-finbot-1:/data/finbot.db-wal "$d/finbot.db-wal" &&
+    docker cp -q finbot-finbot-1:/data/finbot.db "$d/finbot.db" && tar -C "$d" -cf - .' \
+    | tar -C "$T/db" -xf - 2>/dev/null
+  [ "$(sqlite3 -readonly "$T/db/finbot.db" 'PRAGMA quick_check' 2>/dev/null)" = ok ] && { ok=1; break; }
+  echo "INFO DB copy $try failed quick_check; retrying"; sleep 2
+done
+[ "$ok" = 1 ] || { echo "FAIL no consistent DB copy from hoid after 3 tries"; exit 1; }
 fi
 
 # --- invariants (always) ---

@@ -54,6 +54,9 @@ func (h *harness) startServe(name string, extra map[string]string, wait time.Dur
 	if finbotBin == "" {
 		fatal("serve", errors.New("-bin is required for this phase"))
 	}
+	if err := h.g.charge(serveAllowance); err != nil {
+		fatal("serve "+name, err)
+	}
 	empty := filepath.Join(h.work, "cwd")
 	_ = os.MkdirAll(empty, 0o700)
 	sp := &serveProc{httpAddr: fmt.Sprintf("127.0.0.1:%d", freePort())}
