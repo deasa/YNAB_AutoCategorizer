@@ -6,12 +6,12 @@ secrets, UUIDs, tokens, emails or Slack user ids, and every output file is grepp
 
 > **Rate budget: the sandbox suite shares hoid's YNAB token.** `YNAB_ACCESS_TOKEN` is the token hoid's live service
 > syncs with, and YNAB allows 200 requests per token per rolling hour. YNAB sends no header saying how many are left.
-> A full `sandbox_check.sh` run makes about 95 requests, so **never run it twice within an hour**: a 429 starves
+> A full `sandbox_check.sh` run makes about 105 requests (about 120 if an earlier run left fixtures to delete), so **never run it twice within an hour**: a 429 starves
 > hoid's syncs (stale data, `/healthz` 503, alerts). Three safeguards:
 > - **Preflight:** the run starts only if at least 160 requests are left this hour, by its own estimate. The estimate
 >   counts every M3 run in `../_m3-acceptance-state/ynab-ledger` (a 429 counts as the whole 200), hoid's own syncs and
 >   imports over the last hour from its logs (doubled), and a margin of 10. If not, it exits 4 and runs nothing.
-> - **Cap:** the guard caps the whole run at 110 requests. That cap covers every driver process; each `finbot serve`
+> - **Cap:** the guard caps the whole run at 130 requests. That cap covers every driver process; each `finbot serve`
 >   run is charged 5 up front, because serve's requests don't go through the guard.
 > - **Stop on 429:** the first 429 stops every later request and is recorded in the ledger.
 >

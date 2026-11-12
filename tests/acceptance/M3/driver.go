@@ -58,7 +58,7 @@ const (
 	wifeSlack      = "U0M3WIFE"
 	strangerSlack  = "U0M3STRANGER"
 	// The suite shares YNAB_ACCESS_TOKEN (200 requests per rolling hour) with hoid.
-	suiteCap       = 110 // whole suite, every process; a full run uses about 95
+	suiteCap       = 130 // whole suite, every process; a full run uses about 105 (about 120 if an earlier run left fixtures)
 	minRemaining   = 160 // preflight refuses to start below this
 	floorRemaining = 40  // the guard stops every request below this
 	serveAllowance = 5   // charged per `finbot serve` run (one delta sync; not proxied)

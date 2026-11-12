@@ -6,10 +6,10 @@
 #
 # RATE BUDGET: this uses YNAB_ACCESS_TOKEN, the same token hoid's live service syncs with (YNAB allows
 # 200 requests per token per rolling hour, and sends no header saying how many are left). A run makes
-# about 95 requests. Never run it twice within an hour. A preflight refuses to start (exit 4) unless,
+# about 105 requests (about 120 if an earlier run left fixtures). Never run it twice within an hour. A preflight refuses to start (exit 4) unless,
 # counting every M3 run in the shared ledger ($STATE/ynab-ledger, a 429 counts as the whole limit),
 # hoid's last-hour syncs/imports from its logs and a margin, at least 160 are left. The guard caps the
-# whole run at 110 and stops at the first 429.
+# whole run at 130 and stops at the first 429.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 . tests/acceptance/M3/lib.sh
