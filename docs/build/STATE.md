@@ -24,8 +24,6 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | sixth session 2026-11-11 |
-| b-m3-policy | w1:p48 | build (w1) | builder | M3-policy | 2026-11-12 | no .env |
-| b-m3-cats | w1:p42 | build (w1) | builder | M3-cats | 2026-11-11 | .env copied (sandbox writes; live dry run only) |
 | agy | — | — | reviewer (Antigravity): **out of quota until ~2026-11-15 (BA-21)**; pane w1:p3R gone (found 2026-11-11 sixth sup). Restart in tab control when quota resets |
 
 ## Tasks
@@ -33,8 +31,8 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 |---|---|---|---|---|---|
 | M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
 | M3-other | merged + deployed | — | — | rev (Claude) PASS r2 (r1 FIX: stored options not re-checked at answer time) | merged 2026-11-11 (16bc11a), deployed 21:30 MST: other… on every question (classify.Eligible categories), forgiving thread replies, hint line. Docs follow-up: CLAUDE.md slack/ bullet (see brief Result) |
-| M3-policy | review | w1:p48 | t/M3-policy | rev in progress | dispatched 2026-11-12: policy.json for the new layout; deploy after the live restructure |
-| M3-cats | merged (apply pending) | w1:p42 | t/M3-cats (kept for spec edit) | rev (Claude) PASS r2 (r1 FIX: live guard bypass via plan alias; cap test; ledger errors; CLAUDE.md Safety updated in-branch, sup exception) | merged 2026-11-11 (33fa22e). Live dry run: 45 changes, 0 unresolved. Waiting on Brendan: placement of 7 unlisted visible categories → builder edits spec → Brendan approves printed list → sup runs --apply --confirm-live |
+| M3-policy | merged (deploy after live restructure) | — | — | rev (Claude) PASS (2 low) | merged 2026-11-12 (6890aef): policy v2, set-asides Birthday/Holiday/Trip/Giving/Retirement/Investment/Payoff, descriptions for the new everyday categories. Docs follow-up: CLAUDE.md classify/ policy wording |
+| M3-cats | merged (apply pending) | — | — | rev (Claude) PASS r2 (r1 FIX: live guard bypass via plan alias; cap test; ledger errors; CLAUDE.md Safety updated in-branch, sup exception) | merged 2026-11-11 (33fa22e). Live dry run: 45 changes, 0 unresolved. Spec final 2026-11-12 (8f79e04): 50 changes. Waiting on Brendan "go" → sup runs --apply --confirm-live |
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
 | M3-6 | merged | — | — | agy PASS (2 low: display-name pick per plan; placeholder test assumes τ null) | merged 2026-11-11 (a7613c6): calibration.json τ=null, auto_eligible=false (BA-20); payee-casing fix |
 | M3-5 | merged | — | — | agy PASS (2 low: lowercased payee in calibration detail → M3-6 note; same-date split edge) | merged 2026-11-11 (08eb5c6): calibrate/ τ fit, finbot calibrate |
