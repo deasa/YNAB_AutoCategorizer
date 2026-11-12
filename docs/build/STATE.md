@@ -25,7 +25,6 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | sixth session 2026-11-11 |
 | agy | — | — | reviewer (Antigravity): **out of quota until ~2026-11-15 (BA-21)**; pane w1:p3R gone (found 2026-11-11 sixth sup). Restart in tab control when quota resets |
 | b-m3-acceptance | w1:p3Y | build (w1:t1E) | builder | M3-acceptance | 2026-11-11 | DONE, kept open until review passes |
-| rev | w1:p3Z | control (w1:t7) | reviewer (Claude stand-in for agy, BA-21) | M3-acceptance | 2026-11-11 | review → _reviews/M3-acceptance-rev.md |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
