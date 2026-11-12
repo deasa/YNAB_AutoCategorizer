@@ -104,7 +104,11 @@ func (q *Questions) Ask(ctx context.Context, id int64) error {
 	if !ok {
 		return errors.New("slack: ask: transaction not in mirror")
 	}
-	text, blocks := questionMessage(qu, txn, false)
+	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
+	if err != nil {
+		return err
+	}
+	text, blocks := questionMessage(liveOptions(qu, cats), txn, nil)
 	ts, err := q.msg.PostBlocks(ctx, "", text, blocks)
 	if err != nil {
 		return err
@@ -123,7 +127,15 @@ func (q *Questions) HandleClick(ctx context.Context, k Click) {
 		q.log.Debug("slack click on a non-question message")
 		return
 	}
+	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
+	if err != nil {
+		q.log.Error("slack click: category lookup failed", "err", err)
+		return
+	}
+	qu = liveOptions(qu, cats)
 	switch {
+	case k.ActionID == actionSelect && strings.HasPrefix(k.Value, strconv.FormatInt(qu.ID, 10)+":"+choiceCat):
+		q.answerCatKey(ctx, qu, cats, strings.TrimPrefix(k.Value, strconv.FormatInt(qu.ID, 10)+":"+choiceCat), k.User)
 	case strings.HasPrefix(k.ActionID, actionPick), k.ActionID == actionSelect:
 		idx, ok := parseChoice(k.Value, qu)
 		if !ok {
@@ -144,7 +156,11 @@ func (q *Questions) HandleClick(ctx context.Context, k Click) {
 			q.log.Error("slack other: transaction lookup failed", "found", ok, "err", err)
 			return
 		}
-		text, blocks := questionMessage(qu, txn, true)
+		groups, dropped := selectGroups(qu, cats)
+		if dropped > 0 {
+			q.log.Warn("slack other: select truncated to the Block Kit limit", "dropped", dropped, "limit", maxSelect)
+		}
+		text, blocks := questionMessage(qu, txn, groups)
 		if err := q.msg.UpdateBlocks(ctx, *qu.MessageTS, text, blocks); err != nil {
 			q.log.Error("slack other: update failed", "err", err)
 		}
@@ -167,8 +183,9 @@ func (q *Questions) HandleClick(ctx context.Context, k Click) {
 	}
 }
 
-// HandleReply handles a thread reply under a question: an exact category name
-// answers it, anything else gets a one-line pointer to the buttons.
+// HandleReply handles a thread reply under a question: a reply that names one
+// answerable category (loosely, see matchCategory) answers it; anything else gets
+// the closest names and a pointer to "other…", and leaves it open.
 func (q *Questions) HandleReply(ctx context.Context, m Message) {
 	if m.ThreadTS == "" {
 		return
@@ -181,15 +198,21 @@ func (q *Questions) HandleReply(ctx context.Context, m Message) {
 	if !ok || qu.Status != store.QuestionOpen {
 		return
 	}
-	id, name, ok, err := q.matchCategory(ctx, qu, m.Text)
+	id, name, sugg, err := q.matchCategory(ctx, qu, m.Text)
 	if err != nil {
 		q.log.Error("slack reply: category lookup failed", "err", err)
 		return
 	}
-	if !ok {
-		_, err := q.msg.PostBlocks(ctx, m.ThreadTS,
-			"I only understand an exact category name here. Use the buttons above.", nil)
-		if err != nil {
+	if id == "" {
+		q.log.Info("slack reply: no single category matched", "suggestions", len(sugg))
+		text := "I couldn't tell which category you meant."
+		if len(sugg) > 0 {
+			text = "Did you mean " + orList(sugg) + "?"
+		}
+		text += "\nReply with one of these, or use other…"
+		blocks := []slackapi.Block{slackapi.NewSectionBlock(
+			slackapi.NewTextBlockObject(slackapi.PlainTextType, text, false, false), nil, nil)}
+		if _, err := q.msg.PostBlocks(ctx, m.ThreadTS, text, blocks); err != nil {
 			q.log.Error("slack reply: pointer failed", "err", err)
 		}
 		return
@@ -197,32 +220,68 @@ func (q *Questions) HandleReply(ctx context.Context, m Message) {
 	q.answer(ctx, qu, id, name, m.User)
 }
 
-// matchCategory finds the one category named exactly text (ignoring case and
-// surrounding space): the question's candidates first, then the plan's
-// visible categories. Two categories with that name match neither.
-func (q *Questions) matchCategory(ctx context.Context, qu store.Question, text string) (id, name string, ok bool, err error) {
+// matchCategory finds the one category a reply names, among the question's
+// options and the plan's answerable categories. In order, stopping at the first
+// that gives exactly one: the exact name (ignoring case and surrounding
+// space; options first); the name folded (case, punctuation, "&"/"and" and a
+// "Group - " prefix ignored); a reply containing exactly one name as whole
+// words; a unique prefix of at least 4 characters. With no single match, id is
+// empty and sugg holds up to 3 close names.
+func (q *Questions) matchCategory(ctx context.Context, qu store.Question, text string) (id, name string, sugg []string, err error) {
 	want := strings.TrimSpace(unescapeSlack(text))
 	if want == "" {
-		return "", "", false, nil
-	}
-	for _, o := range qu.Options {
-		if o.CategoryID != "" && (strings.EqualFold(o.CategoryName, want) || strings.EqualFold(o.Label, want)) {
-			return o.CategoryID, optionName(o), true, nil
-		}
+		return "", "", nil, nil
 	}
 	cats, err := q.st.CategoriesWithGroups(ctx, qu.PlanID)
 	if err != nil {
-		return "", "", false, err
+		return "", "", nil, err
+	}
+	qu = liveOptions(qu, cats)
+	for _, o := range qu.Options {
+		if o.CategoryID != "" && (strings.EqualFold(o.CategoryName, want) || strings.EqualFold(o.Label, want)) {
+			return o.CategoryID, optionName(o), nil, nil
+		}
 	}
 	n := 0
 	for _, c := range cats {
-		if c.Deleted || c.Hidden || c.GroupDeleted || c.GroupHidden || !strings.EqualFold(c.Name, want) {
+		if !answerable(c) || !strings.EqualFold(c.Name, want) {
 			continue
 		}
 		id, name = c.ID, c.Name
 		n++
 	}
-	return id, name, n == 1, nil
+	if n == 1 {
+		return id, name, nil, nil
+	}
+	es := entries(qu, cats)
+	hit, several := matchStages(es, want)
+	if hit != nil {
+		return hit.id, hit.name, nil, nil
+	}
+	return "", "", suggest(es, want, several), nil
+}
+
+// answerCatKey answers qu with the plan category a select option's key names,
+// if it is still a answerable category of qu's plan.
+func (q *Questions) answerCatKey(ctx context.Context, qu store.Question, cats []store.CategoryWithGroup, key string, user store.User) {
+	c, ok := resolveCatKey(cats, key)
+	if !ok {
+		q.log.Warn("slack click rejected: select names no answerable category", "action", actionSelect)
+		return
+	}
+	q.answer(ctx, qu, c.ID, c.Name, user)
+}
+
+// orList joins names as "A", "A or B", "A, B or C", each quoted.
+func orList(names []string) string {
+	qs := make([]string, len(names))
+	for i, n := range names {
+		qs[i] = strconv.Quote(n)
+	}
+	if len(qs) == 1 {
+		return qs[0]
+	}
+	return strings.Join(qs[:len(qs)-1], ", ") + " or " + qs[len(qs)-1]
 }
 
 // answer claims qu for user with categoryID and, if this caller won, acts on it
@@ -397,47 +456,40 @@ func who(u store.User) string {
 	return u.Label
 }
 
-// questionMessage renders an open question. withSelect swaps the "other…"
-// button for a select of every candidate.
-func questionMessage(qu store.Question, txn store.TransactionDetail, withSelect bool) (string, []slackapi.Block) {
+// hintText is the context line on every open question.
+const hintText = "Not listed? Use other…, or reply in the thread with the category name."
+
+// questionMessage renders an open question. With groups (from selectGroups) it
+// shows a select of every answerable category in place of the "other…" button.
+func questionMessage(qu store.Question, txn store.TransactionDetail, groups []*slackapi.OptionGroupBlockObject) (string, []slackapi.Block) {
 	prompt := "Which category is this?"
 	if qu.Kind == store.QuestionDryRunCheck {
 		prompt = "Dry-run check: which category is right? Answering won't change YNAB."
 	}
-	blocks := []slackapi.Block{
-		slackapi.NewSectionBlock(slackapi.NewTextBlockObject(slackapi.PlainTextType, prompt, false, false), nil, nil),
+	plain := func(s string) *slackapi.TextBlockObject {
+		return slackapi.NewTextBlockObject(slackapi.PlainTextType, s, false, false)
 	}
+	blocks := []slackapi.Block{slackapi.NewSectionBlock(plain(prompt), nil, nil)}
 	blocks = append(blocks, detailBlocks(txn)...)
 
 	qid := strconv.FormatInt(qu.ID, 10)
 	var elems []slackapi.BlockElement
-	var all []*slackapi.OptionBlockObject
 	for i, o := range qu.Options {
-		if o.CategoryID == "" {
+		if o.CategoryID == "" || len(elems) == topN {
 			continue
 		}
-		val := qid + ":" + strconv.Itoa(i)
-		if len(elems) < topN {
-			elems = append(elems, slackapi.NewButtonBlockElement(actionPick+strconv.Itoa(len(elems)), val,
-				slackapi.NewTextBlockObject(slackapi.PlainTextType, clip(optionName(o)), false, false)))
-		}
-		if len(all) < maxSelect {
-			all = append(all, slackapi.NewOptionBlockObject(val,
-				slackapi.NewTextBlockObject(slackapi.PlainTextType, clip(optionName(o)), false, false), nil))
-		}
+		elems = append(elems, slackapi.NewButtonBlockElement(actionPick+strconv.Itoa(len(elems)),
+			qid+":"+strconv.Itoa(i), plain(clip(optionName(o)))))
 	}
-	if len(all) > len(elems) {
-		if withSelect {
-			elems = append(elems, slackapi.NewOptionsSelectBlockElement(slackapi.OptTypeStatic,
-				slackapi.NewTextBlockObject(slackapi.PlainTextType, "Pick a category", false, false), actionSelect, all...))
-		} else {
-			elems = append(elems, slackapi.NewButtonBlockElement(actionOther, qid,
-				slackapi.NewTextBlockObject(slackapi.PlainTextType, "other…", false, false)))
-		}
+	if len(groups) > 0 {
+		elems = append(elems, slackapi.NewOptionsGroupSelectBlockElement(slackapi.OptTypeStatic,
+			plain("Pick a category"), actionSelect, groups...))
+	} else {
+		elems = append(elems, slackapi.NewButtonBlockElement(actionOther, qid, plain("other…")))
 	}
-	elems = append(elems, slackapi.NewButtonBlockElement(actionSplit, qid,
-		slackapi.NewTextBlockObject(slackapi.PlainTextType, "split", false, false)))
-	blocks = append(blocks, slackapi.NewActionBlock("q_actions", elems...))
+	elems = append(elems, slackapi.NewButtonBlockElement(actionSplit, qid, plain("split")))
+	blocks = append(blocks, slackapi.NewActionBlock("q_actions", elems...),
+		slackapi.NewContextBlock("q_hint", plain(hintText)))
 
 	return "finbot: " + prompt, blocks
 }

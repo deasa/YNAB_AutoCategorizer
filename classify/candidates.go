@@ -55,8 +55,7 @@ func Candidates(cats []store.CategoryWithGroup, p Policy) CandidateSet {
 			usedKeyword[kw] = true
 			set.SetAsides = append(set.SetAsides, c.Name)
 		}
-		if setAside || c.Hidden || c.GroupHidden || c.GroupDeleted || isInternal(c) ||
-			fold(c.GroupName) == fold(creditCardPaymentsGroup) {
+		if setAside || !Eligible(c) {
 			continue
 		}
 		desc, ok := p.description(c.Name)
@@ -88,6 +87,15 @@ func Candidates(cats []store.CategoryWithGroup, p Policy) CandidateSet {
 		}
 	}
 	return set
+}
+
+// Eligible reports whether a person or the classifier may answer with c: not
+// deleted or hidden, its group neither, not one of YNAB's internal categories,
+// and not in the Credit Card Payments group. Set-asides are eligible here;
+// Candidates drops them separately.
+func Eligible(c store.CategoryWithGroup) bool {
+	return !c.Deleted && !c.Hidden && !c.GroupHidden && !c.GroupDeleted && !isInternal(c) &&
+		fold(c.GroupName) != fold(creditCardPaymentsGroup)
 }
 
 func isInternal(c store.CategoryWithGroup) bool {
