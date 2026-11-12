@@ -7,7 +7,7 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 - 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
 - 2026-11-11 (Brendan, BA-21): while agy is out of quota, reviews use a fresh Claude Opus 5.5 pane (`rev`) following REVIEWER.md; switch back to agy when its quota resets (~2026-11-15).
-- Next actions: merged 25 of 28 (main). M3-17 deployed in dry_run 2026-11-11 17:39 MST. **M3-acceptance active** (b-m3-acceptance, dispatched 2026-11-11 by sixth sup; reviews via fresh Claude `rev` pane until agy resets ~2026-11-15, BA-21). Then M3-dryrun (~2026-11-18), M3-golive (Brendan; BA-20 first). See handoff sup-2026-11-11-1800.md.
+- Next actions: merged 26 of 28 (main). M3-17 deployed in dry_run 2026-11-11 17:39 MST. **M3-acceptance merged** 2026-11-11 (c15ae6e). Next: M3-dryrun ~2026-11-18 (reviews via fresh Claude `rev` pane until agy resets, reviews via fresh Claude `rev` pane until agy resets ~2026-11-15, BA-21). Then M3-dryrun (~2026-11-18), M3-golive (Brendan; BA-20 first). See handoff sup-2026-11-11-1800.md.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -24,12 +24,11 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | sixth session 2026-11-11 |
 | agy | — | — | reviewer (Antigravity): **out of quota until ~2026-11-15 (BA-21)**; pane w1:p3R gone (found 2026-11-11 sixth sup). Restart in tab control when quota resets |
-| b-m3-acceptance | w1:p3Y | build (w1:t1E) | builder | M3-acceptance | 2026-11-11 | DONE, kept open until review passes |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-acceptance | review | w1:p3Y | t/M3-acceptance | rev r2 in progress (w1:p30); rev r1 FIX (med: suite shares hoid token rate budget, rev re-run got 429; low: non-atomic hoid DB copy; serve not behind guard; ERROR spam with no Asker) | DONE 2026-11-11 (bb5f7ea): sandbox_check 102 PASS, hoid_check 40 PASS, dry-run-report writes: 0; own report _reviews/M3-acceptance.md PASS (3 low, 1 info). Lows → BA-24 (unapproved-but-categorized rows), backlog (WARN per run, "(would apply)" label). Docs follow-up: CLAUDE.md live-tests lines |
+| M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
 | M3-6 | merged | — | — | agy PASS (2 low: display-name pick per plan; placeholder test assumes τ null) | merged 2026-11-11 (a7613c6): calibration.json τ=null, auto_eligible=false (BA-20); payee-casing fix |
 | M3-5 | merged | — | — | agy PASS (2 low: lowercased payee in calibration detail → M3-6 note; same-date split edge) | merged 2026-11-11 (08eb5c6): calibrate/ τ fit, finbot calibrate |
