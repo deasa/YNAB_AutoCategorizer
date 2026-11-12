@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 
 	ynabapi "pkg.venceslau.dev/ynab"
 )
@@ -339,3 +340,9 @@ func (c *Client) UpdateCategory(ctx context.Context, categoryID string, e Catego
 	}
 	return cat, nil
 }
+
+// NewDate returns the calendar date y-m-d.
+func NewDate(y int, m time.Month, d int) Date { return ynabapi.NewDate(y, m, d) }
+
+// ParseDate parses a YYYY-MM-DD date.
+func ParseDate(s string) (Date, error) { return ynabapi.ParseDate(s) }

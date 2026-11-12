@@ -1,0 +1,275 @@
+{
+  "groups": [
+    {
+      "op": "create-group",
+      "name": "Giving",
+      "categories": [
+        {
+          "op": "move",
+          "name": "Church - Tithing",
+          "from_group": "Monthly Savings Funds"
+        },
+        {
+          "op": "move",
+          "name": "Church - Fast Offerings",
+          "from_group": "Monthly Savings Funds"
+        },
+        {
+          "op": "move",
+          "name": "Giving - Generosity",
+          "from_group": "Monthly Savings Funds"
+        }
+      ]
+    },
+    {
+      "op": "rename-group",
+      "name": "Fixed Costs",
+      "from": "Mortgage & Utilities",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Home - Mortgage"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Highland City Utilities"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Electric"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Natural Gas"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Internet"
+        },
+        {
+          "op": "move",
+          "name": "Home - Cell Phone",
+          "from_group": "Monthly Savings Funds"
+        },
+        {
+          "op": "move",
+          "name": "Home - Insurance",
+          "from_group": "Monthly Savings Funds"
+        },
+        {
+          "op": "move",
+          "name": "Auto - Insurance",
+          "from_group": "Monthly Savings Funds"
+        },
+        {
+          "op": "move",
+          "name": "Home - Kids Classes & Education",
+          "from_group": "Monthly Variable Expenses"
+        },
+        {
+          "op": "rename+move",
+          "name": "Home - Lawn Service",
+          "from": "Subs - Lawn",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - Spotify",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - Disney+",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - Amazon Prime",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - YNAB",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - Canva",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - Google Domains Website",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "move",
+          "name": "Subs - TrainerRoad",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "rename+move",
+          "name": "Subs - Google One",
+          "from": "Google One",
+          "from_group": "Subscriptions"
+        },
+        {
+          "op": "create",
+          "name": "Groceries"
+        },
+        {
+          "op": "create",
+          "name": "Gas & Transport"
+        },
+        {
+          "op": "create",
+          "name": "Household & Kids"
+        }
+      ]
+    },
+    {
+      "op": "rename-group",
+      "name": "Investments",
+      "from": "Financial Independence",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Stock Investments"
+        },
+        {
+          "op": "create",
+          "name": "Retirement"
+        }
+      ]
+    },
+    {
+      "op": "rename-group",
+      "name": "Savings Goals",
+      "from": "Monthly Savings Funds",
+      "categories": [
+        {
+          "op": "move",
+          "name": "Wise - Buffer",
+          "from_group": "Target Balance Goals"
+        },
+        {
+          "op": "move",
+          "name": "Wise - Emergency Preparedness",
+          "from_group": "Target Balance Goals"
+        },
+        {
+          "op": "move",
+          "name": "Wise - Medical & Dental",
+          "from_group": "Target Balance Goals"
+        },
+        {
+          "op": "stay",
+          "name": "Auto - Replacement"
+        },
+        {
+          "op": "stay",
+          "name": "Auto - Repairs and Expenses"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Tech / Computer Replacement"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Improvement / Maintenance"
+        },
+        {
+          "op": "stay",
+          "name": "Holiday - Christmas"
+        },
+        {
+          "op": "stay",
+          "name": "Holiday - Halloween"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Benson Gifts"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Elliott Gifts"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Marie Gifts"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Benson Party"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Elliott Party"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Marie Party"
+        }
+      ]
+    },
+    {
+      "op": "rename-group",
+      "name": "Guilt-Free",
+      "from": "Fun Money",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Fun - Brendan Under The Radar"
+        },
+        {
+          "op": "stay",
+          "name": "Fun - Hilarie Under The Radar"
+        },
+        {
+          "op": "stay",
+          "name": "Fun - Larks Dues"
+        },
+        {
+          "op": "stay",
+          "name": "Fun - Next Trip"
+        },
+        {
+          "op": "stay",
+          "name": "Voice Lessons"
+        },
+        {
+          "op": "create",
+          "name": "Dining Out"
+        },
+        {
+          "op": "create",
+          "name": "Shopping"
+        }
+      ]
+    },
+    {
+      "op": "rename-group",
+      "name": "Retired",
+      "from": "Budget Meeting",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Discretionary"
+        },
+        {
+          "op": "stay",
+          "name": "Talk About"
+        },
+        {
+          "op": "stay",
+          "name": "Needs a job!"
+        },
+        {
+          "op": "move",
+          "name": "Home - Riverton City Utilities",
+          "from_group": "Monthly Variable Expenses"
+        }
+      ]
+    }
+  ]
+}

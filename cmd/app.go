@@ -48,6 +48,9 @@ commands:
                     measure rules + Jev on labelled history, fit τ and write calibration.json
   dry-run-report    how the dry run did: precision with a Wilson 95% interval, questions,
                     model errors and YNAB writes, from the local database only
+  restructure --spec <file> [--plan <id>] [--apply [--confirm-live] --used <n> [--ledger path]]
+                    print (or with --apply, make) the category group and category changes that
+                    move a plan to the spec's layout, by name
 `
 
 // Main runs finbot with args (without the program name) and returns the
@@ -90,6 +93,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return calibrateCmd(args[1:], stdout, stderr)
 	case "dry-run-report":
 		return dryRunReportCmd(args[1:], stdout, stderr)
+	case "restructure":
+		return restructureCmd(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "finbot: unknown command %q\n\n%s", args[0], usage)
 		return 2
