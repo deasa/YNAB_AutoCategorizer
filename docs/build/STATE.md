@@ -7,7 +7,7 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 - 2026-11-11: sup copied `CLAUDE_CODE_OAUTH_TOKEN` from hoid ~/finbot/.env into the main `.env` (unprinted; handoff item before M3-17).
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
 - 2026-11-11 (Brendan, BA-21): while agy is out of quota, reviews use a fresh Claude Opus 5.5 pane (`rev`) following REVIEWER.md; switch back to agy when its quota resets (~2026-11-15).
-- Next actions: merged 26 of 28 (main). M3-17 deployed in dry_run 2026-11-11 17:39 MST. **M3-acceptance merged** 2026-11-11 (c15ae6e). Next: M3-dryrun ~2026-11-18 (reviews via fresh Claude `rev` pane until agy resets, reviews via fresh Claude `rev` pane until agy resets ~2026-11-15, BA-21). Then M3-dryrun (~2026-11-18), M3-golive (Brendan; BA-20 first). See handoff sup-2026-11-11-1800.md.
+- Next actions: merged 26 of 28 (main). M3-17 deployed in dry_run 2026-11-11 17:39 MST. **M3-acceptance merged** 2026-11-11 (c15ae6e). Next: M3-dryrun ~2026-11-18 (reviews via fresh Claude `rev` pane until agy resets ~2026-11-15, BA-21). Then M3-dryrun (~2026-11-18), M3-golive (Brendan; BA-20 first). See handoff sup-2026-11-11-1800.md.
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
