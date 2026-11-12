@@ -21,14 +21,19 @@ var policyJSON []byte
 // versioned with calibration: τ holds only for the PolicyHash it was measured on.
 type Policy struct {
 	Version int `json:"version"`
-	// SetAsideKeywords name the event set-asides (Birthday, Trip, Christmas,
-	// Giving, …). They are savings only, never classifier targets. A category is
-	// a set-aside when a word of its name is a keyword, or a keyword plus "s",
-	// ignoring case: "Holiday - Christmas" and "Fun - Next Trip" match, while
-	// "Thanksgiving Dinner" does not match "Giving".
+	// SetAsideKeywords name the categories the classifier never suggests: the
+	// event funds (Birthday, Holiday, Trip, Giving) and the never-spent-from
+	// tracking and investment lines (Retirement, Investment, Payoff). Both are
+	// savings only, so one keyword list covers them: a person can still pick one
+	// in Slack, and their labels never become rules or calibration rows. A
+	// category is a set-aside when a word of its name is a keyword, or a keyword
+	// plus "s", ignoring case: "Holiday - Christmas", "Stock Investments" and
+	// "Mortgage Payoff" match, while "Church - Tithing" and "Thanksgiving
+	// Dinner" do not match "Giving", nor "Home - Mortgage" anything. Every
+	// keyword must be the first to match some category, or Candidates warns.
 	SetAsideKeywords []string `json:"set_aside_keywords"`
 	// Descriptions override a category's YNAB note, by category name ignoring
-	// case. The Discretionary policy lives here.
+	// case. They steer the model at the boundaries between everyday categories.
 	Descriptions map[string]string `json:"descriptions"`
 }
 

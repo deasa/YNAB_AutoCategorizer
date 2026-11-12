@@ -50,3 +50,31 @@ layout, the set-aside keywords match real categories and log no WARN.
 `writes: 0`. New questions offer the new categories (no Discretionary).
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Result
+- Status: DONE
+- What changed:
+  - `classify/policy.json` v2: Discretionary description dropped; descriptions for Groceries, Dining Out, Shopping,
+    Household & Kids, Gas & Transport, Reimbursement (boundaries: takeout/coffee → Dining Out; Amazon/general wants and
+    event gifts → Shopping unless a person picks the fund; toiletries/clothing/kids' supplies → Household & Kids;
+    fuel/parking/tolls/rideshare → Gas & Transport). No mention of retired categories.
+  - Set-aside keywords: `Birthday, Holiday, Trip, Giving, Retirement, Investment, Payoff` (dropped `Christmas`, `Gift`,
+    `Vacation`: they'd be unused or shadowed by `Birthday`/`Holiday` and WARN).
+  - Non-targets (Retirement, Stock Investments, Mortgage Payoff) use the keyword list, not a new field: one list keeps
+    them out of candidates, out of labelled history (rules) and out of calibration labels with no code change outside
+    the policy. Documented in `policy.go`'s `SetAsideKeywords` comment. `Payoff` (not `Mortgage`) keeps
+    Home - Mortgage a target.
+  - `classify/layout_test.go`: `TestCandidates_CSPLayout` builds the layout from `deploy/restructure/csp-2026-11.json`
+    plus the unlisted categories where sup placed them (Retired group hidden); `candidates_test.go` updated.
+- Acceptance:
+  - Unit layout check → pass (`go test ./classify -run TestCandidates_CSPLayout`): listed targets are candidates; all 9
+    event funds, Retirement, Stock Investments, Mortgage Payoff are not (and are set-asides); 0 warnings.
+  - `go test ./classify/... ./calibrate/...` → pass. Policy hash 0071fb89… (= calibration.json) → 74884ed1…, so the
+    embedded calibration no longer applies.
+  - `go build ./... && go vet ./... && go test ./...` → pass.
+  - Live read-only check: not run (the live plan isn't restructured yet; sup's post-deploy smoke covers it).
+- Deviations from brief: none. Note: `Giving` stays a keyword, so "Giving - Generosity" remains a set-aside (as
+  before); Church - Tithing / Fast Offerings stay targets.
+- Follow-ups for backlog: none.
+- Docs follow-ups: CLAUDE.md `classify/` says "with the embedded `policy.json` (the `Discretionary` policy)" → "(set-aside
+  keywords for event funds and investment lines, plus descriptions for the everyday categories)".
