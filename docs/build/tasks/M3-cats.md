@@ -184,3 +184,12 @@ then the dry run again (expect 0 changes), and asks Brendan to hide the emptied 
   `TestServe_MCPPortTakenFailsAtOnce`; `go test -count=1 ./cmd` then passed in full).
 - Live apply command for sup, updated: `--plan` must be the UUID (it is: `"$YNAB_BUDGET_ID"`), and the ledger must
   exist (it does), else add `--ledger-create`.
+
+### Spec update (2026-11-12, Brendan's placement of the 7 unlisted visible categories)
+- `deploy/restructure/csp-2026-11.json`: Reimbursement, Subs - Bark, Subs - GoPro, Subs - Point.Me → Fixed Costs (move);
+  Buffer → Savings Goals (move from Budget Meeting); `Business Bike ` (exact name, trailing space) stays in Guilt-Free;
+  Mortgage Payoff stays in Investments. Hidden categories stay unlisted.
+- `cmd/restructure_test.go`: the old-layout fixture gained Subs - GoPro and Subs - Point.Me, and Canva is now hidden as
+  it is live. Without that the spec wouldn't resolve against the fixture. Expectations updated. `go test -count=1 ./cmd` → ok.
+- Live dry run only (1 GET) → `../_reviews/M3-cats-live-dryrun-final.txt`: `unresolved: 0`, `warnings: 0`,
+  `changes: 50` (45 + 5 moves). "Not in the spec" has 9 entries, all hidden. UUID, token and plan-id grep: 0 hits.
