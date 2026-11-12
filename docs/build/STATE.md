@@ -24,12 +24,13 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | sixth session 2026-11-11 |
 | agy | — | — | reviewer (Antigravity): **out of quota until ~2026-11-15 (BA-21)**; pane w1:p3R gone (found 2026-11-11 sixth sup). Restart in tab control when quota resets |
-| b-m3-acceptance | w1:p3Y | build (w1:t1E) | builder | M3-acceptance | 2026-11-11 | worktree ../YNAB_AutoCategorizer.wt/M3-acceptance, .env copied |
+| b-m3-acceptance | w1:p3Y | build (w1:t1E) | builder | M3-acceptance | 2026-11-11 | DONE, kept open until review passes |
+| rev | w1:p3Z | control (w1:t7) | reviewer (Claude stand-in for agy, BA-21) | M3-acceptance | 2026-11-11 | review → _reviews/M3-acceptance-rev.md |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-acceptance | active | w1:p3Y | t/M3-acceptance | — | dispatched 2026-11-11; black-box tests/acceptance/M3/ against the M3-17 deploy |
+| M3-acceptance | review | w1:p3Y | t/M3-acceptance | rev (Claude, w1:p3Z) in progress | DONE 2026-11-11 (bb5f7ea): sandbox_check 102 PASS, hoid_check 40 PASS, dry-run-report writes: 0; own report _reviews/M3-acceptance.md PASS (3 low, 1 info). Lows → BA-24 (unapproved-but-categorized rows), backlog (WARN per run, "(would apply)" label). Docs follow-up: CLAUDE.md live-tests lines |
 | M3-2 | merged | — | — | agy PASS (2 low: first set-aside keyword only; deleted-group check after set-aside bookkeeping) | merged 2026-11-11: classify/ types, policy, candidates, rules, guardrails, P2P detector |
 | M3-6 | merged | — | — | agy PASS (2 low: display-name pick per plan; placeholder test assumes τ null) | merged 2026-11-11 (a7613c6): calibration.json τ=null, auto_eligible=false (BA-20); payee-casing fix |
 | M3-5 | merged | — | — | agy PASS (2 low: lowercased payee in calibration detail → M3-6 note; same-date split edge) | merged 2026-11-11 (08eb5c6): calibrate/ τ fit, finbot calibrate |
@@ -113,6 +114,7 @@ Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
 | BA-21 | agy (Antigravity) hit its account quota mid-review of M3-17 on 2026-11-11 15:05 MST: "Individual quota reached… Resets in 92h29m". All reviews blocked until ~2026-11-15. Options: (a) wait for the reset, (b) upgrade the plan, (c) let sup use a fresh Claude Opus 5.5 reviewer pane following REVIEWER.md until agy is back | M3-17 deploy and all remaining M3 reviews | done 2026-11-11: **Brendan: "you can use Claude for reviews"** → option (c) |
 | BA-22 | Run `./deploy/deploy.sh` for M3-17 (sup's run was denied by Claude Code's auto-mode permission check), or allow it for sup: `! ./deploy/deploy.sh` in the sup pane, or add a Bash permission rule | M3-17 deploy and the dry-run week | done 2026-11-11: Brendan "you can run the deploy"; sup deployed |
 | BA-23 | M3-acceptance scope 1 (and the M3-17 smoke item): in #finbot-finances, click an answer on one open finbot question. Pick the category the transaction already has in YNAB so the recorded label matches. The reply should say YNAB was not changed. Tell sup when done; the builder verifies write_log stays 0 and the row is unchanged | M3-acceptance | done 2026-11-11: Brendan answered the open questions |
+| BA-24 | Go-live decision (M3-acceptance finding 1): rows YNAB already categorized but **unapproved** (likely payee memory; 3 of the first 5 hoid questions) are eligible, so in `auto` finbot could overwrite that category. Confirm that is intended, or have finbot ask instead of auto-writing on those rows | M3-golive | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
 - 2026-10-27: Build workflow approved by Brendan: Opus 5.5 builders, agy review/testing, herdr orchestration, 40% context cap, supervisor restarted from these docs. sup may commit to main.
