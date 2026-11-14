@@ -1,6 +1,6 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-11 by sup (sixth session, from handoff sup-2026-11-11-1800.md)
+Updated: 2026-11-14 by sup (sixth session; handoff docs/build/handoffs/sup-2026-11-14-0100.md)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
