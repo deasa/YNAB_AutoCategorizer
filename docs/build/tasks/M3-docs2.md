@@ -32,3 +32,26 @@ CLAUDE.md describes the four M3 tasks merged after M3-docs.
 - [ ] go build ./... && go vet ./... && go test ./... green
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Result
+- Status: DONE
+- What changed (CLAUDE.md only):
+  - [x] M3-acceptance: "Env-gated live tests" lists `tests/acceptance/M3/sandbox_check.sh [workdir]` (sandbox writes,
+    ~105 requests, once an hour at most) and `tests/acceptance/M3/hoid_check.sh snapshot|check` (read-only), per the
+    script headers.
+  - [x] M3-other: `slack/` bullet's question sentence rewritten per the follow-up (other… always, hint line,
+    `classify.Eligible` select, loose thread-reply matching, up to 3 suggestions).
+  - [x] M3-policy: `classify/` policy wording replaced per the follow-up.
+  - [x] M3-cats: Build & Run lists `./finbot restructure --spec <file> [--plan <plan uuid>] [--apply [--confirm-live]
+    --used <n> [--ledger path [--ledger-create]]]` with one comment (manual; live `--apply` needs `--confirm-live` and
+    Brendan's OK). `ynab/` and Safety text untouched.
+- Acceptance:
+  - Four follow-ups ticked above → pass.
+  - `go run . 2>&1 | head -30` → serve, sync, sync --archived, health, backup, backup --list, restore, revoke,
+    tag-account, calibrate, dry-run-report, restructure; Build & Run lists the same → pass. Flags checked against
+    `go run . restructure -h`.
+  - Diff grep for UUIDs, `@`, `xox`/`xapp`, `token=` → no hits → pass.
+  - `go build ./... && go vet ./... && go test ./...` → green.
+- Deviations from brief: none.
+- Follow-ups for backlog: none.
+- Docs follow-ups: none.
