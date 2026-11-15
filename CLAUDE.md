@@ -17,6 +17,8 @@ go build -o finbot .
 ./finbot tag-account [<account name> <bucket>]   # set an account's tax bucket, or list every tag; needs only FINBOT_DB_PATH, YNAB_BUDGET_ID
 ./finbot calibrate [--limit N] [--batch N] [--out path]   # fit τ on labelled history; needs FINBOT_DB_PATH, YNAB_BUDGET_ID, JEV_API_KEY
 ./finbot dry-run-report        # how the dry run did, from the local DB; needs only FINBOT_DB_PATH; last line `writes: <n>`
+./finbot restructure --spec <file> [--plan <plan uuid>] [--apply [--confirm-live] --used <n> [--ledger path [--ledger-create]]]
+                               # manual, never serve: prints the category changes; --apply on the live plan needs --confirm-live and Brendan's OK
 ./finbot                       # usage, exit 2 (also for unknown subcommands)
 
 go test ./...                          # all tests
@@ -32,6 +34,8 @@ YNAB_LIVE_SYNC=1 go test ./sync -run 'TestLiveScan$' -v      # archived-plan sca
 JEV_LIVE=1 go test ./classify/jev -run TestLive -v           # one small Jev batch; needs JEV_API_KEY
 CLAUDE_LIVE=1 go test ./llm -run TestLive -v                 # probe + one classify call; needs CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_BIN
 YNAB_SANDBOX_WRITE=1 go test ./writer -run TestSandbox -v    # writes to YNAB_SANDBOX_PLAN_ID only; refuses YNAB_BUDGET_ID
+tests/acceptance/M3/sandbox_check.sh [workdir]               # M3 scopes 2-7 on the sandbox plan (writes); ~105 requests, once an hour at most
+tests/acceptance/M3/hoid_check.sh snapshot|check             # M3 scope 1 on hoid, read-only (ssh, DB copy, Slack history)
 ```
 `finbot calibrate` writes `calibrate/calibration.json` by default: run it from the repo root so it lands on the embedded
 file, then rebuild for the new τ to take effect.
@@ -131,10 +135,10 @@ applying only above a calibrated threshold in `auto` and otherwise asking in Sla
 - `classify/` — picks a category for each new transaction: guardrails (`Guard`: transfers, credit card payments, P2P,
   splits, Ready to Assign inflows, locks, no payee or memo; in `auto`, also anything dated before AutoSince), then
   unanimous payee rules (at least 3 labels), then a model over the active plan's candidates (`Candidates`; set-asides,
-  hidden, deleted and internal categories and the Credit Card Payments group are out), with
-  the embedded `policy.json` (the `Discretionary` policy). The policy, candidates and model are hashed so a calibration
-  applies only to what it measured. `Pipeline.Run` runs once per successful sync: it sets the effective mode first
-  (`off` does nothing; `auto` needs a calibration that is `auto_eligible` with a τ and matching hashes, otherwise it runs
+  hidden, deleted and internal categories and the Credit Card Payments group are out), with the
+  embedded `policy.json` (set-aside keywords for event funds and investment lines, plus descriptions for the everyday
+  categories). The policy, candidates and model are hashed so a calibration applies only to what it measured.
+  `Pipeline.Run` runs once per successful sync: it sets the effective mode first (`off` does nothing; `auto` needs a calibration that is `auto_eligible` with a τ and matching hashes, otherwise it runs
   as `dry_run` with a warning; a failure loading candidates publishes `dry_run`), then takes up to 50 eligible
   transactions from the last `CLASSIFY_BACKLOG_DAYS`, newest first. Each gets one decision per model, hashes and mode
   (logged in `decisions`, older ones superseded). In `auto`, a model answer at or above τ (default 0.8) is applied
@@ -159,9 +163,11 @@ applying only above a calibrated threshold in `auto` and otherwise asking in Sla
   or asked decision is judged by the next human label (an answered question, or a human-set category in the mirror).
 - `slack/` — the Socket Mode client: acks every envelope first, drops bot messages and subtypes, accepts only the
   `SLACK_USERS` people in the configured channel, dedupes redeliveries in `slack_events`, `SelfCheck` via
-  `users.conversations`, and Post/Update. `Questions` renders a question (top-3 buttons, other, split), routes clicks and
-  thread replies by `(channel, message_ts)`, and stores the answer as a category id. A `categorize` answer goes through
-  `writer.Apply` as that person; a `dry_run_check` answer is only recorded. "Split" tells the user to split in YNAB and
+  `users.conversations`, and Post/Update. `Questions` renders a question (top-3 buttons, other… always, split, and a hint
+  line); other… opens a select of every answerable plan category (`classify.Eligible`), options first; thread replies
+  match a category loosely (exact, folded, whole words, unique 4+ prefix), else suggest up to 3 names. It routes clicks
+  and thread replies by `(channel, message_ts)`, and stores the answer as a category id. A `categorize` answer goes
+  through `writer.Apply` as that person; a `dry_run_check` answer is only recorded. "Split" tells the user to split in YNAB and
   closes the question (`split_in_ynab`); the next sync locks the row. `CloseStale` closes questions whose transaction
   was deleted or locked. `status/` keeps its own small Slack client.
 - `alerts/` — `Alerter.Send` is the one entry point. Critical kinds (`link_error`, `stale_import`, `claude_auth`,
