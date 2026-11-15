@@ -1,6 +1,6 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-15 by sup (sixth session ended; handoff docs/build/handoffs/sup-2026-11-14-0100.md)
+Updated: 2026-11-15 by sup (seventh session; M3-docs2 dispatched)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
@@ -8,6 +8,7 @@ Updated: 2026-11-15 by sup (sixth session ended; handoff docs/build/handoffs/sup
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
 - 2026-11-11 (Brendan, BA-21): while agy is out of quota, reviews use a fresh Claude Opus 5.5 pane (`rev`) following REVIEWER.md; switch back to agy when its quota resets (~2026-11-15).
 - Next actions: merged 26 of 28 (main). M3-17 deployed in dry_run 2026-11-11 17:39 MST. **M3-acceptance merged** 2026-11-11 (c15ae6e). Next: M3-dryrun ~2026-11-18 (reviews via fresh Claude `rev` pane until agy resets ~2026-11-15, BA-21). Then M3-dryrun (~2026-11-18), M3-golive (Brendan; BA-20 first). See handoff sup-2026-11-11-1800.md.
+- 2026-11-15 (seventh sup): hoid healthy, 0 restarts, 0 ERROR in 24h, writes: 0. Mirror shows Retired, Subscriptions, Monthly Variable Expenses and Target Balance Goals still **not hidden** (Brendan asked 2026-11-12).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
 ## Deployed
@@ -24,12 +25,14 @@ Updated: 2026-11-15 by sup (sixth session ended; handoff docs/build/handoffs/sup
 ## Panes
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
-| sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | sixth session 2026-11-11 |
+| sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | seventh session 2026-11-15 |
+| b-m3-docs2 | w1:p4A | build (w1:t1G) | builder | M3-docs2 | 2026-11-15 | |
 | agy | — | — | reviewer (Antigravity): **out of quota until ~2026-11-15 (BA-21)**; pane w1:p3R gone (found 2026-11-11 sixth sup). Restart in tab control when quota resets |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
+| M3-docs2 | active | w1:p4A | t/M3-docs2 | — | CLAUDE.md follow-ups from M3-acceptance, M3-other, M3-policy, M3-cats |
 | M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
 | M3-other | merged + deployed | — | — | rev (Claude) PASS r2 (r1 FIX: stored options not re-checked at answer time) | merged 2026-11-11 (16bc11a), deployed 21:30 MST: other… on every question (classify.Eligible categories), forgiving thread replies, hint line. Docs follow-up: CLAUDE.md slack/ bullet (see brief Result) |
 | M3-policy | merged + deployed | — | — | rev (Claude) PASS (2 low) | merged 2026-11-12 (6890aef): policy v2, set-asides Birthday/Holiday/Trip/Giving/Retirement/Investment/Payoff, descriptions for the new everyday categories. Docs follow-up: CLAUDE.md classify/ policy wording |
