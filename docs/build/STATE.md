@@ -27,12 +27,13 @@ Updated: 2026-11-22 by sup (seventh session; M3-dryrun merged, report to Brendan
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | seventh session 2026-11-15 |
+| b-m3-simplify | w1:p4D | build (new tab) | builder | M3-simplify | 2026-11-22 | |
 | agy | w1:p4B | control (w1:t7) | reviewer (Antigravity) | M3-docs2 review | 2026-11-15 | review counter 2; restarted after quota reset (BA-21), M3-docs2 review worked despite a 'sign-in update needed' warning |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-simplify | active | (see Panes) | t/M3-simplify | — | read-only proposal: fewer categories (one Guilt-Free), replay precision, restructure spec csp-2026-11b.json for Brendan's approval |
+| M3-simplify | active | w1:p4D | t/M3-simplify | — | read-only proposal: fewer categories (one Guilt-Free), replay precision, restructure spec csp-2026-11b.json for Brendan's approval |
 | M3-dryrun | merged | — | — | agy PASS (no findings; numbers reproduced on hoid) | merged 2026-11-22 (00135a4): docs/build/reports/M3-dryrun.md. **Recommendation: not go.** Current-hash window 11-12→11-22: 31/39 = 79.5% (Wilson 64.5–89.2%), tau null, calibration hashes stale, Retired visible. Follow-ups (not yet in BACKLOG): dry-run-report `--hash/--since` filter; exclude YNAB's `Needs a job!` from Candidates | started 2026-11-22: 10 days of dry run since the 11-12 restructure. Report → Brendan |
 | M3-docs2 | merged | — | — | agy PASS (no findings) | merged 2026-11-15 (296e9fe). Docs only, no deploy. CLAUDE.md follow-ups from M3-acceptance, M3-other, M3-policy, M3-cats |
 | M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
