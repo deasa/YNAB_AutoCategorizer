@@ -30,3 +30,13 @@ After at least 7 days of dry-run, Brendan has one page of evidence for the go-li
 - [ ] `grep -E '[0-9a-f]{8}-[0-9a-f]{4}' docs/build/reports/M3-dryrun.md` → no matches.
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Supervisor note (2026-11-22)
+- The dry-run week restarted 2026-11-12 when the category restructure went live and M3-policy (6890aef) changed the
+  policy and candidates hash. Count the evidence window from the first decision under the current hash, not from
+  2026-11-11; it now spans about 10 days. Say how many decisions were superseded by the 11-12 change.
+- Use `--since 240h` for the ERROR count so the whole window is covered, and report restarts from `docker inspect`.
+- Also note whether the Retired, Subscriptions, Monthly Variable Expenses and Target Balance Goals groups are hidden
+  yet (`category_groups.hidden` in a read-only copy of hoid's DB; see `tests/acceptance/M3/hoid_check.sh` for the safe
+  copy). While Retired is visible, Discretionary is still an eligible answer.
+- Read-only on hoid. Don't run `finbot calibrate` (BA-20 is Brendan's), and don't change the mode.
