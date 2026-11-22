@@ -1,6 +1,6 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-22 by sup (seventh session; M3-dryrun dispatched)
+Updated: 2026-11-22 by sup (seventh session; M3-dryrun merged, report to Brendan)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
@@ -8,7 +8,7 @@ Updated: 2026-11-22 by sup (seventh session; M3-dryrun dispatched)
 - 2026-11-11 (sup, M3-14a question): `SLACK_USERS` names map to store labels brendan→brendan, hilarie→wife (`wife` also accepted); other names are a config error. No `.env` change.
 - 2026-11-11 (Brendan, BA-21): while agy is out of quota, reviews use a fresh Claude Opus 5.5 pane (`rev`) following REVIEWER.md; switch back to agy when its quota resets (~2026-11-15).
 - Next actions: merged 26 of 28 (main). M3-17 deployed in dry_run 2026-11-11 17:39 MST. **M3-acceptance merged** 2026-11-11 (c15ae6e). Next: M3-dryrun ~2026-11-18 (reviews via fresh Claude `rev` pane until agy resets ~2026-11-15, BA-21). Then M3-dryrun (~2026-11-18), M3-golive (Brendan; BA-20 first). See handoff sup-2026-11-11-1800.md.
-- 2026-11-22 (seventh sup): hoid healthy, 0 restarts, 0 ERROR in 24h, writes: 0. M3-dryrun dispatched.
+- 2026-11-22 (seventh sup): hoid healthy, 0 restarts, 0 ERROR, writes: 0. **M3-dryrun merged; report recommends not go.** Only M3-golive (Brendan) is left in M3. Waiting on Brendan: BA-25 (hide the 4 old groups), then BA-20 (rerun calibrate), BA-24.
 - 2026-11-15 (seventh sup): hoid healthy, 0 restarts, 0 ERROR in 24h, writes: 0. Mirror shows Retired, Subscriptions, Monthly Variable Expenses and Target Balance Goals still **not hidden** (Brendan asked 2026-11-12).
 - Checked 2026-11-04: nightly backups 11-02, 11-03, 11-04 at 03:17 MST all present (2.4 MB; 11-01 entries are manual). Slack status shows "Last backup: Wed Nov 4, 3:17 AM MST, ok". hoid healthy: finbot 0 restarts, 288 sync ticks in 72h, no warn/error log lines, disk 7%. Observations: 0 transaction rows changed in 72h of deltas (accounts only); `ledger-web` on hoid is unhealthy (not finbot).
 
@@ -27,13 +27,12 @@ Updated: 2026-11-22 by sup (seventh session; M3-dryrun dispatched)
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | seventh session 2026-11-15 |
-| b-m3-dryrun | w1:p4C | build (new tab) | builder | M3-dryrun | 2026-11-22 | |
 | agy | w1:p4B | control (w1:t7) | reviewer (Antigravity) | M3-docs2 review | 2026-11-15 | review counter 2; restarted after quota reset (BA-21), M3-docs2 review worked despite a 'sign-in update needed' warning |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-dryrun | review | w1:p4C | t/M3-dryrun | agy (pending) | started 2026-11-22: 10 days of dry run since the 11-12 restructure. Report → Brendan |
+| M3-dryrun | merged | — | — | agy PASS (no findings; numbers reproduced on hoid) | merged 2026-11-22 (00135a4): docs/build/reports/M3-dryrun.md. **Recommendation: not go.** Current-hash window 11-12→11-22: 31/39 = 79.5% (Wilson 64.5–89.2%), tau null, calibration hashes stale, Retired visible. Follow-ups (not yet in BACKLOG): dry-run-report `--hash/--since` filter; exclude YNAB's `Needs a job!` from Candidates | started 2026-11-22: 10 days of dry run since the 11-12 restructure. Report → Brendan |
 | M3-docs2 | merged | — | — | agy PASS (no findings) | merged 2026-11-15 (296e9fe). Docs only, no deploy. CLAUDE.md follow-ups from M3-acceptance, M3-other, M3-policy, M3-cats |
 | M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
 | M3-other | merged + deployed | — | — | rev (Claude) PASS r2 (r1 FIX: stored options not re-checked at answer time) | merged 2026-11-11 (16bc11a), deployed 21:30 MST: other… on every question (classify.Eligible categories), forgiving thread replies, hint line. Docs follow-up: CLAUDE.md slack/ bullet (see brief Result) |
@@ -122,6 +121,7 @@ Updated: 2026-11-22 by sup (seventh session; M3-dryrun dispatched)
 | BA-21 | agy (Antigravity) hit its account quota mid-review of M3-17 on 2026-11-11 15:05 MST: "Individual quota reached… Resets in 92h29m". All reviews blocked until ~2026-11-15. Options: (a) wait for the reset, (b) upgrade the plan, (c) let sup use a fresh Claude Opus 5.5 reviewer pane following REVIEWER.md until agy is back | M3-17 deploy and all remaining M3 reviews | done 2026-11-11: **Brendan: "you can use Claude for reviews"** → option (c) |
 | BA-22 | Run `./deploy/deploy.sh` for M3-17 (sup's run was denied by Claude Code's auto-mode permission check), or allow it for sup: `! ./deploy/deploy.sh` in the sup pane, or add a Bash permission rule | M3-17 deploy and the dry-run week | done 2026-11-11: Brendan "you can run the deploy"; sup deployed |
 | BA-23 | M3-acceptance scope 1 (and the M3-17 smoke item): in #finbot-finances, click an answer on one open finbot question. Pick the category the transaction already has in YNAB so the recorded label matches. The reply should say YNAB was not changed. Tell sup when done; the builder verifies write_log stays 0 and the row is unchanged | M3-acceptance | done 2026-11-11: Brendan answered the open questions |
+| BA-25 | Hide groups Retired, Subscriptions, Monthly Variable Expenses, Target Balance Goals in YNAB (asked 2026-11-12; still visible 2026-11-22). Must come before the calibration rerun: it changes the candidates hash. See docs/build/reports/M3-dryrun.md | before BA-20 rerun | open |
 | BA-24 | Go-live decision (M3-acceptance finding 1): rows YNAB already categorized but **unapproved** (likely payee memory; 3 of the first 5 hoid questions) are eligible, so in `auto` finbot could overwrite that category. Confirm that is intended, or have finbot ask instead of auto-writing on those rows | M3-golive | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
