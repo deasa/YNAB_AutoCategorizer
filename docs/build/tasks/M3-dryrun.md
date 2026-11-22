@@ -40,3 +40,23 @@ After at least 7 days of dry-run, Brendan has one page of evidence for the go-li
   yet (`category_groups.hidden` in a read-only copy of hoid's DB; see `tests/acceptance/M3/hoid_check.sh` for the safe
   copy). While Retired is visible, Discretionary is still an eligible answer.
 - Read-only on hoid. Don't run `finbot calibrate` (BA-20 is Brendan's), and don't change the mode.
+
+## Result
+- Status: DONE
+- What changed: new `docs/build/reports/M3-dryrun.md` (evidence page). No code changed. The current-hash report came from
+  a throwaway wrapper around `calibrate.BuildDryRunReport`, run on a local DB copy and then deleted (not committed).
+- Acceptance:
+  - Span ≥ 7 days → pass: current-hash window first 2026-11-12, last 2026-11-22 (10 days); hoid report 11-11 to 11-22.
+  - `writes: 0` → pass: the last line of `ssh hoid 'docker exec finbot-finbot-1 finbot dry-run-report'`; `write_log` has 0 rows.
+  - n, precision, interval, auto_eligible/hash → pass: 31/39 = 79.5% (Wilson 64.5–89.2%). `tau: null`,
+    `auto_eligible: false`; policy and candidates hashes both differ from `calibration.json`. All are named in the report.
+  - `grep -E '[0-9a-f]{8}-[0-9a-f]{4}' docs/build/reports/M3-dryrun.md` → pass: 0 matches.
+  - `go build ./...`, `go vet ./...`, `go test ./...` → pass.
+- Deviations from brief: precision is reported for the current-hash window (106 decisions), as the supervisor note
+  asked, next to the raw hoid output (207 decisions, superseded included). The ERROR count also covers the container's
+  whole log, because 240h falls about 7h short of the window start.
+- Follow-ups for backlog: (1) `dry-run-report` could take a `--hash`/`--since` filter, because it currently mixes
+  superseded decisions into precision. (2) YNAB's `Needs a job!` placeholder is a classify candidate while its group is
+  visible (it was the top pick 4 times); `Candidates` should probably exclude it. (3) Recommendation: not go. Hide the four
+  old groups, rerun calibration (BA-20), then a short dry-run re-check.
+- Docs follow-ups: none
