@@ -28,12 +28,12 @@ Updated: 2026-11-22 by sup (seventh session; M3-dryrun dispatched)
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | seventh session 2026-11-15 |
 | b-m3-dryrun | w1:p4C | build (new tab) | builder | M3-dryrun | 2026-11-22 | |
-| agy | w1:p4B | control (w1:t7) | reviewer (Antigravity) | M3-docs2 review | 2026-11-15 | review counter 1; restarted after quota reset (BA-21), M3-docs2 review worked despite a 'sign-in update needed' warning |
+| agy | w1:p4B | control (w1:t7) | reviewer (Antigravity) | M3-docs2 review | 2026-11-15 | review counter 2; restarted after quota reset (BA-21), M3-docs2 review worked despite a 'sign-in update needed' warning |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
-| M3-dryrun | active | w1:p4C | t/M3-dryrun | — | started 2026-11-22: 10 days of dry run since the 11-12 restructure. Report → Brendan |
+| M3-dryrun | review | w1:p4C | t/M3-dryrun | agy (pending) | started 2026-11-22: 10 days of dry run since the 11-12 restructure. Report → Brendan |
 | M3-docs2 | merged | — | — | agy PASS (no findings) | merged 2026-11-15 (296e9fe). Docs only, no deploy. CLAUDE.md follow-ups from M3-acceptance, M3-other, M3-policy, M3-cats |
 | M3-acceptance | merged | — | — | rev (Claude) PASS r2 (r1 FIX: suite shared hoid's YNAB rate budget, rev re-run got 429; non-atomic hoid DB copy; guard wording) | merged 2026-11-11 (c15ae6e): tests/acceptance/M3/ (sandbox_check 0 failed checks, hoid_check 45 PASS, writes: 0). Follow-ups (not yet in BACKLOG): policy WARN every run; "(would apply)" in Slack result text; 8 ERROR lines per run with no Asker; optional separate YNAB token for sandbox tests. Docs follow-up: CLAUDE.md live-tests lines for the M3 acceptance scripts. Decision BA-24 |
 | M3-other | merged + deployed | — | — | rev (Claude) PASS r2 (r1 FIX: stored options not re-checked at answer time) | merged 2026-11-11 (16bc11a), deployed 21:30 MST: other… on every question (classify.Eligible categories), forgiving thread replies, hint line. Docs follow-up: CLAUDE.md slack/ bullet (see brief Result) |
