@@ -1,0 +1,295 @@
+{
+  "groups": [
+    {
+      "op": "keep-group",
+      "name": "Fixed Costs",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Home - Mortgage"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Highland City Utilities"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Electric"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Natural Gas"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Internet"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Cell Phone"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Insurance"
+        },
+        {
+          "op": "stay",
+          "name": "Auto - Insurance"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Lawn Service"
+        },
+        {
+          "op": "stay",
+          "name": "Gas & Transport"
+        },
+        {
+          "op": "rename+move",
+          "name": "Groceries & Household",
+          "from": "Groceries",
+          "from_group": "Fixed Costs"
+        },
+        {
+          "op": "set-target",
+          "name": "Home - Kids Classes & Education",
+          "target": {
+            "milliunits": 810000
+          }
+        },
+        {
+          "op": "rename+move",
+          "name": "Larks Dues",
+          "from": "Fun - Larks Dues",
+          "from_group": "Guilt-Free",
+          "target": {
+            "milliunits": 25000,
+            "date": "2027-02-18"
+          }
+        },
+        {
+          "op": "stay",
+          "name": "Reimbursement"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Amazon Prime"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Spotify"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Disney+"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - YNAB"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Canva"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Google Domains Website"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - TrainerRoad"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Google One"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Bark"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - GoPro"
+        },
+        {
+          "op": "stay",
+          "name": "Subs - Point.Me"
+        }
+      ]
+    },
+    {
+      "op": "keep-group",
+      "name": "Giving",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Church - Tithing"
+        },
+        {
+          "op": "stay",
+          "name": "Church - Fast Offerings"
+        },
+        {
+          "op": "stay",
+          "name": "Giving - Generosity"
+        }
+      ]
+    },
+    {
+      "op": "keep-group",
+      "name": "Investments",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Retirement"
+        },
+        {
+          "op": "stay",
+          "name": "Stock Investments"
+        },
+        {
+          "op": "stay",
+          "name": "Mortgage Payoff"
+        }
+      ]
+    },
+    {
+      "op": "keep-group",
+      "name": "Savings Goals",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Buffer"
+        },
+        {
+          "op": "stay",
+          "name": "Wise - Buffer"
+        },
+        {
+          "op": "stay",
+          "name": "Wise - Emergency Preparedness"
+        },
+        {
+          "op": "stay",
+          "name": "Wise - Medical & Dental"
+        },
+        {
+          "op": "stay",
+          "name": "Auto - Repairs and Expenses"
+        },
+        {
+          "op": "stay",
+          "name": "Auto - Replacement"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Improvement / Maintenance"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Tech / Computer Replacement"
+        },
+        {
+          "op": "move",
+          "name": "Fun - Next Trip",
+          "from_group": "Guilt-Free"
+        },
+        {
+          "op": "rename+move",
+          "name": "Business Bike",
+          "from": "Business Bike ",
+          "from_group": "Guilt-Free"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Benson Gifts"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Benson Party"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Elliott Gifts"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Elliott Party"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Marie Gifts"
+        },
+        {
+          "op": "stay",
+          "name": "Birthday - Marie Party"
+        },
+        {
+          "op": "stay",
+          "name": "Holiday - Christmas"
+        },
+        {
+          "op": "stay",
+          "name": "Holiday - Halloween"
+        }
+      ]
+    },
+    {
+      "op": "keep-group",
+      "name": "Guilt-Free",
+      "categories": [
+        {
+          "op": "rename+move",
+          "name": "Guilt-Free Spending",
+          "from": "Shopping",
+          "from_group": "Guilt-Free"
+        },
+        {
+          "op": "stay",
+          "name": "Fun - Brendan Under The Radar"
+        },
+        {
+          "op": "stay",
+          "name": "Fun - Hilarie Under The Radar"
+        }
+      ]
+    },
+    {
+      "op": "keep-group",
+      "name": "Retired",
+      "categories": [
+        {
+          "op": "stay",
+          "name": "Discretionary"
+        },
+        {
+          "op": "stay",
+          "name": "Talk About"
+        },
+        {
+          "op": "stay",
+          "name": "Needs a job!"
+        },
+        {
+          "op": "stay",
+          "name": "Home - Riverton City Utilities"
+        },
+        {
+          "op": "move",
+          "name": "Dining Out",
+          "from_group": "Guilt-Free"
+        },
+        {
+          "op": "move",
+          "name": "Household & Kids",
+          "from_group": "Fixed Costs"
+        },
+        {
+          "op": "move",
+          "name": "Voice Lessons",
+          "from_group": "Guilt-Free"
+        }
+      ]
+    }
+  ]
+}
