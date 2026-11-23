@@ -51,3 +51,27 @@ transactions against that list to calibrate.
 - [ ] go build ./... && go vet ./... && go test ./... green
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Result
+- Status: DONE
+- What changed: `docs/build/reports/M3-jevctx.md` (new). Nothing else: no code, policy, YNAB or hoid changes.
+  The hoid DB was copied read-only to the session scratchpad, and no Jev calls were made.
+- Acceptance:
+  - The CSP section cites 3 iwillteachyoutoberich.com URLs plus the book → pass
+  - The request shape matches the code, with file:line refs to `classify/jev/jev.go`, `classify/candidates.go`,
+    `classify/rules.go`, `classify/pipeline.go` and `classify/guard.go`, and uses fake values only → pass
+  - Every hole cites a code line, a report number or a DB count (DB copy 2026-11-23) → pass
+  - `grep -E '[0-9a-f]{8}-[0-9a-f]{4}' docs/build/reports/M3-jevctx.md` → no matches. Only generic merchants are
+    named (Amazon, Walmart, Costco, Smith's, Harmons); payroll payees and people are unnamed → pass
+  - `go build ./... && go vet ./... && go test ./...` → green
+- Deviations from brief: no live Jev probes (optional; I proposed them instead). The book wasn't re-read: the CSP
+  facts come from Ramit's site, and the book's 15% workbook line from secondary coverage (flagged in the report).
+- Follow-ups for backlog:
+  - **Production sends no payee history** (0/93; hoid's `plan_scan` is empty) while calibration used it. Run
+    `finbot sync --archived` on hoid (decision 1).
+  - Inflows such as payroll reach the model: add a companion "does any category fit" Noul or an income guard.
+  - Drop the YNAB-note fallback in `Candidates` (an income figure in a note goes to Jev).
+  - `finbot label` plus `manual_labels` plus the alias map (§5).
+  - Calibrate's `Guard` call lacks the account type (`calibrate/calibrate.go:223`).
+- Docs follow-ups: R10 cites "Ramit's four questions" and the "60-day test", which aren't on his CSP pages: verify the
+  source. R8a is still pending its update for the 2026-11-22 fun-money decision (already noted in STATE).
