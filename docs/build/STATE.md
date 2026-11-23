@@ -1,6 +1,6 @@
 # Build state (source of truth — supervisor updates after every event)
 
-Updated: 2026-11-22 by sup (seventh session; M3-simplify merged, proposal to Brendan)
+Updated: 2026-11-23 by sup (seventh session; M3-jevctx dispatched)
 
 ## Now
 - Milestone: **M3 — Classifier + Slack: ACTIVE** (Brendan said "continue" 2026-11-08). M2 complete 2026-11-08, M1 2026-11-01.
@@ -27,11 +27,12 @@ Updated: 2026-11-22 by sup (seventh session; M3-simplify merged, proposal to Bre
 | Name | Pane | Tab | Role | Task | Started | Notes |
 |---|---|---|---|---|---|---|
 | sup | w1:pT | control (w1:t7) | supervisor | — | 2026-10-27 | seventh session 2026-11-15 |
-| agy | w1:p4E | review (new tab) | reviewer (Antigravity) | — | 2026-11-22 | **broken: 401 UNAUTHENTICATED at startup (BA-26)**. Fresh session, counter 0 |
+| agy | — | — | reviewer (Antigravity) | — | — | pane/tab gone (found 2026-11-23); auth broken (BA-26). Reviews use a fresh Claude `rev` |
 
 ## Tasks
 | ID | Status (todo/active/review/fix/merged/blocked) | Pane | Branch | Review | Notes |
 |---|---|---|---|---|---|
+| M3-jevctx | active | (pane) | t/M3-jevctx | — | Brendan 2026-11-23: research CSP budgets; audit everything sent to Jev for holes; propose Jev-optimized list + a 200+ label session plan (he'll label by hand for calibration) |
 | M3-simplify | merged | — | — | rev (Claude) PASS (3 low: sample-size numbers 218/100/49 vs 208/92/45; replay counts set-aside/fun labels as misses, 35/37 calibration-style; scratch files) | merged 2026-11-22 (8489465): docs/build/reports/M3-simplify.md, deploy/restructure/csp-2026-11b.json. Option A replay 79.5%→89.7% (n=39). Awaiting Brendan (BA-27). DONE: spec csp-2026-11b.json (10 changes, dry run clean). Findings: hiding Retired makes 659 Discretionary labels hard negatives without a calibration alias map; ~247 usable labels can't reach 200 tuning rows — feed answered dry_run_check questions (95) to calibration; hoid plan_scan empty. | read-only proposal: fewer categories (one Guilt-Free), replay precision, restructure spec csp-2026-11b.json for Brendan's approval |
 | M3-dryrun | merged | — | — | agy PASS (no findings; numbers reproduced on hoid) | merged 2026-11-22 (00135a4): docs/build/reports/M3-dryrun.md. **Recommendation: not go.** Current-hash window 11-12→11-22: 31/39 = 79.5% (Wilson 64.5–89.2%), tau null, calibration hashes stale, Retired visible. Follow-ups (not yet in BACKLOG): dry-run-report `--hash/--since` filter; exclude YNAB's `Needs a job!` from Candidates | started 2026-11-22: 10 days of dry run since the 11-12 restructure. Report → Brendan |
 | M3-docs2 | merged | — | — | agy PASS (no findings) | merged 2026-11-15 (296e9fe). Docs only, no deploy. CLAUDE.md follow-ups from M3-acceptance, M3-other, M3-policy, M3-cats |
@@ -128,6 +129,7 @@ Updated: 2026-11-22 by sup (seventh session; M3-simplify merged, proposal to Bre
 | BA-24 | Go-live decision (M3-acceptance finding 1): rows YNAB already categorized but **unapproved** (likely payee memory; 3 of the first 5 hoid questions) are eligible, so in `auto` finbot could overwrite that category. Confirm that is intended, or have finbot ask instead of auto-writing on those rows | M3-golive | open |
 
 ## Decisions (made during the build; plan docs hold the earlier ones)
+- 2026-11-23 (Brendan): calibration labels will come from a sit-down session where he labels 200+ historical transactions against the agreed, Jev-optimized list. BA-27 waits for M3-jevctx's proposal.
 - 2026-11-22 (Brendan, after the M3-dryrun report): **Guilt-Free is one shared category.** Fun money (Fun - Brendan / Fun - Hilarie Under The Radar) is fully free spending: finbot never categorizes into those per transaction; at the monthly budget meeting (R10, finbot leads, M4) each says what fun money went to and the budget is updated then. This changes R8a (per-purchase fun-money intents) — plan docs to be updated at the M3 gate docs task. Fixed Costs stay granular; merge near-neighbour categories. M3-simplify drafts the list + spec for his approval.
 - 2026-11-12 (Brendan, "I approve of your decisions"): the 7 unlisted visible categories go as sup suggested (Buffer → Savings Goals; Reimbursement, Subs - Bark/GoPro/Point.Me → Fixed Costs; Business Bike, Mortgage Payoff stay). Set-asides stay out of the classifier (finbot never suggests a savings-goal fund on its own). sup still shows him the final printed list before the live apply.
 - 2026-11-11 (Brendan): "you can deploy whenever. I give my permission": standing OK for sup to run `./deploy/deploy.sh` after a green, reviewed merge, without asking each time. It does not cover the live `finbot restructure --apply` (needs his OK on the printed list) or `CLASSIFY_MODE=auto`.
