@@ -54,3 +54,42 @@ would have done to the dry-run precision, and comes with a `finbot restructure` 
 - [ ] go build ./... && go vet ./... && go test ./... green
 
 <!-- Builder appends ## Result and, if needed, ## Handoff below. -->
+
+## Result
+- Status: DONE
+- What changed:
+  - `docs/build/reports/M3-simplify.md`: current categories with history and dry-run label counts, the proposed list
+    (one table per CSP group), the replay, the calibration impact, the policy changes and the order of operations.
+  - `deploy/restructure/csp-2026-11b.json`: option A (Shopping → Guilt-Free Spending; Dining Out, Household & Kids
+    and Voice Lessons moved to Retired to be hidden; Groceries → Groceries & Household; Larks Dues → Fixed Costs;
+    Next Trip and Business Bike → Savings Goals; Kids Classes target $810).
+  - Analysis ran from an untracked `_scratch/` program over a read-only copy of hoid's DB in the scratchpad (the
+    `hoid_check.sh` copy loop). Not committed.
+- Acceptance:
+  - restructure dry run (`./finbot restructure --spec deploy/restructure/csp-2026-11b.json --plan <active plan>`, no
+    `--apply`; `--used` is needed only with `--apply`, so this was one GET): pass, **changes: 10**, unresolved 0,
+    warnings 0. The count is in the report.
+  - Replay table with old and new precision, Wilson intervals and n (39 would-apply, 25 asked; also n = 79 with
+    superseded decisions): pass, report § Scope 3.
+  - Neither fun category is a classifier target in the proposal: pass. Both are budget buckets, excluded by the
+    `Radar` set-aside keyword (§ Scope 5).
+  - `grep -E '[0-9a-f]{8}-[0-9a-f]{4}' docs/build/reports/M3-simplify.md deploy/restructure/csp-2026-11b.json`: no
+    matches (exit 1), pass.
+  - `go build ./... && go vet ./... && go test ./...`: pass.
+- Deviations from brief:
+  - Scope 1's labelled counts span both mirrored plans. hoid's DB has **0 `plan_scan` rows**, so `LabelPlans` there
+    is the active plan alone, and it has no usable labels (21 approved rows). The report says so.
+  - The spec sets Larks Dues' target date (2027-02-18) explicitly. Otherwise the tool's stale-date roll would push a
+    quarterly target a whole year forward.
+- Follow-ups for backlog:
+  - Calibration label alias map (rename / drop; applied before `InActiveList`, hashed into the policy hash). Without
+    it, hiding Retired turns 659 `Discretionary` labels into hard negatives, and that already affects the M3-dryrun
+    plan to "hide Retired, then recalibrate".
+  - Even with the map, about 247 usable history labels can't give 200 tuning model-band rows. Feed answered
+    `dry_run_check` questions to calibration as labels (95 so far).
+  - `plan_scan` is empty on hoid: runtime payee rules see only the active plan's history. Check, then run `finbot
+    sync --archived` (it writes the DB, so it's sup's or Brendan's call).
+  - `policy.json`: the `Radar` keyword, new and removed descriptions; `Needs a job!` in `internalNames` and excluded
+    in `LabeledHistory`.
+- Docs follow-ups: CLAUDE.md's `finbot restructure` notes could mention the second spec (`csp-2026-11b.json`) once
+  it's applied.
